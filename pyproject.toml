@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oled-webui"
-version = "0.1.0"
+version = "0.2.0"
 description = "WebUI for controlling ChiZhu Tech USBDISPLAY panels (87AD:70DB)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,8 @@ dependencies = [
     "libusb-package>=1.0.24",
     "Pillow>=10.0",
     "python-multipart>=0.0.9",
+    "psutil>=5.9",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +49,7 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
 mypy_path = "src"
 strict = true

@@ -3,7 +3,7 @@ File:   event_bus.py
 Brief:  In-process topic-based publish/subscribe event bus.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

@@ -8,6 +8,8 @@ import type {
   LastContent,
   Preset,
   RenderOptions,
+  SceneInfo,
+  SceneState,
   StatusData,
   TextRequest,
 } from '../api'
@@ -17,13 +19,24 @@ interface StoreState {
   device: StatusData['device']
   keepalive: { enabled: boolean; interval: number }
   video: StatusData['video']
+  scene: SceneState
   hasFrame: boolean
   lastContent: LastContent | null
   frameTs: number
   presets: Preset[]
+  scenes: SceneInfo[]
   fonts: string[]
   error: string | null
   sseUp: boolean
+}
+
+const NO_SCENE: SceneState = {
+  running: false,
+  scene_id: null,
+  name: null,
+  refresh: 0,
+  max_fps: 0,
+  frames_sent: 0,
 }
 
 const state = reactive<StoreState>({
@@ -31,10 +44,12 @@ const state = reactive<StoreState>({
   device: null,
   keepalive: { enabled: false, interval: 1.5 },
   video: { playing: false, file: null, loop: false, fps: 0, frames_sent: 0 },
+  scene: { ...NO_SCENE },
   hasFrame: false,
   lastContent: null,
   frameTs: Date.now(),
   presets: [],
+  scenes: [],
   fonts: [],
   error: null,
   sseUp: false,
@@ -45,6 +60,7 @@ function applyStatus(status: StatusData): void {
   state.device = status.device
   state.keepalive = status.keepalive
   state.video = status.video
+  state.scene = status.scene
   state.hasFrame = status.has_frame
   state.lastContent = status.last_content
 }
@@ -90,6 +106,11 @@ function handleSseEvent(event: MessageEvent): void {
     void refreshStatus()
     return
   }
+  if (event.type === 'scene') {
+    void refreshStatus()
+    void actions.loadScenes()
+    return
+  }
   if (event.type === 'error') {
     try {
       const payload = JSON.parse(event.data) as { error?: string }
@@ -112,6 +133,7 @@ function startSse(): void {
     'frame_updated',
     'keepalive',
     'video',
+    'scene',
     'error',
   ]) {
     eventSource.addEventListener(type, handleSseEvent as EventListener)
@@ -142,7 +164,7 @@ async function wrap(action: () => Promise<void>): Promise<boolean> {
 const actions = {
   async init(): Promise<void> {
     await refreshStatus()
-    await Promise.all([actions.loadPresets(), actions.loadFonts()])
+    await Promise.all([actions.loadPresets(), actions.loadFonts(), actions.loadScenes()])
     startSse()
   },
 
@@ -211,6 +233,37 @@ const actions = {
   async stopVideo(): Promise<boolean> {
     return wrap(async () => {
       state.video = await API.stopVideo()
+    })
+  },
+
+  async loadScenes(): Promise<void> {
+    try {
+      state.scenes = (await API.listScenes()).scenes
+    } catch {
+      state.scenes = []
+    }
+  },
+
+  async applyScene(id: string): Promise<boolean> {
+    return wrap(async () => {
+      state.scene = await API.applyScene(id)
+      await refreshStatus()
+    })
+  },
+
+  async stopScene(): Promise<boolean> {
+    return wrap(async () => {
+      state.scene = await API.stopScene()
+    })
+  },
+
+  async deleteScene(id: string): Promise<boolean> {
+    return wrap(async () => {
+      await API.deleteScene(id)
+      if (state.scene.scene_id === id && state.scene.running) {
+        state.scene = { ...NO_SCENE }
+      }
+      await actions.loadScenes()
     })
   },
 

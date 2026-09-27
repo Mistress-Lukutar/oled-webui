@@ -3,7 +3,7 @@ File:   display_service.py
 Brief:  Central display orchestrator: USB serialization, keepalive, video.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -17,12 +17,15 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from oled_webui.core.constants import DEFAULT_RESOLUTION
 from oled_webui.core.models import HandshakeResult
 from oled_webui.exceptions import (
     DeviceNotConnectedError,
     TransportError,
     ValidationError,
 )
+from oled_webui.scene.runner import SceneRenderer
+from oled_webui.scene.schema import SceneDocument
 from oled_webui.services.bulk_device import BulkLcd
 from oled_webui.services.frame_builder import (
     FrameBuilder,
@@ -78,6 +81,16 @@ class DisplayService:
             "frames_sent": 0,
         }
 
+        self._scene_task: asyncio.Task[None] | None = None
+        self._scene_state: dict[str, Any] = {
+            "running": False,
+            "scene_id": None,
+            "name": None,
+            "refresh": 0,
+            "max_fps": 0,
+            "frames_sent": 0,
+        }
+
         self._last_frame: bytes | None = None
         self._last_frame_size: tuple[int, int] | None = None
         self._last_content: dict[str, Any] | None = None
@@ -118,6 +131,7 @@ class DisplayService:
     async def disconnect(self) -> None:
         """Stop background tasks and close the USB device."""
         await self.stop_video()
+        await self.stop_scene()
         await self._stop_keepalive()
         async with self._lock:
             await asyncio.to_thread(self._lcd.disconnect)
@@ -207,6 +221,7 @@ class DisplayService:
         Returns:
             Summary dict with frame size and payload length.
         """
+        await self.stop_scene()
         builder = self._builder(rotation, brightness, fit, quality)
         frame = await asyncio.to_thread(builder.build_frame, image_path)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
@@ -234,6 +249,7 @@ class DisplayService:
         Returns:
             Summary dict with frame size and payload length.
         """
+        await self.stop_scene()
         rgb = parse_hex_color(color)
         builder = self._builder(brightness=brightness)
         image = builder.build_color_image(rgb)
@@ -279,6 +295,7 @@ class DisplayService:
         Returns:
             Summary dict with frame size and payload length.
         """
+        await self.stop_scene()
         font_path: Path | None = None
         if font_name:
             font_path = self._settings.fonts_dir / font_name
@@ -329,6 +346,7 @@ class DisplayService:
     async def power_off(self) -> None:
         """Blank the display with a black frame (kept alive by keepalive)."""
         handshake = self.require_connection()
+        await self.stop_scene()
         builder = self._builder()
         image = build_black_frame(
             handshake.resolution.width, handshake.resolution.height
@@ -367,6 +385,7 @@ class DisplayService:
             delay: Seconds between color steps.
         """
         handshake = self.require_connection()
+        await self.stop_scene()
         builder = self._builder()
         for rgb in TEST_COLORS:
             image = builder.build_color_image(rgb)
@@ -443,7 +462,7 @@ class DisplayService:
             except TimeoutError:
                 pass
 
-            if self._video_state["playing"]:
+            if self._video_state["playing"] or self._scene_state["running"]:
                 continue
             if self._last_frame is None or self._last_frame_size is None:
                 continue
@@ -485,6 +504,7 @@ class DisplayService:
             ValidationError: If a video is already playing.
         """
         self.require_connection()
+        await self.stop_scene()
         ensure_ffmpeg()
         if self._video_task is not None and not self._video_task.done():
             raise ValidationError("A video is already playing")
@@ -577,6 +597,113 @@ class DisplayService:
             )
 
     # ------------------------------------------------------------------
+    # Scene playback
+    # ------------------------------------------------------------------
+
+    async def start_scene(
+        self,
+        document: SceneDocument,
+        scene_id: str,
+        scene_name: str,
+    ) -> dict[str, Any]:
+        """Start rendering a scene to the display in the background.
+
+        Starts a fresh scene, replacing any previously running one; video
+        playback is stopped first.
+
+        Args:
+            document: Validated scene document with resolved asset paths.
+            scene_id: Scene identifier for state and preset saving.
+            scene_name: Human-readable scene name.
+
+        Returns:
+            The scene state snapshot.
+        """
+        handshake = self.require_connection()
+        await self.stop_video()
+        await self._stop_scene_task()
+
+        renderer = SceneRenderer(
+            document,
+            handshake.resolution,
+        )
+        self._scene_state = {
+            "running": True,
+            "scene_id": scene_id,
+            "name": scene_name,
+            "refresh": renderer.refresh,
+            "max_fps": renderer.max_fps,
+            "frames_sent": 0,
+        }
+        self._scene_task = asyncio.create_task(self._scene_loop(renderer))
+        self._bg_tasks.add(self._scene_task)
+        self._scene_task.add_done_callback(self._bg_tasks.discard)
+        self._last_content = {
+            "type": "scene",
+            "params": {
+                "brightness": document.brightness,
+                "quality": document.quality,
+            },
+            "payload": {"scene_id": scene_id, "name": scene_name},
+        }
+        await self._bus.publish(
+            "scene",
+            {"running": True, "scene_id": scene_id, "name": scene_name},
+        )
+        logger.info(
+            "scene_started",
+            scene_id=scene_id,
+            widgets=len(document.widgets),
+            refresh=renderer.refresh,
+        )
+        return dict(self._scene_state)
+
+    async def stop_scene(self) -> None:
+        """Stop the running scene, if any, and publish the state change."""
+        if not self._scene_state["running"]:
+            return
+        await self._stop_scene_task()
+        await self._bus.publish(
+            "scene",
+            {"running": False, "scene_id": self._scene_state["scene_id"]},
+        )
+        logger.info("scene_stopped", scene_id=self._scene_state["scene_id"])
+
+    async def _stop_scene_task(self) -> None:
+        """Cancel the scene loop task without publishing."""
+        task = self._scene_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        self._scene_state["running"] = False
+
+    async def _scene_loop(self, renderer: SceneRenderer) -> None:
+        """Tick the renderer and send frames until cancelled or failure."""
+        frame_interval = 1.0 / renderer.max_fps
+        width, height = renderer.size
+        try:
+            while True:
+                start = time.perf_counter()
+                payload = await asyncio.to_thread(renderer.tick)
+                if payload is not None:
+                    await self._send_payload(
+                        payload, width, height, throttle_preview=True
+                    )
+                    self._scene_state["frames_sent"] += 1
+                elapsed = time.perf_counter() - start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("scene_failed", error=str(exc))
+            self._scene_state["running"] = False
+            await self._bus.publish("error", {"source": "scene", "error": str(exc)})
+
+    # ------------------------------------------------------------------
     # Status and preview
     # ------------------------------------------------------------------
 
@@ -608,6 +735,20 @@ class DisplayService:
                 "interval": self._keepalive_interval,
             },
             "video": dict(self._video_state),
+            "scene": dict(self._scene_state),
             "has_frame": self.get_preview() is not None,
             "last_content": self._last_content,
         }
+
+    def panel_resolution(self) -> tuple[int, int]:
+        """Return the panel size, or the default fallback when disconnected.
+
+        Used by render-only paths (scene preview) that must work without
+        hardware.
+
+        Returns:
+            (width, height) tuple.
+        """
+        if self._handshake is not None:
+            return (self._handshake.resolution.width, self._handshake.resolution.height)
+        return (DEFAULT_RESOLUTION.width, DEFAULT_RESOLUTION.height)

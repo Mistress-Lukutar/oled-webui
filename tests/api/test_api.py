@@ -3,7 +3,7 @@ File:   test_api.py
 Brief:  API smoke tests over the full FastAPI app with a fake LCD.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@ File:   config.py
 Brief:  Application settings loaded from environment variables and .env.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -74,6 +74,11 @@ class Settings(BaseSettings):
         return self.data_dir / "fonts"
 
     @property
+    def scenes_dir(self) -> Path:
+        """Directory holding scene folders (YAML, meta, assets)."""
+        return self.data_dir / "scenes"
+
+    @property
     def last_frame_path(self) -> Path:
         """Path to the persisted last-sent JPEG frame."""
         return self.data_dir / "last_frame.jpg"
@@ -85,6 +90,7 @@ class Settings(BaseSettings):
             self.presets_dir,
             self.uploads_dir,
             self.fonts_dir,
+            self.scenes_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

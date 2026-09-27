@@ -3,7 +3,7 @@ File:   frame_builder.py
 Brief:  Pillow-based render and encode pipeline for display frames.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

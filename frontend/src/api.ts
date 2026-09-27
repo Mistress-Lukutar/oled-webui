@@ -28,8 +28,31 @@ export interface VideoState {
   frames_sent: number
 }
 
+export interface SceneState {
+  running: boolean
+  scene_id: string | null
+  name: string | null
+  refresh: number
+  max_fps: number
+  frames_sent: number
+}
+
+export interface SceneInfo {
+  id: string
+  name: string
+  created_at: number
+  updated_at: number
+  widget_count: number
+}
+
+export interface SceneDetail {
+  scene: SceneInfo
+  yaml: string
+  assets: string[]
+}
+
 export interface LastContent {
-  type: 'image' | 'color' | 'text'
+  type: 'image' | 'color' | 'text' | 'scene'
   params: Record<string, unknown>
   payload: Record<string, unknown>
 }
@@ -39,6 +62,7 @@ export interface StatusData {
   device: DeviceInfo | null
   keepalive: KeepaliveState
   video: VideoState
+  scene: SceneState
   has_frame: boolean
   last_content: LastContent | null
 }
@@ -46,7 +70,7 @@ export interface StatusData {
 export interface Preset {
   id: string
   name: string
-  type: 'image' | 'color' | 'text'
+  type: 'image' | 'color' | 'text' | 'scene'
   params: Record<string, number | string>
   payload: Record<string, unknown>
   created_at: number
@@ -78,6 +102,22 @@ interface Envelope<T> {
   success: boolean
   error: string | null
   data: T
+}
+
+// Raw JPEG responses (scene preview) bypass the JSON envelope.
+async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await fetch(path, init)
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    try {
+      const body = (await response.json()) as Envelope<unknown>
+      if (body.error !== null) message = body.error
+    } catch {
+      // Not a JSON error body; keep the HTTP status message.
+    }
+    throw new Error(message)
+  }
+  return response.blob()
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -153,6 +193,47 @@ export const API = {
       body: form({ ...opts, fps, loop, file }),
     }),
   stopVideo: () => api<VideoState>('/api/video/stop', { method: 'POST' }),
+
+  listScenes: () => api<{ scenes: SceneInfo[] }>('/api/scenes'),
+  getScene: (id: string) => api<SceneDetail>(`/api/scenes/${id}`),
+  createScene: (name: string, file?: File) =>
+    api<SceneDetail>('/api/scenes', {
+      method: 'POST',
+      body: form(file ? { name, file } : { name }),
+    }),
+  saveScene: (id: string, yaml: string, name?: string) =>
+    api<{ scene: SceneInfo }>(`/api/scenes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml, name }),
+    }),
+  deleteScene: (id: string) =>
+    api<null>(`/api/scenes/${id}`, { method: 'DELETE' }),
+  uploadSceneAssets: (id: string, files: File[]) => {
+    const data = new FormData()
+    for (const file of files) data.append('files', file)
+    return api<{ assets: string[] }>(`/api/scenes/${id}/assets`, {
+      method: 'POST',
+      body: data,
+    })
+  },
+  deleteSceneAsset: (id: string, name: string) =>
+    api<{ assets: string[] }>(`/api/scenes/${id}/assets/${name}`, {
+      method: 'DELETE',
+    }),
+  applyScene: (id: string) =>
+    api<SceneState>(`/api/scenes/${id}/apply`, { method: 'POST' }),
+  stopScene: () => api<SceneState>('/api/scenes/stop', { method: 'POST' }),
+  seedExampleScene: () =>
+    api<SceneDetail>('/api/scenes/seed-example', { method: 'POST' }),
+  previewScene: (id: string) =>
+    apiBlob(`/api/scenes/${id}/preview`, { method: 'POST' }),
+  previewSceneYaml: (yaml: File, sceneId: string | null) => {
+    const data = new FormData()
+    data.append('file', yaml)
+    if (sceneId !== null) data.append('scene_id', sceneId)
+    return apiBlob('/api/scenes/preview', { method: 'POST', body: data })
+  },
 
   listPresets: () => api<{ presets: Preset[] }>('/api/presets'),
   saveCurrentPreset: (name: string) =>

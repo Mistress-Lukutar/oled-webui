@@ -15,6 +15,14 @@ from a browser. Protocol and transport are ported from the original
   optional custom TTF/OTF fonts (drop them into `data/fonts/`).
 - **Video** — upload a video, stream it to the panel via ffmpeg at a chosen
   FPS, loop, stop anytime.
+- **Scenes** — declarative YAML layouts: a static background collage plus
+  live widgets (text, bar, ring, graph, image) driven by system metrics
+  (CPU, RAM, disk, network, temps, clock; GPU via NVML when available).
+  Reusable components, value-transition animations with named easing
+  curves and sandboxed procedural expressions (`t`, `dt`, `v`). Scenes are
+  stored under `data/scenes/<id>/` with their assets; the tab offers a
+  YAML editor with validation, a hardware-free frame preview and a scene
+  library. A bundled dashboard example can be added with one click.
 - **Keepalive** — the panel reverts to its built-in logo after ~2–3 seconds
   without frames; the server re-sends the last frame in the background.
 - **Presets** — save the currently displayed content (image, color or text
@@ -29,7 +37,8 @@ keepalive loop; actual USB power cut is out of scope.
 ## Stack
 
 - **Backend**: Python 3.11+, FastAPI (async) + Uvicorn, PyUSB, Pillow,
-  pydantic-settings, structlog. src-layout package `oled_webui`.
+  psutil, PyYAML, pydantic-settings, structlog. src-layout package
+  `oled_webui`.
 - **Frontend**: Vue 3 + Vite + TypeScript, hand-written dark theme,
   SSE for real-time updates. Build output is served by FastAPI itself.
 - **External tool**: `ffmpeg` on PATH (only needed for video playback).
@@ -60,7 +69,7 @@ Environment variables (prefix `OLED_`, `.env` supported):
 |-----------------------|-----------------|------------------------------------------|
 | `OLED_HOST`           | `127.0.0.1`     | HTTP bind interface                      |
 | `OLED_PORT`           | `8090`          | HTTP port                                |
-| `OLED_DATA_DIR`       | `./data`        | Presets, uploads, fonts, last frame      |
+| `OLED_DATA_DIR`       | `./data`        | Presets, scenes, uploads, fonts, last frame |
 | `OLED_KEEPALIVE_ENABLED` | `true`       | Keepalive auto-start on connect          |
 | `OLED_KEEPALIVE_INTERVAL` | `1.5`       | Keepalive resend interval, seconds       |
 | `OLED_AUTO_CONNECT`   | `true`          | Connect to USB device on startup         |
@@ -86,6 +95,11 @@ device and *WinUSB*). On Linux, install `libusb-1.0` and add a udev rule for
 | `/api/frame/preview` | GET | Last frame as JPEG |
 | `/api/frame/fonts` | GET | Custom fonts available |
 | `/api/video` `/video/stop` | POST | Playback control |
+| `/api/scenes` | GET/POST | Scene library (multipart create) |
+| `/api/scenes/{id}` | GET/PUT/DELETE | Scene YAML source management |
+| `/api/scenes/{id}/assets` | POST/DELETE | Scene asset files |
+| `/api/scenes/{id}/apply` `/stop` | POST | Scene playback control |
+| `/api/scenes/{id}/preview` `/preview` | POST | Render one frame as JPEG |
 | `/api/presets` | GET | List presets |
 | `/api/presets/save-current` | POST | Snapshot last content |
 | `/api/presets/{id}` `/apply` | POST/DELETE | Manage presets |
@@ -125,4 +139,6 @@ After code changes run `python scripts/bump-version.py` to bump file headers.
 32 pytest tests cover the wire header layout, resolution profile lookup,
 the render pipeline (fit/rotation/brightness/text), preset storage and a
 full API smoke suite with a fake USB device. The real hardware is not
-required.
+required. Scene engine tests cover the expression sandbox, easing curves,
+widget renderers, component expansion, the rendering state machine
+(dirty-detection, keepalive re-yield) and the scenes API.

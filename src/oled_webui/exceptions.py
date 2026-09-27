@@ -3,7 +3,7 @@ File:   exceptions.py
 Brief:  Exception hierarchy and JSON error handlers for the WebUI.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -50,6 +50,14 @@ class PresetNotFoundError(OledWebUIError):
     """Raised when the requested preset does not exist."""
 
 
+class SceneNotFoundError(OledWebUIError):
+    """Raised when the requested scene does not exist."""
+
+
+class SceneError(OledWebUIError):
+    """Raised when a scene document or widget rendering is invalid."""
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register JSON error handlers normalizing errors to a uniform shape.
 
@@ -91,6 +99,22 @@ def setup_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
+            content={"success": False, "error": str(exc), "data": None},
+        )
+
+    @app.exception_handler(SceneNotFoundError)
+    async def _scene_not_found(
+        _request: Request, exc: SceneNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"success": False, "error": str(exc), "data": None},
+        )
+
+    @app.exception_handler(SceneError)
+    async def _scene_error(_request: Request, exc: SceneError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"success": False, "error": str(exc), "data": None},
         )
 

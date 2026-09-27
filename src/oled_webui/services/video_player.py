@@ -3,7 +3,7 @@ File:   video_player.py
 Brief:  ffmpeg-backed video frame decoding for display streaming.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

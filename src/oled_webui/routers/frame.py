@@ -3,7 +3,7 @@ File:   frame.py
 Brief:  Frame content endpoints: image, color, text, power, preview.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

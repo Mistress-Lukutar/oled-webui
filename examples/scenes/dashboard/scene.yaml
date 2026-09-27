@@ -1,0 +1,82 @@
+# Example scene: system dashboard with reusable components.
+# Apply from the WebUI: Scenes tab → "Dashboard Example" → Apply
+#
+# Data sources: cpu.percent, cpu.freq_ghz, ram.percent, ram.used_gb,
+# disk.percent, net.kbps, temp.cpu, gpu.percent, time.hms, time.date
+
+refresh: 1.0          # data polling rate (Hz)
+max_fps: 20           # cap for animation frame rate
+keepalive_interval: 2.0
+
+# background:                       # static layer (optional)
+#   - path: wallpaper.png           # omit 'pos' to stretch to the canvas
+#   - path: avatar.png
+#     pos: [1380, 24]
+#     scale: 0.4
+
+widgets:
+  # Reusable component defined in components/ring-counter.yaml
+  - use: ring-counter
+    at: [80, 480]
+    source: cpu
+    value: "{value:.0f}%"
+
+  - use: ring-counter
+    at: [280, 480]
+    source: ram
+    palette:
+      fg: "#4FC3F7"
+      bg: "#1a1a1a"
+
+  - type: bar
+    source: cpu
+    rect: [80, 660, 360, 22]
+    style:
+      fg: "#7CFC00"
+      bg: "#1a1a1a"
+      radius: 6
+      border: 1
+    animate:
+      value:
+        easing: ease-out-cubic
+        duration: 400
+
+  - type: graph
+    source: cpu
+    rect: [500, 460, 420, 200]
+    history: 120
+    style:
+      fg: "#7CFC00"
+      fill: true
+      line_width: 2
+
+  - type: text
+    source: time.hms
+    rect: [1100, 460, 400, 80]
+    align: center
+    style:
+      size: 64
+      color: "#FFFFFF"
+
+  - type: text
+    source: time.date
+    rect: [1100, 540, 400, 40]
+    align: center
+    style:
+      size: 24
+      color: "#AAAAAA"
+
+  - type: text
+    source: ram.used_gb
+    value: "RAM {value:.1f} GB"
+    rect: [80, 380, 360, 36]
+    style:
+      size: 28
+      color: "#4FC3F7"
+
+  # Procedural animation: a sprite bobbing up and down.
+  # - type: image
+  #   path: mascot.png
+  #   rect: [1500, 560, 64, 64]
+  #   offset_y: "8 * sin(2 * pi * 0.25 * t)"
+  #   rotation: "10 * sin(1.5 * t)"

@@ -3,7 +3,7 @@ File:   schemas.py
 Brief:  Pydantic request and response models for the HTTP API.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -70,3 +70,10 @@ class SavePresetRequest(BaseModel):
     """Save-current-content-as-preset request."""
 
     name: str = Field(..., min_length=1, max_length=100)
+
+
+class SaveSceneRequest(BaseModel):
+    """Save scene YAML source request."""
+
+    yaml: str = Field(..., min_length=1, max_length=200_000)
+    name: str | None = Field(default=None, min_length=1, max_length=100)

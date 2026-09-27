@@ -3,7 +3,7 @@ File:   bulk_device.py
 Brief:  High-level bulk LCD device: handshake plus framed send.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

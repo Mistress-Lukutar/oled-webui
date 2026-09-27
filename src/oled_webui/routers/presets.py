@@ -3,7 +3,7 @@ File:   presets.py
 Brief:  Preset CRUD, save-current and apply endpoints.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from oled_webui.dependencies import ConnectedDisplayDep, PresetsDep
+from oled_webui.dependencies import ConnectedDisplayDep, PresetsDep, ScenesDep
 from oled_webui.exceptions import ValidationError
 from oled_webui.models.schemas import SavePresetRequest, StatusResponse
 from oled_webui.services.preset_service import Preset
@@ -57,21 +57,28 @@ async def delete_preset(preset_id: str, presets: PresetsDep) -> StatusResponse:
 
 @router.post("/{preset_id}/apply", response_model=StatusResponse)
 async def apply_preset(
-    preset_id: str, presets: PresetsDep, display: ConnectedDisplayDep
+    preset_id: str,
+    presets: PresetsDep,
+    scenes: ScenesDep,
+    display: ConnectedDisplayDep,
 ) -> StatusResponse:
     """Re-render and send a stored preset to the display."""
     preset = presets.get_preset(preset_id)
-    result = await _apply(presets, display, preset)
+    result = await _apply(presets, scenes, display, preset)
     return StatusResponse(data=result)
 
 
 async def _apply(
-    presets: PresetsDep, display: ConnectedDisplayDep, preset: Preset
+    presets: PresetsDep,
+    scenes: ScenesDep,
+    display: ConnectedDisplayDep,
+    preset: Preset,
 ) -> dict[str, Any]:
     """Dispatch a preset to the matching display service call.
 
     Args:
         presets: Preset service for asset lookup.
+        scenes: Scene service for scene preset lookup.
         display: Display service used to render and send.
         preset: The preset to apply.
 
@@ -99,6 +106,12 @@ async def _apply(
             str(preset.payload.get("color", "000000")),
             int(params.get("brightness", 100)),
         )
+
+    if preset.type == "scene":
+        scene_id = str(preset.payload.get("scene_id", ""))
+        meta = scenes.get_meta(scene_id)
+        document = scenes.load_document(scene_id)
+        return await display.start_scene(document, scene_id, meta.name)
 
     font_name = preset.payload.get("font_name")
     return await display.send_text(

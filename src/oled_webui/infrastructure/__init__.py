@@ -3,7 +3,7 @@ File:   __init__.py
 Brief:  Infrastructure adapters (USB transport) for the OLED WebUI.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@ File:   main.py
 Brief:  FastAPI application factory, lifespan and entry point.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -24,10 +24,12 @@ from oled_webui.exceptions import OledWebUIError, setup_exception_handlers
 from oled_webui.routers import device as device_router
 from oled_webui.routers import frame as frame_router
 from oled_webui.routers import presets as presets_router
+from oled_webui.routers import scenes as scenes_router
 from oled_webui.routers import video as video_router
 from oled_webui.services.display_service import DisplayService
 from oled_webui.services.event_bus import EventBus
 from oled_webui.services.preset_service import PresetService
+from oled_webui.services.scene_service import SceneService
 from oled_webui.services.sse_manager import sse_manager
 
 logger = structlog.get_logger(__name__)
@@ -41,6 +43,7 @@ SSE_TOPICS: tuple[str, ...] = (
     "frame_updated",
     "keepalive",
     "video",
+    "scene",
     "error",
 )
 
@@ -80,6 +83,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     display = DisplayService(settings, bus)
     app.state.display = display
     app.state.presets = PresetService(settings)
+    app.state.scenes = SceneService(settings)
 
     if settings.auto_connect:
         try:
@@ -122,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(frame_router.router)
     app.include_router(video_router.router)
     app.include_router(presets_router.router)
+    app.include_router(scenes_router.router)
 
     @app.get("/events")
     async def events() -> Any:

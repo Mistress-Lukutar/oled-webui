@@ -6,18 +6,20 @@ import ImagePanel from './components/ImagePanel.vue'
 import ColorPanel from './components/ColorPanel.vue'
 import TextPanel from './components/TextPanel.vue'
 import VideoPanel from './components/VideoPanel.vue'
+import ScenePanel from './components/ScenePanel.vue'
 import PresetsPanel from './components/PresetsPanel.vue'
 import { useDisplayStore } from './composables/useDisplayStore'
 
 const { state } = useDisplayStore()
 
-type Tab = 'image' | 'color' | 'text' | 'video'
+type Tab = 'image' | 'color' | 'text' | 'video' | 'scene'
 const activeTab = ref<Tab>('image')
 const tabs: { id: Tab; label: string }[] = [
   { id: 'image', label: 'Image' },
   { id: 'color', label: 'Color' },
   { id: 'text', label: 'Text' },
   { id: 'video', label: 'Video' },
+  { id: 'scene', label: 'Scene' },
 ]
 
 onMounted(() => {
@@ -54,6 +56,7 @@ onMounted(() => {
         <ColorPanel v-show="activeTab === 'color'" />
         <TextPanel v-show="activeTab === 'text'" />
         <VideoPanel v-show="activeTab === 'video'" />
+        <ScenePanel v-show="activeTab === 'scene'" />
       </div>
     </section>
   </main>
