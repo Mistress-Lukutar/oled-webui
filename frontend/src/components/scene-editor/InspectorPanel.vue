@@ -237,6 +237,9 @@ const dataSourceList = [...DATA_SOURCES]
     <template v-else-if="entry !== null">
       <div class="section">
         <div class="section-title">{{ widgetType }} widget</div>
+        <div v-if="entry['locked'] === true" class="hint lock-hint">
+          🔒 Locked: mouse-transparent on the canvas, protected from deletion.
+        </div>
         <div class="grid4">
           <div class="field"><label>X</label>
             <input type="number" :value="num((entry['rect'] as number[] | undefined)?.[0])" @input="setRectPart(0, Number(($event.target as HTMLInputElement).value))" />
@@ -326,6 +329,15 @@ const dataSourceList = [...DATA_SOURCES]
             />
           </div>
           <div class="field">
+            <label>fit</label>
+            <select :value="(entry['fit'] as string | undefined) ?? 'scale'" @change="setField('fit', ($event.target as HTMLSelectElement).value)">
+              <option value="contain">Contain (fit inside rect)</option>
+              <option value="cover">Cover (fill rect, crop)</option>
+              <option value="stretch">Stretch (distort)</option>
+              <option value="scale">Scale (legacy)</option>
+            </select>
+          </div>
+          <div v-if="((entry['fit'] as string | undefined) ?? 'scale') === 'scale'" class="field">
             <label>scale</label>
             <input
               type="number"
@@ -478,7 +490,14 @@ const dataSourceList = [...DATA_SOURCES]
 
       <div class="section btn-row">
         <button @click="editor.duplicateEntries([singleIndex!])">Duplicate</button>
-        <button class="danger" @click="editor.deleteEntries([singleIndex!])">Delete</button>
+        <button
+          class="danger"
+          :disabled="entry['locked'] === true"
+          :title="entry['locked'] === true ? 'Locked — unlock first' : 'Delete'"
+          @click="editor.deleteEntries([singleIndex!])"
+        >
+          Delete
+        </button>
       </div>
     </template>
 
@@ -635,6 +654,10 @@ const dataSourceList = [...DATA_SOURCES]
   font-size: 11px;
   margin-bottom: 8px;
   line-height: 1.4;
+}
+
+.lock-hint {
+  color: var(--warning);
 }
 
 .grid2 {

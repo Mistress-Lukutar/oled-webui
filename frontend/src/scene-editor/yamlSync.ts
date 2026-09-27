@@ -134,8 +134,12 @@ function checkEntry(errors: string[], index: number, entry: EntryRaw): void {
   if (type !== 'text' && type !== 'image' && typeof entry['source'] !== 'string') {
     errors.push(`${where} (${type}): "source" is required`)
   }
-  if (type === 'image' && typeof entry['path'] !== 'string') {
-    errors.push(`${where} (image): "path" is required`)
+  if (type === 'image') {
+    const path = entry['path']
+    if (typeof path !== 'string' || path.trim() === '') {
+      errors.push(`${where} (image): "path" is required`)
+    }
+    checkEnum(errors, `${where}.fit`, entry['fit'], ['scale', 'contain', 'cover', 'stretch'])
   }
   checkIntRange(errors, `${where}.history`, entry['history'], 2, 3600)
   checkStyle(errors, where, type, entry['style'])

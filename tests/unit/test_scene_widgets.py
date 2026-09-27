@@ -30,6 +30,7 @@ from oled_webui.scene.widgets import (
     parse_color,
     render_bar,
     render_graph,
+    render_image,
     render_ring,
     render_text,
 )
@@ -126,3 +127,44 @@ def test_animated_value_transitions() -> None:
     assert animator.update(200.0, now=2.0) == pytest.approx(150.0)
     assert animator.update(200.0, now=3.0) == pytest.approx(200.0)
     assert not animator.active
+
+
+def _sprite(path, rgb=(200, 60, 60), size=(40, 20)):
+    image = Image.new("RGB", size, rgb)
+    image.save(path)
+    return path
+
+
+def _opaque_bounds(image: Image.Image) -> tuple[int, int, int, int]:
+    alpha = image.getchannel("A")
+    return alpha.getbbox() or (0, 0, 0, 0)
+
+
+def test_render_image_fit_modes(tmp_path) -> None:
+    """contain fits inside the rect, stretch fills it, cover overflows."""
+    from oled_webui.scene.schema import ImageWidget
+
+    sprite_path = _sprite(tmp_path / "sprite.png", size=(40, 20))
+    rect = (10, 10, 80, 80)  # square box, wide sprite
+
+    for fit, expected in (("contain", (80, 40)), ("stretch", (80, 80)), ("cover", (80, 80))):
+        layer = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+        widget = ImageWidget(type="image", path=str(sprite_path), rect=rect, fit=fit)
+        render_image(layer, rect, widget, opacity=1.0, rotation=0.0)
+        bounds = _opaque_bounds(layer)
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+        assert (width, height) == expected, fit
+
+
+def test_render_image_covers_layer_bounds(tmp_path) -> None:
+    """Sprites extending past the layer are cropped, not crashing PIL."""
+    from oled_webui.scene.schema import ImageWidget
+
+    sprite_path = _sprite(tmp_path / "big.png", size=(100, 100))
+    layer = Image.new("RGBA", (60, 60), (0, 0, 0, 0))
+    widget = ImageWidget(
+        type="image", path=str(sprite_path), rect=(0, 0, 200, 200), fit="scale", scale=3.0
+    )
+    render_image(layer, (0, 0, 200, 200), widget, opacity=1.0, rotation=0.0)
+    assert _opaque_bounds(layer) == (0, 0, 60, 60)

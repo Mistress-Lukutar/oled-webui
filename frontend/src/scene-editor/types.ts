@@ -54,6 +54,8 @@ export interface BaseFields {
   opacity?: ExprValue
   rotation?: ExprValue
   animate?: Record<string, AnimateSpec>
+  /** Editor hint: locked elements render but are mouse-transparent. */
+  locked?: boolean
   [key: string]: unknown
 }
 
@@ -84,9 +86,12 @@ export interface GraphWidgetRaw extends BaseFields {
   style?: GraphStyle
 }
 
+export type ImageFit = 'scale' | 'contain' | 'cover' | 'stretch'
+
 export interface ImageWidgetRaw extends BaseFields {
   type: 'image'
   path: string
+  fit?: ImageFit
   scale?: number
 }
 
@@ -185,6 +190,7 @@ const BASE_WIDGET_KEYS = new Set([
   'opacity',
   'rotation',
   'animate',
+  'locked',
 ])
 
 const WIDGET_KEYS: Record<WidgetType, Set<string>> = {
@@ -192,7 +198,7 @@ const WIDGET_KEYS: Record<WidgetType, Set<string>> = {
   bar: new Set(['source', 'style']),
   ring: new Set(['source', 'style']),
   graph: new Set(['source', 'history', 'style']),
-  image: new Set(['path', 'scale']),
+  image: new Set(['path', 'fit', 'scale']),
 }
 
 const STYLE_KEYS = new Set([

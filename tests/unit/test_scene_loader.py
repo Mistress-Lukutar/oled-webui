@@ -168,3 +168,34 @@ def test_relative_paths_resolved(tmp_path: Path) -> None:
     assert document.background[0].path == str(tmp_path / "assets" / "wall.png")
     image_widget = document.widgets[0]
     assert image_widget.path == str(tmp_path / "sprites" / "dot.png")  # type: ignore[attr-defined]
+
+
+def test_locked_instance_override_propagates(tmp_path: Path) -> None:
+    """`locked` on a use: instance is an override, not a component param."""
+    component = tmp_path / "components" / "badge.yaml"
+    component.parent.mkdir(parents=True)
+    component.write_text(
+        """
+        params:
+          label: "x"
+        render:
+          - type: text
+            rect: [0, 0, 80, 30]
+            value: "{{ label }}"
+        """,
+        encoding="utf-8",
+    )
+    scene_path = tmp_path / "scene.yaml"
+    scene_path.write_text(
+        """
+        widgets:
+          - use: badge
+            at: [10, 10]
+            label: "hi"
+            locked: true
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_path)
+    assert len(document.widgets) == 1
+    assert document.widgets[0].locked is True

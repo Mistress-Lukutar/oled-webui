@@ -260,9 +260,24 @@ function drawImage(
   if (typeof path !== 'string') return false
   const sprite = images.get(sceneId, path)
   if (sprite === null || !sprite.complete || sprite.naturalWidth === 0) return false
-  const scale = typeof widget['scale'] === 'number' ? widget['scale'] : 1
-  const sizeW = Math.max(1, Math.trunc(sprite.naturalWidth * scale))
-  const sizeH = Math.max(1, Math.trunc(sprite.naturalHeight * scale))
+  const fit = typeof widget['fit'] === 'string' ? widget['fit'] : 'scale'
+  let sizeW: number
+  let sizeH: number
+  if (fit === 'stretch') {
+    sizeW = Math.max(1, w)
+    sizeH = Math.max(1, h)
+  } else if (fit === 'contain' || fit === 'cover') {
+    const ratioW = w / sprite.naturalWidth
+    const ratioH = h / sprite.naturalHeight
+    const factor =
+      fit === 'contain' ? Math.min(ratioW, ratioH) : Math.max(ratioW, ratioH)
+    sizeW = Math.max(1, Math.trunc(sprite.naturalWidth * factor))
+    sizeH = Math.max(1, Math.trunc(sprite.naturalHeight * factor))
+  } else {
+    const scale = typeof widget['scale'] === 'number' ? widget['scale'] : 1
+    sizeW = Math.max(1, Math.trunc(sprite.naturalWidth * scale))
+    sizeH = Math.max(1, Math.trunc(sprite.naturalHeight * scale))
+  }
 
   ctx.save()
   ctx.globalAlpha = Math.max(0, Math.min(1, opacity))

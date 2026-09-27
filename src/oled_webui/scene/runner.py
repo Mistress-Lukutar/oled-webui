@@ -66,6 +66,7 @@ class _Evaluated:
     offset_y: int = 0
     opacity: float = 1.0
     rotation: float = 0.0
+    raw: float | str | None = None
     signature: tuple[Any, ...] = field(default_factory=tuple)
 
 
@@ -179,9 +180,12 @@ class SceneRenderer:
         """Render one frame for preview purposes without touching state.
 
         Polls the data providers once and evaluates every widget at the
-        given time, so animations sit at their initial position. Widget
-        history and signatures are not advanced; safe to call alongside a
-        running :meth:`tick` loop from another scene instance only.
+        given time, so animations sit at their initial position. Graph
+        widgets with a fresh (near-empty) history are filled with a
+        representative synthetic series, so previews show a plausible
+        sparkline instead of an empty box. Widget history and signatures
+        are not advanced; safe to call alongside a running :meth:`tick`
+        loop from another scene instance only.
 
         Args:
             now: Scene-relative time in seconds for expression variables.
@@ -194,7 +198,35 @@ class SceneRenderer:
         """
         self._providers.poll()
         evaluated = self._evaluate(self._started + now, poll=False)
+        self._fill_graph_previews(evaluated)
         return self._compose_and_encode(evaluated)
+
+    def _fill_graph_previews(self, evaluated: list[_Evaluated]) -> None:
+        """Backfill sparse graph histories with a synthetic series.
+
+        A preview renderer starts with an empty history, which would
+        render as an invisible one-sample line; filling it keeps previews
+        representative of the live widget.
+
+        Args:
+            evaluated: Evaluation results to patch (in place).
+        """
+        for item in evaluated:
+            runtime = item.runtime
+            widget = item.widget
+            if runtime is None or not isinstance(widget, GraphWidget):
+                continue
+            if len(runtime.history) >= 2:
+                continue
+            base = runtime.history[-1] if runtime.history else 50.0
+            if not isinstance(base, (int, float)):
+                base = 50.0
+            for i in range(widget.history):
+                wave = (
+                    base * 0.18 * ((i % 7) - 3) / 3
+                    + base * 0.08 * ((i % 3) - 1)
+                )
+                runtime.history.append(max(0.0, base + wave))
 
     def _render_static(self, layers: Sequence[ImageLayer]) -> Image.Image:
         """Composite the static background layer once.
@@ -210,27 +242,44 @@ class SceneRenderer:
         """
         canvas = Image.new("RGBA", self._size, (0, 0, 0, 255))
         for index, layer in enumerate(layers):
-            sprite = get_sprite(layer.path)
-            if layer.scale != 1.0:
-                size = (
-                    max(1, int(sprite.width * layer.scale)),
-                    max(1, int(sprite.height * layer.scale)),
-                )
-                sprite = sprite.resize(size, Image.Resampling.LANCZOS)
-            if layer.pos is None:
-                sprite = sprite.resize(self._size, Image.Resampling.LANCZOS)
-                dest = (0, 0)
-            else:
-                dest = layer.pos
-            if layer.opacity < 1.0:
-                alpha = sprite.getchannel("A").point(
-                    lambda a, o=layer.opacity: int(a * o)
-                )
-                sprite = sprite.copy()
-                sprite.putalpha(alpha)
-            canvas.alpha_composite(sprite, dest=dest)
+            try:
+                self._composite_background(canvas, layer)
+            except SceneError as exc:
+                # A missing or corrupt background image is skipped instead
+                # of failing the whole scene.
+                logger.warning("scene_background_unavailable", path=layer.path, error=str(exc))
             logger.debug("background_layer_composited", index=index)
         return canvas
+
+    def _composite_background(self, canvas: Image.Image, layer: ImageLayer) -> None:
+        """Composite one background layer onto the canvas.
+
+        Args:
+            canvas: Target RGBA canvas.
+            layer: Background layer definition.
+
+        Raises:
+            SceneError: If the asset cannot be loaded.
+        """
+        sprite = get_sprite(layer.path)
+        if layer.scale != 1.0:
+            size = (
+                max(1, int(sprite.width * layer.scale)),
+                max(1, int(sprite.height * layer.scale)),
+            )
+            sprite = sprite.resize(size, Image.Resampling.LANCZOS)
+        if layer.pos is None:
+            sprite = sprite.resize(self._size, Image.Resampling.LANCZOS)
+            dest = (0, 0)
+        else:
+            dest = layer.pos
+        if layer.opacity < 1.0:
+            alpha = sprite.getchannel("A").point(
+                lambda a, o=layer.opacity: int(a * o)
+            )
+            sprite = sprite.copy()
+            sprite.putalpha(alpha)
+        canvas.alpha_composite(sprite, dest=dest)
 
     def _expression_vars(
         self, now: float, raw: float | str | None
@@ -334,6 +383,7 @@ class SceneRenderer:
                     offset_y=offset_y,
                     opacity=opacity,
                     rotation=rotation,
+                    raw=raw if isinstance(raw, (int, float, str)) else None,
                     signature=signature,
                 )
             )
@@ -452,13 +502,18 @@ class SceneRenderer:
         py = y + item.offset_y
 
         if isinstance(widget, ImageWidget):
-            render_image(
-                layer,
-                (px, py, width, height),
-                widget,
-                opacity=max(0.0, min(1.0, item.opacity)),
-                rotation=item.rotation,
-            )
+            try:
+                render_image(
+                    layer,
+                    (px, py, width, height),
+                    widget,
+                    opacity=max(0.0, min(1.0, item.opacity)),
+                    rotation=item.rotation,
+                )
+            except SceneError as exc:
+                # A missing or corrupt sprite hides this widget instead of
+                # failing the whole scene (mirrors unavailable sources).
+                logger.warning("scene_image_unavailable", path=widget.path, error=str(exc))
             return
 
         scratch = Image.new("RGBA", (max(1, width), max(1, height)), (0, 0, 0, 0))

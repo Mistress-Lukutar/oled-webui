@@ -88,6 +88,7 @@ interface BoxInfo {
   box: WidgetBox
   isInstance: boolean
   isImage: boolean
+  locked: boolean
 }
 
 const boxes = computed<BoxInfo[]>(() => {
@@ -116,6 +117,7 @@ const boxes = computed<BoxInfo[]>(() => {
       box: union,
       isInstance: isComponentInstance(entry),
       isImage: entry['type'] === 'image',
+      locked: entry['locked'] === true,
     })
   })
   return result
@@ -173,6 +175,11 @@ function toScene(event: PointerEvent | MouseEvent): { x: number; y: number } {
 
 function selectedBoxes(): BoxInfo[] {
   return boxes.value.filter((info) => state.selection.includes(info.sourceIndex))
+}
+
+/** Selection as seen by canvas interactions: locked entries are skipped. */
+function interactiveBoxes(): BoxInfo[] {
+  return selectedBoxes().filter((info) => !info.locked)
 }
 
 // ----------------------------------------------------------------------
@@ -257,7 +264,7 @@ function onPointerdown(event: PointerEvent): void {
   }
   if (event.button !== 0) return
   const point = toScene(event)
-  const selection = selectedBoxes()
+  const selection = interactiveBoxes()
   const single = selection.length === 1 ? selection[0]! : null
 
   // Handles first (single selection only).
@@ -288,9 +295,10 @@ function onPointerdown(event: PointerEvent): void {
     }
   }
 
-  // Widget hit-test, topmost first.
+  // Widget hit-test, topmost first. Locked widgets are mouse-transparent.
   for (let i = boxes.value.length - 1; i >= 0; i -= 1) {
     const info = boxes.value[i]!
+    if (info.locked) continue
     if (pointInBox(point.x, point.y, info.box)) {
       let selection: number[]
       if (event.shiftKey) {
@@ -306,7 +314,7 @@ function onPointerdown(event: PointerEvent): void {
         selection = [...state.selection]
       }
       const origins = new Map<number, DragOrigin>()
-      for (const selected of selectedBoxes()) {
+      for (const selected of interactiveBoxes()) {
         const raw = rawEntry(selected.sourceIndex)
         let at: [number, number] | null = null
         let rectX = selected.box.x
@@ -437,6 +445,7 @@ function onPointerup(event: PointerEvent): void {
     const y1 = Math.min(m.y1, m.y2)
     const y2 = Math.max(m.y1, m.y2)
     const hits = boxes.value
+      .filter((info) => !info.locked)
       .filter((info) => {
         const b = info.box
         return b.x < x2 && b.x + b.w > x1 && b.y < y2 && b.y + b.h > y1
@@ -458,7 +467,7 @@ function updateCursor(point: { x: number; y: number }): void {
     hoverCursor.value = 'grab'
     return
   }
-  const selection = selectedBoxes()
+  const selection = interactiveBoxes()
   if (selection.length === 1) {
     const single = selection[0]!
     const handle = handleAt(point.x, point.y, single.box, zoom.value, single.isImage)
@@ -622,12 +631,12 @@ function drawOverlay(
   for (const info of selection) {
     const { box } = info
     ctx.save()
-    ctx.strokeStyle = ACCENT
+    ctx.strokeStyle = info.locked ? '#8a8a8a' : ACCENT
     ctx.lineWidth = line
-    if (info.isInstance) ctx.setLineDash([5 / zoom.value, 3 / zoom.value])
+    if (info.isInstance || info.locked) ctx.setLineDash([5 / zoom.value, 3 / zoom.value])
     ctx.strokeRect(box.x, box.y, box.w, box.h)
     ctx.restore()
-    if (info.isInstance) continue
+    if (info.isInstance || info.locked) continue
     // Handles: white squares with accent border, screen-constant size.
     const positions = handlePositions(box)
     const ids: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']

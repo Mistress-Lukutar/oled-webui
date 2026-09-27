@@ -101,6 +101,9 @@ class WidgetBase(_Strict):
     animate: dict[str, AnimateSpec] = Field(
         default_factory=dict, description="Named animations; 'value' eases the source"
     )
+    locked: bool = Field(
+        False, description="Editor hint: element is locked and mouse-transparent"
+    )
 
 
 class TextWidget(WidgetBase):
@@ -145,7 +148,14 @@ class ImageWidget(WidgetBase):
 
     type: Literal["image"]
     path: str = Field(..., description="Image path relative to the scene file")
-    scale: float = Field(1.0, gt=0, description="Size multiplier")
+    fit: Literal["scale", "contain", "cover", "stretch"] = Field(
+        "scale",
+        description=(
+            "Sizing: 'scale' multiplies the sprite (legacy), 'contain' fits "
+            "inside the rect, 'cover' fills the rect, 'stretch' distorts to it"
+        ),
+    )
+    scale: float = Field(1.0, gt=0, description="Size multiplier (fit='scale' only)")
 
 
 Widget = Annotated[

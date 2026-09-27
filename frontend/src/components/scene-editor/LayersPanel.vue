@@ -19,6 +19,7 @@ interface Row {
   kind: string
   hidden: boolean
   expressionVisible: boolean
+  locked: boolean
 }
 
 const rows = computed<Row[]>(() => {
@@ -33,6 +34,7 @@ const rows = computed<Row[]>(() => {
       kind: isComponentInstance(entry) ? 'use' : (widgetType(entry) ?? '?'),
       hidden: visible === false,
       expressionVisible: typeof visible === 'string',
+      locked: entry['locked'] === true,
     }
   })
   // Topmost first (widgets composite in array order, last on top).
@@ -46,6 +48,10 @@ function select(index: number, event: MouseEvent): void {
 
 function toggleVisible(row: Row): void {
   editor.setEntryField(row.index, 'visible', row.hidden ? undefined : false)
+}
+
+function toggleLock(row: Row): void {
+  editor.toggleLock(row.index)
 }
 
 function move(row: Row, direction: -1 | 1): void {
@@ -84,9 +90,24 @@ function remove(row: Row): void {
           >
             {{ row.hidden ? '◌' : '◉' }}
           </button>
+          <button
+            class="mini"
+            :class="{ lock: row.locked }"
+            :title="row.locked ? 'Unlock (canvas interaction blocked)' : 'Lock: visible but mouse-transparent and protected'"
+            @click="toggleLock(row)"
+          >
+            {{ row.locked ? '🔒' : '🔓' }}
+          </button>
           <button class="mini" title="Move up" @click="move(row, 1)">▲</button>
           <button class="mini" title="Move down" @click="move(row, -1)">▼</button>
-          <button class="mini danger-mini" title="Delete" @click="remove(row)">×</button>
+          <button
+            class="mini danger-mini"
+            :title="row.locked ? 'Locked — unlock first' : 'Delete'"
+            :disabled="row.locked"
+            @click="remove(row)"
+          >
+            ×
+          </button>
         </span>
       </li>
     </ul>
@@ -197,6 +218,11 @@ function remove(row: Row): void {
 
 .mini.dim {
   color: var(--text-dim);
+}
+
+.mini.lock {
+  filter: none;
+  color: var(--warning);
 }
 
 .danger-mini:hover:not(:disabled) {

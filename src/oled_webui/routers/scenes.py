@@ -122,10 +122,19 @@ async def get_asset(
 
 @router.put("/{scene_id}", response_model=StatusResponse)
 async def save_scene(
-    scene_id: str, req: SaveSceneRequest, scenes: ScenesDep
+    scene_id: str, req: SaveSceneRequest, scenes: ScenesDep, display: DisplayDep
 ) -> StatusResponse:
-    """Validate and save the YAML source of a scene."""
+    """Validate and save the YAML source of a scene.
+
+    When the saved scene is currently running on the display, it is
+    restarted with the fresh document so panel edits show up without a
+    manual re-apply.
+    """
     meta = scenes.save_yaml(scene_id, req.yaml, name=req.name)
+    scene_state = display.status()["scene"]
+    if scene_state.get("running") and scene_state.get("scene_id") == scene_id:
+        document = scenes.load_document(scene_id)
+        await display.start_scene(document, scene_id, meta.name)
     return StatusResponse(data={"scene": meta.model_dump()})
 
 

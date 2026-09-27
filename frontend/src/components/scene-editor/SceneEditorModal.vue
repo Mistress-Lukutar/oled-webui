@@ -188,8 +188,10 @@ function onKeydown(event: KeyboardEvent): void {
     const step = event.shiftKey ? 10 : 1
     const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
     const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+    const movable = [...state.selection].filter((index) => !editor.isLockedIndex(index))
+    if (movable.length === 0) return
     editor.mutate((doc) => {
-      for (const index of state.selection) {
+      for (const index of movable) {
         const entry = doc.widgets?.[index] as Record<string, unknown> | undefined
         if (entry === undefined) continue
         if (typeof entry['use'] === 'string') {

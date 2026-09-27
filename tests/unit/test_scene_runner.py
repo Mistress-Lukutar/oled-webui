@@ -136,3 +136,64 @@ def test_scene_renderer_background_layer(tmp_path: Path) -> None:
     document = load_scene(scene_path)
     renderer = SceneRenderer(document, Resolution(width=64, height=64))
     assert renderer.tick(now=0.0) is not None
+
+
+def test_missing_sprite_is_skipped(tmp_path: Path) -> None:
+    """A broken image widget hides itself instead of failing the scene."""
+    scene_path = tmp_path / "scene.yaml"
+    scene_path.write_text(
+        """
+        widgets:
+          - type: image
+            path: assets/missing.png
+            rect: [10, 10, 60, 60]
+          - type: text
+            value: "alive"
+            rect: [10, 90, 100, 30]
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_path)
+    renderer = SceneRenderer(document, Resolution(width=480, height=480))
+    payload = renderer.render_frame()
+    assert payload[:2] == b"\xff\xd8"
+
+
+def test_missing_background_layer_is_skipped(tmp_path: Path) -> None:
+    scene_path = tmp_path / "scene.yaml"
+    scene_path.write_text(
+        """
+        background:
+          - path: assets/nope.png
+        widgets:
+          - type: text
+            value: "alive"
+            rect: [10, 10, 100, 30]
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_path)
+    renderer = SceneRenderer(document, Resolution(width=480, height=480))
+    payload = renderer.render_frame()
+    assert payload[:2] == b"\xff\xd8"
+
+
+def test_preview_fills_graph_history(tmp_path: Path) -> None:
+    """render_frame backfills sparse graph history with synthetic samples."""
+    scene_path = tmp_path / "scene.yaml"
+    scene_path.write_text(
+        """
+        widgets:
+          - type: graph
+            source: cpu
+            history: 60
+            rect: [10, 10, 200, 60]
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_path)
+    renderer = SceneRenderer(document, Resolution(width=480, height=480))
+    runtime = next(iter(renderer._runtimes.values()))
+    payload = renderer.render_frame()
+    assert payload[:2] == b"\xff\xd8"
+    assert len(runtime.history) >= 2

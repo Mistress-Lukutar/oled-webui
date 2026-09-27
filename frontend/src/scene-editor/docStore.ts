@@ -231,11 +231,13 @@ async function removeAsset(name: string): Promise<void> {
   state.assets = result.assets
 }
 
-/** Delete raw widget entries by index (indices must be sorted asc). */
+/** Delete raw widget entries by index; locked entries are protected. */
 function deleteEntries(indices: number[]): void {
+  const deletable = indices.filter((index) => !isLockedIndex(index))
+  if (deletable.length === 0) return
   mutate((doc) => {
     const widgets = doc.widgets ?? []
-    for (const index of [...indices].sort((a, b) => b - a)) {
+    for (const index of [...deletable].sort((a, b) => b - a)) {
       if (index >= 0 && index < widgets.length) widgets.splice(index, 1)
     }
   })
@@ -243,12 +245,18 @@ function deleteEntries(indices: number[]): void {
 
 /** Deep-clone raw entries and insert the copies after the last source. */
 function duplicateEntries(indices: number[]): void {
+  const clonable = indices.filter((index) => !isLockedIndex(index))
+  if (clonable.length === 0) return
   mutate((doc) => {
     const widgets = doc.widgets ?? []
-    const clones = indices
+    const clones = clonable
       .filter((i) => i >= 0 && i < widgets.length)
-      .map((i) => JSON.parse(JSON.stringify(widgets[i])) as EntryRaw)
-    widgets.splice(Math.max(...indices) + 1, 0, ...clones)
+      .map((i) => {
+        const clone = JSON.parse(JSON.stringify(widgets[i])) as Record<string, unknown>
+        delete clone['locked'] // duplicates start unlocked
+        return clone as EntryRaw
+      })
+    widgets.splice(Math.max(...clonable) + 1, 0, ...clones)
   })
 }
 
@@ -310,7 +318,7 @@ const WIDGET_DEFAULTS: Record<string, Record<string, unknown>> = {
   image: {
     type: 'image',
     path: '',
-    scale: 1,
+    fit: 'contain',
   },
 }
 
@@ -340,10 +348,30 @@ function addWidget(type: string, center: { x: number; y: number }): void {
         offset[3],
       ],
     }
+    // New image widgets default to the most recently uploaded asset so
+    // users do not hit an empty-path preview error.
+    if (type === 'image' && (entry['path'] as string) === '') {
+      const images = state.assets.filter((a) =>
+        /\.(png|jpe?g|gif|webp|bmp)$/i.test(a),
+      )
+      const last = images[images.length - 1]
+      if (last !== undefined) entry['path'] = `assets/${last}`
+    }
     widgets.push(entry as EntryRaw)
     doc.widgets = widgets
   })
   if (newIndex >= 0) setSelection([newIndex])
+}
+
+/** Toggle the locked (mouse-transparent, protected) flag of an entry. */
+function toggleLock(index: number): void {
+  const entry = getWidgets()[index]
+  if (entry === undefined) return
+  setEntryField(index, 'locked', entry['locked'] === true ? undefined : true)
+}
+
+function isLockedIndex(index: number): boolean {
+  return getWidgets()[index]?.['locked'] === true
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -378,6 +406,8 @@ export const editor = {
   setEntryField,
   updateWidget,
   addWidget,
+  toggleLock,
+  isLockedIndex,
 }
 
 export type EditorStore = typeof editor

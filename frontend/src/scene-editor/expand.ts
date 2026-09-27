@@ -20,6 +20,7 @@ const RESERVED_KEYS = new Set([
   'offset_y',
   'opacity',
   'rotation',
+  'locked',
 ])
 
 // Keys copied from the instance block into every rendered child that does
@@ -31,6 +32,7 @@ const OVERRIDE_KEYS = [
   'offset_y',
   'opacity',
   'rotation',
+  'locked',
 ] as const
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z_]\w*(?:\.\w+)*)\s*\}\}/g

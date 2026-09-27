@@ -374,8 +374,9 @@ def render_image(
 ) -> None:
     """Composite a (possibly rotated/faded) image widget onto the layer.
 
-    The sprite is centered in the widget box; rotation and opacity are
-    applied before compositing.
+    The sprite is sized per the widget's ``fit`` mode inside the widget
+    box; rotation and opacity are applied before compositing. Sprites
+    extending past the layer bounds are cropped.
 
     Args:
         layer: Target RGBA layer.
@@ -385,10 +386,20 @@ def render_image(
         rotation: Evaluated rotation in degrees (counter-clockwise).
     """
     sprite = get_sprite(widget.path)
-    size = (
-        max(1, int(sprite.width * widget.scale)),
-        max(1, int(sprite.height * widget.scale)),
-    )
+    x, y, w, h = rect
+    if widget.fit == "stretch":
+        size = (max(1, w), max(1, h))
+    elif widget.fit in ("contain", "cover"):
+        box_w, box_h = sprite.size
+        ratio_w = w / box_w
+        ratio_h = h / box_h
+        factor = min(ratio_w, ratio_h) if widget.fit == "contain" else max(ratio_w, ratio_h)
+        size = (max(1, int(box_w * factor)), max(1, int(box_h * factor)))
+    else:  # scale
+        size = (
+            max(1, int(sprite.width * widget.scale)),
+            max(1, int(sprite.height * widget.scale)),
+        )
     if size != sprite.size:
         sprite = sprite.resize(size, Image.Resampling.LANCZOS)
     if rotation % 360 != 0:
@@ -400,6 +411,44 @@ def render_image(
         sprite = sprite.copy()
         sprite.putalpha(alpha)
 
-    x, y, w, h = rect
-    dest = (x + (w - sprite.width) // 2, y + (h - sprite.height) // 2)
-    layer.alpha_composite(sprite, dest=dest)
+    dest_x = x + (w - sprite.width) // 2
+    dest_y = y + (h - sprite.height) // 2
+    # 'cover' fills the widget box and is clipped to it (object-fit cover);
+    # other modes keep their legacy overflow behavior.
+    if widget.fit == "cover":
+        clip_left = max(0, x - dest_x)
+        clip_top = max(0, y - dest_y)
+        clip_right = max(0, dest_x + sprite.width - (x + w))
+        clip_bottom = max(0, dest_y + sprite.height - (y + h))
+        if (clip_left, clip_top, clip_right, clip_bottom) != (0, 0, 0, 0):
+            sprite = sprite.crop(
+                (
+                    clip_left,
+                    clip_top,
+                    sprite.width - clip_right,
+                    sprite.height - clip_bottom,
+                )
+            )
+            dest_x += clip_left
+            dest_y += clip_top
+    # Crop whatever extends past the layer bounds; PIL rejects negative
+    # or overflowing destinations in alpha_composite.
+    layer_w, layer_h = layer.size
+    crop_left = max(0, -dest_x)
+    crop_top = max(0, -dest_y)
+    crop_right = max(0, dest_x + sprite.width - layer_w)
+    crop_bottom = max(0, dest_y + sprite.height - layer_h)
+    if (crop_left, crop_top, crop_right, crop_bottom) != (0, 0, 0, 0):
+        sprite = sprite.crop(
+            (
+                crop_left,
+                crop_top,
+                sprite.width - crop_right,
+                sprite.height - crop_bottom,
+            )
+        )
+        dest_x += crop_left
+        dest_y += crop_top
+    if sprite.width <= 0 or sprite.height <= 0:
+        return
+    layer.alpha_composite(sprite, dest=(dest_x, dest_y))

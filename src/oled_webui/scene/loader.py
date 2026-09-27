@@ -23,7 +23,17 @@ logger = structlog.get_logger(__name__)
 # Instance-level keys consumed by the loader itself; everything else in a
 # ``use:`` block is treated as a component parameter.
 _RESERVED_KEYS: frozenset[str] = frozenset(
-    {"use", "at", "animate", "visible", "offset_x", "offset_y", "opacity", "rotation"}
+    {
+        "use",
+        "at",
+        "animate",
+        "visible",
+        "offset_x",
+        "offset_y",
+        "opacity",
+        "rotation",
+        "locked",
+    }
 )
 
 # Keys copied from the instance block into every rendered child that does
@@ -35,6 +45,7 @@ _OVERRIDE_KEYS: tuple[str, ...] = (
     "offset_y",
     "opacity",
     "rotation",
+    "locked",
 )
 
 _PLACEHOLDER: re.Pattern[str] = re.compile(r"\{\{\s*([A-Za-z_]\w*(?:\.\w+)*)\s*\}\}")
