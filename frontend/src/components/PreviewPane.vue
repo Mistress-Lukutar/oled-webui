@@ -68,6 +68,9 @@ async function withBusy(action: () => Promise<boolean>): Promise<void> {
   max-width: 100%;
   max-height: 55vh;
   display: block;
+  /* Stored frames carry the 180° base panel rotation; flip back so the
+     preview matches what is physically visible on the panel. */
+  transform: rotate(180deg);
 }
 
 .placeholder {
