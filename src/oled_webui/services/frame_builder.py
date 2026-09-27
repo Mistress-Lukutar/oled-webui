@@ -91,6 +91,18 @@ class FrameBuilder:
         """Target canvas height."""
         return self._height
 
+    @property
+    def source_size(self) -> tuple[int, int]:
+        """Canvas size content must be produced at before the user rotation.
+
+        For quarter-turn rotations the content canvas is swapped, so after
+        the rotation the frame lands on the exact panel size instead of a
+        transposed one the panel cannot display full-screen.
+        """
+        if self._rotation % 180 != 0:
+            return (self._height, self._width)
+        return (self._width, self._height)
+
     @staticmethod
     def load_image(path: Path) -> Image.Image:
         """Load an image from disk.
@@ -184,8 +196,25 @@ class FrameBuilder:
         table = [min(255, int(i * factor)) for i in range(256)]
         return image.point(table * len(image.getbands()))
 
-    def apply_rotation(self, image: Image.Image) -> Image.Image:
-        """Apply base panel rotation plus user rotation.
+    def apply_user_rotation(self, image: Image.Image) -> Image.Image:
+        """Apply the user-requested rotation to pre-fit content.
+
+        Args:
+            image: Source image sized for ``source_size``.
+
+        Returns:
+            Rotated image; quarter turns swap its dimensions.
+        """
+        rotation = self._rotation % 360
+        if rotation == 0:
+            return image
+        return image.rotate(rotation, expand=True)
+
+    def apply_base_rotation(self, image: Image.Image) -> Image.Image:
+        """Apply the fixed 180° base panel rotation.
+
+        The panel is natively mounted upside-down; a 180° turn never changes
+        the image dimensions, so this is safe to apply to panel-sized frames.
 
         Args:
             image: Source image.
@@ -193,13 +222,16 @@ class FrameBuilder:
         Returns:
             Rotated image.
         """
-        total_rotation = DEFAULT_BASE_ROTATION + self._rotation
-        if total_rotation % 360 == 0:
+        if DEFAULT_BASE_ROTATION % 360 == 0:
             return image
-        return image.rotate(total_rotation, expand=True)
+        return image.rotate(DEFAULT_BASE_ROTATION, expand=False)
 
     def build_frame(self, source: Image.Image | Path) -> Image.Image:
-        """Load, fit, rotate and adjust brightness for a single frame.
+        """Load, rotate, fit and adjust brightness for a single frame.
+
+        The user rotation is applied before fitting so quarter-turned
+        content is fitted against the panel canvas and fills it; the fixed
+        180° base rotation is applied last on the panel-sized frame.
 
         Args:
             source: PIL image or path to an image file.
@@ -212,8 +244,9 @@ class FrameBuilder:
         else:
             image = self.load_image(source).convert("RGB")
 
+        image = self.apply_user_rotation(image)
         image = self.fit_image(image)
-        image = self.apply_rotation(image)
+        image = self.apply_base_rotation(image)
         image = self.apply_brightness(image)
         return image
 
@@ -259,10 +292,11 @@ class FrameBuilder:
         padding: int = 20,
         font_path: Path | None = None,
     ) -> Image.Image:
-        """Render multi-line text onto a canvas at the target size.
+        """Render multi-line text onto a canvas at the pre-rotation size.
 
-        The rendered image goes through the rotation/brightness pipeline like
-        any other frame, so panel orientation stays consistent.
+        The canvas matches ``source_size``, so after the caller applies the
+        user rotation and base panel rotation the frame is exactly the panel
+        size.
 
         Args:
             text: Text to render; newlines start a new line.
@@ -285,8 +319,9 @@ class FrameBuilder:
         if valign not in ("top", "middle", "bottom"):
             raise RenderError(f"Unsupported vertical align: {valign!r}")
 
+        canvas_width, canvas_height = self.source_size
         font = _load_font(font_size, font_path)
-        canvas = Image.new("RGB", (self._width, self._height), background)
+        canvas = Image.new("RGB", (canvas_width, canvas_height), background)
         draw = ImageDraw.Draw(canvas)
 
         lines = text.split("\n")
@@ -301,9 +336,9 @@ class FrameBuilder:
         if valign == "top":
             cursor_y = padding
         elif valign == "bottom":
-            cursor_y = self._height - padding - total_height
+            cursor_y = canvas_height - padding - total_height
         else:
-            cursor_y = (self._height - total_height) // 2
+            cursor_y = (canvas_height - total_height) // 2
 
         anchor_map = {"left": "la", "center": "ma", "right": "ra"}
         anchor = anchor_map[align]
@@ -311,9 +346,9 @@ class FrameBuilder:
             if align == "left":
                 x = padding
             elif align == "right":
-                x = self._width - padding
+                x = canvas_width - padding
             else:
-                x = self._width // 2
+                x = canvas_width // 2
             draw.text((x, cursor_y), line, font=font, fill=color, anchor=anchor)
             cursor_y += line_height + line_spacing
 

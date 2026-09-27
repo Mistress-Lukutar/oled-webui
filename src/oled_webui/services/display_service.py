@@ -318,7 +318,8 @@ class DisplayService:
             padding,
             font_path,
         )
-        frame = await asyncio.to_thread(builder.apply_rotation, frame)
+        frame = await asyncio.to_thread(builder.apply_user_rotation, frame)
+        frame = await asyncio.to_thread(builder.apply_base_rotation, frame)
         frame = await asyncio.to_thread(builder.apply_brightness, frame)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
         await self._send_payload(payload, builder.width, builder.height)

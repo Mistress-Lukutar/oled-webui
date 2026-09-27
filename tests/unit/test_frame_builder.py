@@ -73,11 +73,36 @@ def test_brightness_scaling() -> None:
     assert bright.getpixel((0, 0)) == (255, 255, 255)
 
 
-def test_apply_rotation_base_180() -> None:
-    """Default rotation is 180 degrees, flipping the image."""
+def test_apply_base_rotation_flips_without_resize() -> None:
+    """The 180° base rotation flips the image but keeps its dimensions."""
     image = Image.new("RGB", (10, 6), (255, 0, 0))
-    rotated = _builder().apply_rotation(image)
+    rotated = _builder().apply_base_rotation(image)
     assert rotated.size == (10, 6)
+
+
+def test_source_size_swapped_for_quarter_turns() -> None:
+    """Quarter-turn rotations request a transposed pre-rotation canvas."""
+    assert _builder(rotation=0).source_size == (100, 50)
+    assert _builder(rotation=90).source_size == (50, 100)
+    assert _builder(rotation=180).source_size == (100, 50)
+    assert _builder(rotation=270).source_size == (50, 100)
+
+
+def test_build_frame_quarter_turn_fills_canvas() -> None:
+    """A rotated portrait image is fitted to the full panel canvas."""
+    portrait = Image.new("RGB", (25, 100), (255, 0, 0))
+    frame = _builder(rotation=90).build_frame(portrait)
+    assert frame.size == (100, 50)
+
+
+def test_rotated_text_pipeline_lands_on_panel_size() -> None:
+    """Rotated text renders on a transposed canvas, then lands panel-sized."""
+    builder = _builder(rotation=90)
+    canvas = builder.render_text_frame("HELLO", font_size=24)
+    assert canvas.size == (50, 100)
+    frame = builder.apply_user_rotation(canvas)
+    frame = builder.apply_base_rotation(frame)
+    assert frame.size == (100, 50)
 
 
 def test_build_color_image_applies_brightness() -> None:

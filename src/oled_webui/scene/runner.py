@@ -432,7 +432,7 @@ class SceneRenderer:
             if item.visible:
                 self._render_widget(layer, item)
         frame = Image.alpha_composite(self._static, layer).convert("RGB")
-        frame = self._builder.apply_rotation(frame)
+        frame = self._builder.apply_base_rotation(frame)
         frame = self._builder.apply_brightness(frame)
         return self._builder.encode_jpeg(frame)
 
