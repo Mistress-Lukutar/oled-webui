@@ -766,9 +766,11 @@ class DisplayService:
     def status(self) -> dict[str, Any]:
         """Build the full status snapshot for the API and SSE."""
         device = self._handshake.model_dump() if self._handshake else None
+        panel_width, panel_height = self.panel_resolution()
         return {
             "connected": self.is_connected,
             "device": device,
+            "resolution": {"width": panel_width, "height": panel_height},
             "keepalive": {
                 "enabled": self._keepalive_enabled,
                 "interval": self._keepalive_interval,

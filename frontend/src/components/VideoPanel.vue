@@ -33,7 +33,7 @@ async function start(): Promise<void> {
   <div>
     <div v-if="playing" class="playing card">
       <div class="row">
-        <span class="badge active">Playing</span>
+        <span class="badge active">{{ state.video.preparing ? 'Preparing…' : 'Playing' }}</span>
         <span class="file">{{ state.video.file }}</span>
       </div>
       <div class="meta">

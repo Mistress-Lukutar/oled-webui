@@ -17,6 +17,7 @@ import type {
 interface StoreState {
   connected: boolean
   device: StatusData['device']
+  resolution: StatusData['resolution']
   keepalive: { enabled: boolean; interval: number }
   video: StatusData['video']
   scene: SceneState
@@ -42,8 +43,9 @@ const NO_SCENE: SceneState = {
 const state = reactive<StoreState>({
   connected: false,
   device: null,
+  resolution: { width: 480, height: 480 },
   keepalive: { enabled: false, interval: 1.5 },
-  video: { playing: false, file: null, loop: false, fps: 0, frames_sent: 0 },
+  video: { playing: false, preparing: false, file: null, loop: false, fps: 0, frames_sent: 0 },
   scene: { ...NO_SCENE },
   hasFrame: false,
   lastContent: null,
@@ -58,6 +60,7 @@ const state = reactive<StoreState>({
 function applyStatus(status: StatusData): void {
   state.connected = status.connected
   state.device = status.device
+  state.resolution = status.resolution
   state.keepalive = status.keepalive
   state.video = status.video
   state.scene = status.scene

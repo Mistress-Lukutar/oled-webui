@@ -22,6 +22,7 @@ export interface KeepaliveState {
 
 export interface VideoState {
   playing: boolean
+  preparing: boolean
   file: string | null
   loop: boolean
   fps: number
@@ -60,6 +61,7 @@ export interface LastContent {
 export interface StatusData {
   connected: boolean
   device: DeviceInfo | null
+  resolution: Resolution
   keepalive: KeepaliveState
   video: VideoState
   scene: SceneState

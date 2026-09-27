@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         default=True, description="Start keepalive automatically on connect"
     )
     preview_throttle: float = Field(
-        default=0.5, ge=0.1, description="Min seconds between video preview events"
+        default=0.2, ge=0.1, description="Min seconds between video preview events"
     )
     auto_connect: bool = Field(
         default=True, description="Open the USB device on server startup"
