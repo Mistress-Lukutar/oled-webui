@@ -98,6 +98,38 @@ def test_apply_requires_connection(client: TestClient) -> None:
     assert response.status_code == 409
 
 
+def test_asset_serving(client: TestClient) -> None:
+    scene_id = _create_scene(client)
+    upload = client.post(
+        f"/api/scenes/{scene_id}/assets",
+        files=[("files", ("mascot.png", b"\x89PNG-fake-bytes", "image/png"))],
+    )
+    assert upload.status_code == 200, upload.text
+    assert upload.json()["data"]["assets"] == ["mascot.png"]
+
+    served = client.get(f"/api/scenes/{scene_id}/assets/mascot.png")
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"
+    assert served.content == b"\x89PNG-fake-bytes"
+
+    assert (
+        client.get(f"/api/scenes/{scene_id}/assets/missing.png").status_code == 404
+    )
+    assert (
+        client.get(f"/api/scenes/{scene_id}/assets/../../scene.yaml").status_code
+        == 422
+    )
+
+
+def test_detail_includes_components(client: TestClient) -> None:
+    response = client.post("/api/scenes/seed-example")
+    assert response.status_code == 200, response.text
+    detail = response.json()["data"]
+    assert "ring-counter" in detail["components"]
+    assert "params:" in detail["components"]["ring-counter"]
+    assert "render:" in detail["components"]["ring-counter"]
+
+
 def test_seed_example_and_status_shape(client: TestClient) -> None:
     response = client.post("/api/scenes/seed-example")
     assert response.status_code == 200, response.text

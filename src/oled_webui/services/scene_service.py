@@ -257,6 +257,59 @@ class SceneService:
             return []
         return sorted(path.name for path in assets_dir.iterdir() if path.is_file())
 
+    def read_asset_path(self, scene_id: str, asset_name: str) -> Path:
+        """Resolve a stored asset file path for reading.
+
+        Args:
+            scene_id: Unique scene identifier.
+            asset_name: Stored asset file name as returned by
+                :meth:`list_assets`.
+
+        Returns:
+            Path to the asset file inside the scene's assets directory.
+
+        Raises:
+            SceneNotFoundError: If the scene or asset does not exist.
+            ValidationError: If the name is not a safe flat file name.
+        """
+        self.get_meta(scene_id)
+        safe = _safe_name(asset_name)
+        if not safe or safe != asset_name:
+            raise ValidationError(f"Invalid asset name: {asset_name!r}")
+        path = self._assets_dir(scene_id) / safe
+        if not path.is_file():
+            raise SceneNotFoundError(f"Asset not found: {asset_name}")
+        return path
+
+    def list_components(self, scene_id: str) -> dict[str, str]:
+        """Return component YAML sources keyed by component name.
+
+        Args:
+            scene_id: Unique scene identifier.
+
+        Returns:
+            Mapping of component name (file stem) to its YAML source;
+            empty when the scene defines no components.
+
+        Raises:
+            SceneNotFoundError: If the scene does not exist.
+        """
+        self.get_meta(scene_id)
+        components_dir = self._scene_dir(scene_id) / "components"
+        if not components_dir.is_dir():
+            return {}
+        sources: dict[str, str] = {}
+        for path in sorted(components_dir.iterdir()):
+            if path.suffix.lower() not in (".yaml", ".yml") or not path.is_file():
+                continue
+            try:
+                sources[path.stem] = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning(
+                    "scene_component_read_failed", file=str(path), error=str(exc)
+                )
+        return sources
+
     def delete_asset(self, scene_id: str, asset_name: str) -> None:
         """Delete one stored asset file.
 

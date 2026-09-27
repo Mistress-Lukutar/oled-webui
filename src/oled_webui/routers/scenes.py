@@ -6,12 +6,13 @@ Date:   2026-09-27
 Version: v0.2.0
 """
 
+import mimetypes
 from pathlib import Path
 from typing import Annotated, Any
 
 import anyio
 from fastapi import APIRouter, Form, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from oled_webui.core.models import Resolution
 from oled_webui.dependencies import (
@@ -31,12 +32,13 @@ EXAMPLE_DIR: Path = PROJECT_ROOT / "examples" / "scenes" / "dashboard"
 
 
 def _scene_response(scenes: ScenesDep, scene_id: str) -> dict[str, Any]:
-    """Build the scene detail payload (meta, YAML and assets)."""
+    """Build the scene detail payload (meta, YAML, assets and components)."""
     meta = scenes.get_meta(scene_id)
     return {
         "scene": meta.model_dump(),
         "yaml": scenes.read_yaml(scene_id),
         "assets": scenes.list_assets(scene_id),
+        "components": scenes.list_components(scene_id),
     }
 
 
@@ -100,8 +102,22 @@ async def preview_yaml(
 
 @router.get("/{scene_id}", response_model=StatusResponse)
 async def get_scene(scene_id: str, scenes: ScenesDep) -> StatusResponse:
-    """Return one scene's metadata, YAML source and asset list."""
+    """Return one scene's metadata, YAML source, assets and components."""
     return StatusResponse(data=_scene_response(scenes, scene_id))
+
+
+@router.get("/{scene_id}/assets/{asset_name}")
+async def get_asset(
+    scene_id: str, asset_name: str, scenes: ScenesDep
+) -> FileResponse:
+    """Serve a stored asset file (image or font) to the client.
+
+    The scene editor fetches images and fonts through this endpoint to
+    draw the canvas preview in the browser.
+    """
+    path = scenes.read_asset_path(scene_id, asset_name)
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media_type)
 
 
 @router.put("/{scene_id}", response_model=StatusResponse)

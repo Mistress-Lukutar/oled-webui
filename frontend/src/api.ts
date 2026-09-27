@@ -50,6 +50,8 @@ export interface SceneDetail {
   scene: SceneInfo
   yaml: string
   assets: string[]
+  /** Component YAML sources keyed by component name (for `use:` entries). */
+  components?: Record<string, string>
 }
 
 export interface LastContent {
@@ -146,6 +148,11 @@ function form(
   return data
 }
 
+/** URL of a stored scene asset (image/font), for canvas rendering. */
+function sceneAssetUrl(sceneId: string, name: string): string {
+  return `/api/scenes/${sceneId}/assets/${encodeURIComponent(name)}`
+}
+
 export const API = {
   getStatus: () => api<StatusData>('/api/device/status'),
   connect: () =>
@@ -225,6 +232,7 @@ export const API = {
     }),
   applyScene: (id: string) =>
     api<SceneState>(`/api/scenes/${id}/apply`, { method: 'POST' }),
+  sceneAssetUrl,
   stopScene: () => api<SceneState>('/api/scenes/stop', { method: 'POST' }),
   seedExampleScene: () =>
     api<SceneDetail>('/api/scenes/seed-example', { method: 'POST' }),
