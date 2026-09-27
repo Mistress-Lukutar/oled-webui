@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import shutil
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -32,7 +34,7 @@ from oled_webui.services.frame_builder import (
     build_black_frame,
     parse_hex_color,
 )
-from oled_webui.services.video_player import ensure_ffmpeg, iter_video_frames
+from oled_webui.services.video_player import ensure_ffmpeg, extract_video_frames
 
 if TYPE_CHECKING:
     from oled_webui.config import Settings
@@ -75,6 +77,7 @@ class DisplayService:
         self._video_stop = threading.Event()
         self._video_state: dict[str, Any] = {
             "playing": False,
+            "preparing": False,
             "file": None,
             "loop": False,
             "fps": 0,
@@ -513,6 +516,7 @@ class DisplayService:
         self._video_stop.clear()
         self._video_state = {
             "playing": True,
+            "preparing": True,
             "file": video_path.name,
             "loop": loop,
             "fps": fps,
@@ -551,29 +555,61 @@ class DisplayService:
         fit: str,
         quality: int,
     ) -> None:
-        """Decode and send frames until EOF, cancellation or stop request."""
-        builder = self._builder(rotation, brightness, fit, quality)
+        """Prepare panel-ready JPEG frames once, then stream the files.
+
+        All image processing (fit, rotation, brightness, JPEG encoding)
+        happens in a single ffmpeg pass before playback starts; the
+        streaming loop only reads encoded files and pushes them over USB,
+        keeping per-frame CPU cost near zero.
+
+        Args:
+            path: Video file readable by ffmpeg.
+            fps: Target frames per second.
+            loop: Restart playback when the file ends.
+            rotation: User rotation in degrees.
+            brightness: Software brightness 0-200 percent.
+            fit: Fit mode applied during extraction.
+            quality: JPEG quality applied during extraction.
+        """
+        handshake = self.require_connection()
+        width = handshake.resolution.width
+        height = handshake.resolution.height
         frame_interval = 1.0 / fps
+        frames_dir = Path(tempfile.mkdtemp(prefix="oled_video_"))
         try:
+            frames = await asyncio.to_thread(
+                extract_video_frames,
+                path,
+                frames_dir,
+                fps,
+                width,
+                height,
+                fit,
+                rotation,
+                brightness,
+                quality,
+                self._video_stop,
+            )
+            self._video_state["preparing"] = False
+            self._bus.publish_soon("video", dict(self._video_state))
+            last_progress = time.monotonic()
             while not self._video_stop.is_set():
-                frames = iter_video_frames(
-                    path, builder.width, builder.height, self._video_stop
-                )
-                while not self._video_stop.is_set():
-                    start = time.perf_counter()
-                    frame = await asyncio.to_thread(next, frames, None)
-                    if frame is None:
+                for frame_path in frames:
+                    if self._video_stop.is_set():
                         break
-                    frame = await asyncio.to_thread(builder.apply_rotation, frame)
-                    frame = await asyncio.to_thread(builder.apply_brightness, frame)
-                    payload = await asyncio.to_thread(builder.encode_jpeg, frame)
+                    start = time.perf_counter()
+                    payload = await asyncio.to_thread(frame_path.read_bytes)
                     await self._send_payload(
-                        payload,
-                        builder.width,
-                        builder.height,
-                        throttle_preview=True,
+                        payload, width, height, throttle_preview=True
                     )
                     self._video_state["frames_sent"] += 1
+
+                    # Periodic state push so the UI keeps the playback
+                    # status and frame counter current.
+                    now = time.monotonic()
+                    if now - last_progress >= 1.0:
+                        last_progress = now
+                        self._bus.publish_soon("video", dict(self._video_state))
 
                     elapsed = time.perf_counter() - start
                     sleep_time = frame_interval - elapsed
@@ -588,6 +624,7 @@ class DisplayService:
             await self._bus.publish("error", {"source": "video", "error": str(exc)})
         finally:
             self._video_state["playing"] = False
+            self._video_state["preparing"] = False
             await self._bus.publish(
                 "video",
                 {
@@ -596,6 +633,7 @@ class DisplayService:
                     "frames_sent": self._video_state["frames_sent"],
                 },
             )
+            await asyncio.to_thread(shutil.rmtree, frames_dir, True)
 
     # ------------------------------------------------------------------
     # Scene playback
