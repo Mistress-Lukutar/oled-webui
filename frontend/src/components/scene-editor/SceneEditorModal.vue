@@ -61,6 +61,24 @@ const ADD_BUTTONS = [
   { type: 'image', label: '▣', title: 'Add image widget (I)' },
 ] as const
 
+const helpVisible = ref(false)
+
+const SHORTCUTS: Array<[string, string]> = [
+  ['T / B / R / G / I', 'Add text / bar / ring / graph / image widget'],
+  ['Click / Shift+click', 'Select / extend selection'],
+  ['Drag on empty canvas', 'Marquee selection'],
+  ['Drag selection', 'Move (Alt disables snapping)'],
+  ['Handles', 'Resize · round handle rotates (image widgets)'],
+  ['Arrows', 'Nudge 1 px (Shift = 10 px)'],
+  ['Del', 'Delete selection'],
+  ['Ctrl+D', 'Duplicate selection'],
+  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'],
+  ['Space + drag / middle drag', 'Pan the viewport'],
+  ['Mouse wheel', 'Zoom'],
+  ['Ctrl+S', 'Save'],
+  ['Esc', 'Deselect / close editor'],
+]
+
 function addWidget(type: string): void {
   const override = state.resolutionOverride
   const panel = override ?? {
@@ -201,6 +219,10 @@ function onKeydown(event: KeyboardEvent): void {
     !event.altKey &&
     !isTypingTarget(event.target)
   ) {
+    if (event.key === '?') {
+      helpVisible.value = !helpVisible.value
+      return
+    }
     const addKeys: Record<string, string> = {
       t: 'text',
       b: 'bar',
@@ -284,6 +306,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <button :disabled="checking || loading" @click="checkFrame">
           {{ checking ? 'Rendering…' : 'Check frame' }}
         </button>
+        <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
+          ?
+        </button>
         <button
           class="primary"
           :disabled="saving || loading || state.syntaxError !== null"
@@ -366,6 +391,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
 
       <TimelinePanel />
+    </div>
+
+    <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
+      <div class="help-card">
+        <div class="help-head">
+          <span>Keyboard &amp; mouse</span>
+          <button class="preview-close" @click="helpVisible = false">×</button>
+        </div>
+        <table class="help-table">
+          <tbody>
+            <tr v-for="[keys, action] in SHORTCUTS" :key="keys">
+              <td class="keys">{{ keys }}</td>
+              <td>{{ action }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -582,6 +624,54 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .icon-btn {
   padding: 6px 10px;
+}
+
+.help-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.help-card {
+  width: 420px;
+  max-height: 80%;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.help-table td {
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(51, 51, 51, 0.5);
+}
+
+.help-table .keys {
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--accent);
+  white-space: nowrap;
+  width: 40%;
 }
 
 .status-errors {

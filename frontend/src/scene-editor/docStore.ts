@@ -77,7 +77,7 @@ function restore(snapshotText: string): void {
   for (const key of Object.keys(state.doc)) {
     if (!(key in doc)) delete state.doc[key]
   }
-  state.yamlText = stringifySceneYaml(state.doc)
+  state.yamlText = stringifySceneYaml(state.doc, state.yamlText)
   state.errors = validateSceneDoc(state.doc)
   state.selection = state.selection.filter((i) => i < (state.doc?.widgets?.length ?? 0))
   state.dirty = true
@@ -152,7 +152,7 @@ function mutate(fn: (doc: SceneDocumentRaw) => void): void {
   if (state.doc === null || state.syntaxError !== null) return
   if (batchDepth === 0) pushHistory()
   fn(state.doc)
-  state.yamlText = stringifySceneYaml(state.doc)
+  state.yamlText = stringifySceneYaml(state.doc, state.yamlText)
   state.errors = validateSceneDoc(state.doc)
   state.selection = state.selection.filter((i) => i < (state.doc?.widgets?.length ?? 0))
   state.dirty = true

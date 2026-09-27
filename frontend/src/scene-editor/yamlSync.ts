@@ -4,7 +4,7 @@
  * checks give instant feedback while typing.
  */
 
-import { Document, parse, stringify, YAMLMap, YAMLSeq } from 'yaml'
+import { Document, parse, parseDocument, stringify, YAMLMap, YAMLSeq } from 'yaml'
 import {
   EASINGS,
   WIDGET_TYPES,
@@ -235,12 +235,28 @@ export function parseSceneYaml(text: string): ParseResult {
 /**
  * Serialize the document back to YAML text. Short scalar sequences
  * (rect, at, pos...) are emitted inline in flow style to match the
- * hand-written scene conventions; everything else stays block-style.
+ * hand-written scene conventions. When the previous YAML text is given,
+ * comments are grafted from it (matched structurally by key/index), so
+ * header, section and trailing comments survive graphical edits.
  */
-export function stringifySceneYaml(doc: SceneDocumentRaw): string {
+export function stringifySceneYaml(doc: SceneDocumentRaw, previousText?: string): string {
   const yamlDoc = new Document(doc as Record<string, unknown>)
   markShortSeqsFlow(yamlDoc.contents as YAMLMap | YAMLSeq | null)
-  return stringify(yamlDoc, { lineWidth: 120 })
+  const regenerated = stringify(yamlDoc, { lineWidth: 120 })
+  if (previousText === undefined || previousText.trim() === '') {
+    return regenerated
+  }
+  try {
+    const prev = parseDocument(previousText)
+    const next = parseDocument(regenerated)
+    graftComments(prev.contents as YAMLMap | YAMLSeq | null, next.contents as YAMLMap | YAMLSeq | null)
+    if (next.commentBefore === undefined || next.commentBefore === null) {
+      next.commentBefore = prev.commentBefore
+    }
+    return String(next)
+  } catch {
+    return regenerated
+  }
 }
 
 function isCollection(node: unknown): node is YAMLMap | YAMLSeq {
@@ -266,6 +282,73 @@ function markShortSeqsFlow(node: YAMLMap | YAMLSeq | null): void {
   if (node instanceof YAMLMap) {
     for (const pair of node.items) {
       if (isCollection(pair.value)) markShortSeqsFlow(pair.value)
+    }
+  }
+}
+
+function keyOf(pair: { key: unknown }): string {
+  const key = (pair as { key: { value?: unknown; source?: unknown } }).key
+  return String(key?.value ?? key?.source ?? '')
+}
+
+type CommentedNode = YAMLMap | YAMLSeq | { commentBefore?: string; comment?: string }
+
+function commented(node: unknown): CommentedNode | undefined {
+  return node === undefined || node === null ? undefined : (node as CommentedNode)
+}
+
+/** Copy comments from the old CST onto the regenerated CST, best effort. */
+function graftComments(
+  prev: YAMLMap | YAMLSeq | null,
+  next: YAMLMap | YAMLSeq | null,
+): void {
+  if (prev === null || next === null) return
+  if (prev instanceof YAMLMap && next instanceof YAMLMap) {
+    const nextByKey = new Map(next.items.map((pair) => [keyOf(pair), pair]))
+    for (const prevPair of prev.items) {
+      const nextPair = nextByKey.get(keyOf(prevPair))
+      if (nextPair === undefined) continue
+      const prevKey = commented(prevPair.key)
+      const nextKey = commented(nextPair.key)
+      const prevValue = commented(prevPair.value)
+      const nextValue = commented(nextPair.value)
+      if (
+        prevKey?.commentBefore !== undefined &&
+        nextKey !== undefined &&
+        !nextKey.commentBefore
+      ) {
+        nextKey.commentBefore = prevKey.commentBefore
+      }
+      if (prevValue?.comment !== undefined && nextValue !== undefined && !nextValue.comment) {
+        nextValue.comment = prevValue.comment
+      }
+      if (isCollection(prevValue) && isCollection(nextValue)) {
+        if (prevValue.commentBefore && !nextValue.commentBefore) {
+          nextValue.commentBefore = prevValue.commentBefore
+        }
+        graftComments(prevValue, nextValue)
+      }
+    }
+    return
+  }
+  if (prev instanceof YAMLSeq && next instanceof YAMLSeq) {
+    const count = Math.min(prev.items.length, next.items.length)
+    for (let i = 0; i < count; i += 1) {
+      const prevItem = commented(prev.items[i])
+      const nextItem = commented(next.items[i])
+      if (prevItem === undefined || nextItem === undefined) continue
+      if (
+        prevItem.commentBefore !== undefined &&
+        !nextItem.commentBefore
+      ) {
+        nextItem.commentBefore = prevItem.commentBefore
+      }
+      if (prevItem.comment !== undefined && !nextItem.comment) {
+        nextItem.comment = prevItem.comment
+      }
+      if (isCollection(prevItem) && isCollection(nextItem)) {
+        graftComments(prevItem, nextItem)
+      }
     }
   }
 }

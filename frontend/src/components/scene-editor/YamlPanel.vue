@@ -13,6 +13,9 @@ function onInput(event: Event): void {
 
 <template>
   <div class="yaml-panel">
+    <div class="yaml-hint">
+      Graphical edits regenerate this source (comments preserved where possible).
+    </div>
     <textarea
       class="yaml-text"
       spellcheck="false"
@@ -39,6 +42,14 @@ function onInput(event: Event): void {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.yaml-hint {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
 }
 
 .yaml-text {
