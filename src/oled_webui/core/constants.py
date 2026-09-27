@@ -3,7 +3,7 @@ File:   constants.py
 Brief:  USB protocol constants and resolution profiles for 87AD:70DB.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 
 Protocol layout ported from the reverse-engineered CLI project; the byte
 offsets below are verified against a real wire capture.
@@ -97,7 +97,8 @@ DEFAULT_FIT: str = FIT_CONTAIN
 # user-requested rotation.
 DEFAULT_BASE_ROTATION: int = 180
 
-# Encoding defaults.
+# Rendering defaults applied globally to every content type.
+DEFAULT_BRIGHTNESS: int = 100
 DEFAULT_JPEG_QUALITY: int = 95
 
 

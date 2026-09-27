@@ -3,7 +3,7 @@ File:   scene_service.py
 Brief:  File-backed scene storage: YAML sources, metadata and assets.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ SCENE_TEMPLATE: str = """\
 refresh: 1.0            # data polling rate (Hz)
 max_fps: 20             # animation frame rate cap
 keepalive_interval: 2.0 # resend interval for unchanged frames
-# brightness: 100       # output brightness 0-200
-# quality: 95           # JPEG quality 1-100
+# Brightness and JPEG quality are global display settings
+# (Settings dialog in the web UI), not per-scene values.
 
 widgets:
   - type: text

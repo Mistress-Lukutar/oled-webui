@@ -3,7 +3,7 @@ File:   preset_service.py
 Brief:  File-backed preset storage with binary asset handling.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -35,7 +35,8 @@ class Preset(BaseModel):
         id: Unique preset identifier.
         name: Human-readable preset name.
         type: Content type: image, color or text.
-        params: Render parameters (rotation, brightness, fit, quality).
+        params: Render parameters (rotation, fit); brightness and quality
+            come from the global display settings at apply time.
         payload: Content payload (color, text fields or image file name).
         created_at: Unix timestamp of creation.
         has_asset: True when a binary asset file is stored alongside.

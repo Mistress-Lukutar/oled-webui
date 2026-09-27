@@ -3,11 +3,12 @@ File:   main.py
 Brief:  FastAPI application factory, lifespan and entry point.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,7 +42,7 @@ STATIC_DIR: Path = PROJECT_ROOT / "static"
 SSE_TOPICS: tuple[str, ...] = (
     "connection",
     "frame_updated",
-    "keepalive",
+    "display_settings",
     "video",
     "scene",
     "error",
@@ -85,6 +86,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.presets = PresetService(settings)
     app.state.scenes = SceneService(settings)
 
+    watcher = _start_power_watcher(display)
+
     if settings.auto_connect:
         try:
             await display.connect()
@@ -94,7 +97,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    if watcher is not None:
+        watcher.stop()
     await display.shutdown()
+
+
+def _start_power_watcher(display: DisplayService) -> Any | None:
+    """Start the Windows monitor-power watcher where it is supported.
+
+    Args:
+        display: Service receiving monitor on/off callbacks.
+
+    Returns:
+        The started watcher, or None on non-Windows platforms.
+    """
+    if sys.platform != "win32":
+        logger.info("monitor_power_watcher_unsupported", platform=sys.platform)
+        return None
+    from oled_webui.services.display_power_watcher import DisplayPowerWatcher
+
+    watcher = DisplayPowerWatcher(display.on_monitor_power)
+    watcher.start()
+    return watcher
 
 
 def _make_sse_bridge(topic: str) -> Any:

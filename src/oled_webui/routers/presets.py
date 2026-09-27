@@ -3,7 +3,7 @@ File:   presets.py
 Brief:  Preset CRUD, save-current and apply endpoints.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -96,16 +96,11 @@ async def _apply(
         return await display.send_image(
             asset,
             rotation=int(params.get("rotation", 0)),
-            brightness=int(params.get("brightness", 100)),
             fit=str(params.get("fit", "contain")),
-            quality=int(params.get("quality", 95)),
         )
 
     if preset.type == "color":
-        return await display.send_color(
-            str(preset.payload.get("color", "000000")),
-            int(params.get("brightness", 100)),
-        )
+        return await display.send_color(str(preset.payload.get("color", "000000")))
 
     if preset.type == "scene":
         scene_id = str(preset.payload.get("scene_id", ""))
@@ -123,7 +118,5 @@ async def _apply(
         valign=str(preset.payload.get("valign", "middle")),
         padding=int(preset.payload.get("padding", 20)),
         rotation=int(params.get("rotation", 0)),
-        brightness=int(params.get("brightness", 100)),
-        quality=int(params.get("quality", 95)),
         font_name=str(font_name) if font_name else None,
     )

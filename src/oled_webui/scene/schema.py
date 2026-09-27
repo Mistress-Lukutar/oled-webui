@@ -3,7 +3,7 @@ File:   schema.py
 Brief:  Pydantic schema for scene documents: background, widgets, animation.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -11,8 +11,6 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
-from oled_webui.core.constants import DEFAULT_JPEG_QUALITY
 
 
 class _Strict(BaseModel):
@@ -165,7 +163,11 @@ Widget = Annotated[
 
 
 class SceneDocument(BaseModel):
-    """Validated scene document: static background plus animated widgets."""
+    """Validated scene document: static background plus animated widgets.
+
+    Brightness and JPEG quality are global display settings managed by the
+    application, not per-scene values.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -178,5 +180,3 @@ class SceneDocument(BaseModel):
     keepalive_interval: float = Field(
         2.0, gt=0, description="Resend interval for unchanged frames in seconds"
     )
-    brightness: int = Field(100, ge=0, le=200, description="Output brightness percent")
-    quality: int = Field(DEFAULT_JPEG_QUALITY, ge=1, le=100, description="JPEG quality")

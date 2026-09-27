@@ -3,7 +3,7 @@ File:   test_api.py
 Brief:  API smoke tests over the full FastAPI app with a fake LCD.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -31,13 +31,17 @@ def test_health(client: TestClient) -> None:
 
 
 def test_status_shape(client: TestClient) -> None:
-    """Status contains device, keepalive, video and frame info."""
+    """Status contains device, settings, video and frame info."""
     body = client.get("/api/device/status").json()
     assert body["success"] is True
     data = body["data"]
     assert data["connected"] is True
     assert data["device"]["resolution"] == {"width": 1600, "height": 720}
-    assert "keepalive" in data and "video" in data
+    assert "settings" in data and "video" in data
+    settings = data["settings"]
+    assert settings["keepalive_enabled"] is False  # from OLED_KEEPALIVE_ENABLED
+    assert 0 <= settings["brightness"] <= 200
+    assert 1 <= settings["quality"] <= 100
 
 
 def test_connect_without_hardware_409(client: TestClient) -> None:
@@ -69,7 +73,7 @@ def test_send_image_upload(client: TestClient, sent_frames: list[dict]) -> None:
     response = client.post(
         "/api/frame/image",
         files={"file": ("test.png", _png_bytes(), "image/png")},
-        data={"brightness": "120", "fit": "stretch"},
+        data={"fit": "stretch"},
     )
     assert response.status_code == 200
     assert len(sent_frames) == 1
@@ -88,12 +92,56 @@ def test_send_text(client: TestClient, sent_frames: list[dict]) -> None:
 
 
 def test_off_on(client: TestClient, sent_frames: list[dict]) -> None:
-    """Off sends a black frame; on re-sends the cached frame."""
+    """Off sends a black frame; on restores the pre-blank content frame."""
     client.post("/api/frame/color", data={"color": "0000ff"})
-    before = len(sent_frames)
+    content_payload = sent_frames[-1]["payload"]
     assert client.post("/api/frame/off").status_code == 200
     assert client.post("/api/frame/on").status_code == 200
-    assert len(sent_frames) == before + 2
+    assert len(sent_frames) == 3
+    assert sent_frames[1]["payload"] != content_payload  # blanked to black
+    assert sent_frames[2]["payload"] == content_payload  # restored
+
+
+def test_display_settings_roundtrip(client: TestClient) -> None:
+    """Settings can be read and updated; omitted fields keep their value."""
+    current = client.get("/api/device/settings").json()["data"]
+    assert current["quality"] == 95
+
+    updated = client.post("/api/device/settings", json={"brightness": 40})
+    assert updated.status_code == 200
+    data = updated.json()["data"]
+    assert data["brightness"] == 40
+    assert data["quality"] == 95  # untouched
+    assert data["keepalive_enabled"] == current["keepalive_enabled"]
+
+    status = client.get("/api/device/status").json()["data"]
+    assert status["settings"]["brightness"] == 40
+
+
+def test_display_settings_validation(client: TestClient) -> None:
+    """Out-of-range settings are rejected with 422."""
+    response = client.post("/api/device/settings", json={"brightness": 999})
+    assert response.status_code == 422
+    response = client.post("/api/device/settings", json={"quality": 0})
+    assert response.status_code == 422
+    response = client.post("/api/device/settings", json={"keepalive_interval": 0.01})
+    assert response.status_code == 422
+
+
+def test_display_settings_persist_across_restart(client: TestClient) -> None:
+    """Saved settings survive a full app restart in the same data dir."""
+    client.post(
+        "/api/device/settings",
+        json={"brightness": 40, "blank_on_display_off": True},
+    )
+
+    from oled_webui.main import create_app
+
+    with TestClient(create_app()) as restarted:
+        settings = restarted.get("/api/device/settings").json()["data"]
+        assert settings["brightness"] == 40
+        assert settings["blank_on_display_off"] is True
+        assert settings["quality"] == 95
 
 
 def test_preview_returns_jpeg(client: TestClient) -> None:

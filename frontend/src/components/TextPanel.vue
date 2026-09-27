@@ -12,7 +12,6 @@ const align = ref<'left' | 'center' | 'right'>('center')
 const valign = ref<'top' | 'middle' | 'bottom'>('middle')
 const padding = ref(20)
 const rotation = ref(0)
-const brightness = ref(100)
 const fontName = ref<string>('')
 const sending = ref(false)
 
@@ -31,8 +30,6 @@ async function send(): Promise<void> {
     valign: valign.value,
     padding: padding.value,
     rotation: rotation.value,
-    brightness: brightness.value,
-    quality: 95,
     font_name: fontName.value === '' ? null : fontName.value,
   })
   sending.value = false
@@ -104,11 +101,6 @@ async function send(): Promise<void> {
     <div class="field">
       <label>Padding: {{ padding }}px</label>
       <input v-model.number="padding" type="range" min="0" max="200" />
-    </div>
-
-    <div class="field">
-      <label>Brightness: {{ brightness }}%</label>
-      <input v-model.number="brightness" type="range" min="0" max="200" />
     </div>
 
     <button class="primary send" :disabled="!state.connected || sending" @click="send">

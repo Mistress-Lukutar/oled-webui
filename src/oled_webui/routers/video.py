@@ -3,7 +3,7 @@ File:   video.py
 Brief:  Video upload, playback control and status endpoints.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -33,9 +33,7 @@ async def start_video(
     fps: int = Form(default=30, ge=1, le=60),
     loop: bool = Form(default=False),
     rotation: int = Form(default=0),
-    brightness: int = Form(default=100, ge=0, le=200),
     fit: str = Form(default="contain"),
-    quality: int = Form(default=95, ge=1, le=100),
 ) -> StatusResponse:
     """Upload a video and start streaming it to the display."""
     original = Path(file.filename or "")
@@ -53,9 +51,7 @@ async def start_video(
         fps=fps,
         loop=loop,
         rotation=rotation,
-        brightness=brightness,
         fit=fit,
-        quality=quality,
     )
     return StatusResponse(data=display.status()["video"])
 

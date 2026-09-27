@@ -3,7 +3,7 @@ File:   scenes.py
 Brief:  Scene CRUD, asset upload, preview render and playback endpoints.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 import mimetypes
@@ -198,5 +198,10 @@ async def _render_preview(document: Any, display: DisplayDep) -> bytes:
         Encoded JPEG bytes.
     """
     width, height = display.panel_resolution()
-    renderer = SceneRenderer(document, Resolution(width=width, height=height))
+    renderer = SceneRenderer(
+        document,
+        Resolution(width=width, height=height),
+        brightness=display.brightness,
+        quality=display.quality,
+    )
     return await anyio.to_thread.run_sync(renderer.render_frame)

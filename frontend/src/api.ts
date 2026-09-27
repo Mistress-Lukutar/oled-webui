@@ -15,9 +15,12 @@ export interface DeviceInfo {
   resolution: Resolution
 }
 
-export interface KeepaliveState {
-  enabled: boolean
-  interval: number
+export interface DisplaySettings {
+  keepalive_enabled: boolean
+  keepalive_interval: number
+  brightness: number
+  quality: number
+  blank_on_display_off: boolean
 }
 
 export interface VideoState {
@@ -64,7 +67,7 @@ export interface StatusData {
   connected: boolean
   device: DeviceInfo | null
   resolution: Resolution
-  keepalive: KeepaliveState
+  settings: DisplaySettings
   video: VideoState
   scene: SceneState
   has_frame: boolean
@@ -90,16 +93,12 @@ export interface TextRequest {
   valign: 'top' | 'middle' | 'bottom'
   padding: number
   rotation: number
-  brightness: number
-  quality: number
   font_name: string | null
 }
 
 export interface RenderOptions {
   rotation: number
-  brightness: number
   fit: 'contain' | 'stretch' | 'width' | 'height'
-  quality: number
 }
 
 interface Envelope<T> {
@@ -158,17 +157,18 @@ export const API = {
   connect: () =>
     api<DeviceInfo>('/api/device/connect', { method: 'POST' }),
   disconnect: () => api<StatusData>('/api/device/disconnect', { method: 'POST' }),
-  setKeepalive: (enabled: boolean, interval?: number) =>
-    api<KeepaliveState>('/api/device/keepalive', {
+  getDisplaySettings: () => api<DisplaySettings>('/api/device/settings'),
+  setDisplaySettings: (patch: Partial<DisplaySettings>) =>
+    api<DisplaySettings>('/api/device/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, interval }),
+      body: JSON.stringify(patch),
     }),
 
-  sendColor: (color: string, brightness: number) =>
+  sendColor: (color: string) =>
     api<Record<string, number>>('/api/frame/color', {
       method: 'POST',
-      body: form({ color, brightness }),
+      body: form({ color }),
     }),
   sendText: (req: TextRequest) =>
     api<Record<string, number>>('/api/frame/text', {

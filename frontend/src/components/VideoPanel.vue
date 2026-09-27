@@ -9,9 +9,7 @@ const file = ref<File | null>(null)
 const fps = ref(30)
 const loop = ref(false)
 const rotation = ref(0)
-const brightness = ref(100)
 const fit = ref<'contain' | 'stretch' | 'width' | 'height'>('contain')
-const quality = ref(90)
 const starting = ref(false)
 
 const playing = computed(() => state.video.playing)
@@ -21,9 +19,7 @@ async function start(): Promise<void> {
   starting.value = true
   await actions.startVideo(file.value, fps.value, loop.value, {
     rotation: rotation.value,
-    brightness: brightness.value,
     fit: fit.value,
-    quality: quality.value,
   })
   starting.value = false
 }
@@ -81,10 +77,6 @@ async function start(): Promise<void> {
             <option :value="180">180°</option>
             <option :value="270">270°</option>
           </select>
-        </div>
-        <div>
-          <label>Brightness: {{ brightness }}%</label>
-          <input v-model.number="brightness" type="range" min="0" max="200" />
         </div>
       </div>
 

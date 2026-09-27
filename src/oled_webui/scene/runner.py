@@ -3,7 +3,7 @@ File:   runner.py
 Brief:  Scene rendering state machine: evaluation, compositing, scheduling.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from PIL import Image, ImageDraw
 
+from oled_webui.core.constants import DEFAULT_BRIGHTNESS, DEFAULT_JPEG_QUALITY
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.expressions import Expression
 from oled_webui.scene.providers import DataSources
@@ -88,26 +89,28 @@ class SceneRenderer:
         self,
         scene: SceneDocument,
         resolution: Resolution,
-        brightness: int | None = None,
-        quality: int | None = None,
+        brightness: int = DEFAULT_BRIGHTNESS,
+        quality: int = DEFAULT_JPEG_QUALITY,
     ) -> None:
         """Prepare caches, providers and the static layer.
 
         Args:
             scene: Validated scene document.
             resolution: Panel resolution.
-            brightness: Optional override for the scene brightness.
-            quality: Optional override for the JPEG quality.
+            brightness: Global output brightness percent.
+            quality: Global JPEG encoding quality.
         """
         self._scene = scene
         self._providers = DataSources()
+        self._size = (resolution.width, resolution.height)
+        self._output = (brightness, quality)
+        self._output_dirty = False
         self._builder = FrameBuilder(
             width=resolution.width,
             height=resolution.height,
-            brightness=brightness if brightness is not None else scene.brightness,
-            quality=quality if quality is not None else scene.quality,
+            brightness=brightness,
+            quality=quality,
         )
-        self._size = (resolution.width, resolution.height)
         self._static = self._render_static(scene.background)
         self._runtimes: dict[int, WidgetRuntime] = {
             id(widget): WidgetRuntime(widget)
@@ -137,6 +140,27 @@ class SceneRenderer:
         """Animation frame rate cap of the scene."""
         return self._scene.max_fps
 
+    def set_output(self, brightness: int, quality: int) -> None:
+        """Update the global output settings and force a re-encode.
+
+        The next :meth:`tick` re-encodes the frame even when widget state
+        is unchanged, so the new settings become visible promptly.
+
+        Args:
+            brightness: Global output brightness percent.
+            quality: Global JPEG encoding quality.
+        """
+        if (brightness, quality) == self._output:
+            return
+        self._output = (brightness, quality)
+        self._builder = FrameBuilder(
+            width=self._size[0],
+            height=self._size[1],
+            brightness=brightness,
+            quality=quality,
+        )
+        self._output_dirty = True
+
     def tick(self, now: float | None = None) -> bytes | None:
         """Advance the scene by one tick.
 
@@ -162,7 +186,7 @@ class SceneRenderer:
         evaluated = self._evaluate(now)
         self._just_polled = False
         signature = [item.signature for item in evaluated]
-        if signature == self._last_signature:
+        if not self._output_dirty and signature == self._last_signature:
             if self._last_payload is not None and (
                 now - self._last_yield >= self._scene.keepalive_interval
             ):
@@ -170,6 +194,7 @@ class SceneRenderer:
                 return self._last_payload
             return None
 
+        self._output_dirty = False
         payload = self._compose_and_encode(evaluated)
         self._last_signature = signature
         self._last_payload = payload

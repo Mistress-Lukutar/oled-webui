@@ -169,8 +169,6 @@ function checkDocument(errors: string[], doc: SceneDocumentRaw): void {
   checkRange(errors, 'refresh', doc['refresh'], 0, 60)
   checkRange(errors, 'max_fps', doc['max_fps'], 0, 60)
   checkRange(errors, 'keepalive_interval', doc['keepalive_interval'], 0, null)
-  checkIntRange(errors, 'brightness', doc['brightness'], 0, 200)
-  checkIntRange(errors, 'quality', doc['quality'], 1, 100)
 
   const background = doc['background']
   if (background !== undefined) {

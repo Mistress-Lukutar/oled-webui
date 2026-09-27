@@ -3,7 +3,7 @@ File:   schemas.py
 Brief:  Pydantic request and response models for the HTTP API.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ class ColorRequest(BaseModel):
         pattern=r"^#?[0-9a-fA-F]{6}$",
         description="Hex color, with or without leading #",
     )
-    brightness: int = Field(default=100, ge=0, le=200)
 
 
 class TextRequest(BaseModel):
@@ -46,17 +45,22 @@ class TextRequest(BaseModel):
     valign: AlignV = Field(default="middle")
     padding: int = Field(default=20, ge=0, le=500)
     rotation: int = Field(default=0, ge=-360, le=360)
-    brightness: int = Field(default=100, ge=0, le=200)
-    quality: int = Field(default=95, ge=1, le=100)
     font_name: str | None = Field(default=None, description="TTF file in data/fonts")
 
 
-class KeepaliveRequest(BaseModel):
-    """Keepalive toggle request."""
+class DisplaySettingsRequest(BaseModel):
+    """Display settings update; omitted fields keep their current value."""
 
-    enabled: bool = Field(..., description="Whether keepalive should run")
-    interval: float | None = Field(
-        default=None, ge=0.1, description="Resend interval in seconds"
+    keepalive_enabled: bool | None = Field(None, description="Run keepalive loop")
+    keepalive_interval: float | None = Field(
+        None, ge=0.1, description="Resend interval in seconds"
+    )
+    brightness: int | None = Field(
+        None, ge=0, le=200, description="Global brightness percent"
+    )
+    quality: int | None = Field(None, ge=1, le=100, description="Global JPEG quality")
+    blank_on_display_off: bool | None = Field(
+        None, description="Blank panel when the Windows display powers off"
     )
 
 

@@ -125,8 +125,6 @@ export interface SceneDocumentRaw {
   refresh?: number
   max_fps?: number
   keepalive_interval?: number
-  brightness?: number
-  quality?: number
   [key: string]: unknown
 }
 
@@ -175,8 +173,6 @@ const DOC_KEYS = new Set([
   'refresh',
   'max_fps',
   'keepalive_interval',
-  'brightness',
-  'quality',
 ])
 
 const BASE_WIDGET_KEYS = new Set([

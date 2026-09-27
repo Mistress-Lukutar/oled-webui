@@ -3,7 +3,7 @@ File:   display_service.py
 Brief:  Central display orchestrator: USB serialization, keepalive, video.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -23,12 +23,19 @@ from oled_webui.core.constants import DEFAULT_RESOLUTION
 from oled_webui.core.models import HandshakeResult
 from oled_webui.exceptions import (
     DeviceNotConnectedError,
+    OledWebUIError,
     TransportError,
     ValidationError,
 )
 from oled_webui.scene.runner import SceneRenderer
 from oled_webui.scene.schema import SceneDocument
 from oled_webui.services.bulk_device import BulkLcd
+from oled_webui.services.display_settings import (
+    DisplaySettings,
+    resolve_display_settings,
+    save_display_settings,
+    settings_path,
+)
 from oled_webui.services.frame_builder import (
     FrameBuilder,
     build_black_frame,
@@ -50,6 +57,20 @@ TEST_COLORS: tuple[tuple[int, int, int], ...] = (
     (0, 0, 0),
 )
 
+# Frame cached while the panel is blanked: (payload, size, content record).
+_RestoreFrame = tuple[bytes, tuple[int, int], dict[str, Any] | None]
+
+
+def _consume_future(future: Any) -> None:
+    """Retrieve a cross-thread future's outcome to surface errors once.
+
+    Args:
+        future: Future returned by ``run_coroutine_threadsafe``.
+    """
+    error = future.exception()
+    if error is not None:
+        logger.warning("monitor_power_action_failed", error=str(error))
+
 
 class DisplayService:
     """Single owner of the USB display for the whole application.
@@ -59,6 +80,9 @@ class DisplayService:
     interleave bulk writes and corrupt frames. Blocking USB and Pillow work
     runs in worker threads via asyncio.to_thread so the event loop stays
     responsive.
+
+    Global output settings (keepalive, brightness, JPEG quality) live here
+    and apply to every content type; they are persisted across restarts.
     """
 
     def __init__(self, settings: Settings, bus: EventBus) -> None:
@@ -67,11 +91,13 @@ class DisplayService:
         self._lcd = BulkLcd()
         self._lock = asyncio.Lock()
         self._handshake: HandshakeResult | None = None
+        self._loop = asyncio.get_running_loop()
+
+        self._display_settings: DisplaySettings = resolve_display_settings(settings)
+        self._settings_file = settings_path(settings)
 
         self._keepalive_task: asyncio.Task[None] | None = None
         self._keepalive_stop = asyncio.Event()
-        self._keepalive_enabled = settings.keepalive_enabled
-        self._keepalive_interval = settings.keepalive_interval
 
         self._video_task: asyncio.Task[None] | None = None
         self._video_stop = threading.Event()
@@ -85,6 +111,7 @@ class DisplayService:
         }
 
         self._scene_task: asyncio.Task[None] | None = None
+        self._scene_renderer: SceneRenderer | None = None
         self._scene_state: dict[str, Any] = {
             "running": False,
             "scene_id": None,
@@ -97,6 +124,7 @@ class DisplayService:
         self._last_frame: bytes | None = None
         self._last_frame_size: tuple[int, int] | None = None
         self._last_content: dict[str, Any] | None = None
+        self._restore_frame: _RestoreFrame | None = None
         self._last_preview_emit: float = 0.0
 
         self._bg_tasks: set[asyncio.Task[Any]] = set()
@@ -127,7 +155,7 @@ class DisplayService:
         await self._bus.publish(
             "connection", {"connected": True, "device": result.model_dump()}
         )
-        if self._keepalive_enabled:
+        if self._display_settings.keepalive_enabled:
             await self._start_keepalive()
         return result
 
@@ -160,21 +188,27 @@ class DisplayService:
     # Frame sending
     # ------------------------------------------------------------------
 
-    def _builder(
-        self,
-        rotation: int = 0,
-        brightness: int = 100,
-        fit: str = "contain",
-        quality: int = 95,
-    ) -> FrameBuilder:
+    def _builder(self, rotation: int = 0, fit: str = "contain") -> FrameBuilder:
+        """Build a frame builder bound to the panel and global output settings.
+
+        Args:
+            rotation: Extra rotation in degrees on top of the panel base.
+            fit: Fit mode: contain, stretch, width or height.
+
+        Returns:
+            Configured frame builder.
+
+        Raises:
+            DeviceNotConnectedError: If the display is not connected.
+        """
         handshake = self.require_connection()
         return FrameBuilder(
             width=handshake.resolution.width,
             height=handshake.resolution.height,
             rotation=rotation,
-            brightness=brightness,
+            brightness=self._display_settings.brightness,
             fit=fit,
-            quality=quality,
+            quality=self._display_settings.quality,
         )
 
     async def _send_payload(
@@ -208,59 +242,55 @@ class DisplayService:
         self,
         image_path: Path,
         rotation: int = 0,
-        brightness: int = 100,
         fit: str = "contain",
-        quality: int = 95,
     ) -> dict[str, Any]:
         """Render and send an image file to the display.
+
+        Brightness and JPEG quality come from the global display settings.
 
         Args:
             image_path: Path to the source image (already saved on disk).
             rotation: Extra rotation in degrees on top of the panel base.
-            brightness: Software brightness 0-200 percent.
             fit: Fit mode: contain, stretch, width or height.
-            quality: JPEG quality 1-100.
 
         Returns:
             Summary dict with frame size and payload length.
         """
         await self.stop_scene()
-        builder = self._builder(rotation, brightness, fit, quality)
+        self._restore_frame = None
+        builder = self._builder(rotation, fit)
         frame = await asyncio.to_thread(builder.build_frame, image_path)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
         await self._send_payload(payload, builder.width, builder.height)
         self._last_content = {
             "type": "image",
-            "params": {
-                "rotation": rotation,
-                "brightness": brightness,
-                "fit": fit,
-                "quality": quality,
-            },
+            "params": {"rotation": rotation, "fit": fit},
             "payload": {"file": image_path.name},
         }
         logger.info("image_sent", file=image_path.name, bytes=len(payload))
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
-    async def send_color(self, color: str, brightness: int = 100) -> dict[str, Any]:
+    async def send_color(self, color: str) -> dict[str, Any]:
         """Fill the display with a solid color.
+
+        Brightness and JPEG quality come from the global display settings.
 
         Args:
             color: Hex color string (``#RRGGBB`` or ``RRGGBB``).
-            brightness: Software brightness 0-200 percent.
 
         Returns:
             Summary dict with frame size and payload length.
         """
         await self.stop_scene()
+        self._restore_frame = None
         rgb = parse_hex_color(color)
-        builder = self._builder(brightness=brightness)
+        builder = self._builder()
         image = builder.build_color_image(rgb)
         payload = await asyncio.to_thread(builder.encode_jpeg, image)
         await self._send_payload(payload, builder.width, builder.height)
         self._last_content = {
             "type": "color",
-            "params": {"brightness": brightness},
+            "params": {},
             "payload": {"color": color.lstrip("#")},
         }
         logger.info("color_sent", color=color, bytes=len(payload))
@@ -276,11 +306,11 @@ class DisplayService:
         valign: str = "middle",
         padding: int = 20,
         rotation: int = 0,
-        brightness: int = 100,
-        quality: int = 95,
         font_name: str | None = None,
     ) -> dict[str, Any]:
         """Render text and send it to the display.
+
+        Brightness and JPEG quality come from the global display settings.
 
         Args:
             text: Multi-line text content.
@@ -291,23 +321,20 @@ class DisplayService:
             valign: Vertical alignment: top, middle or bottom.
             padding: Margin around the text block in pixels.
             rotation: Extra rotation in degrees.
-            brightness: Software brightness 0-200 percent.
-            quality: JPEG quality 1-100.
             font_name: Optional TTF/OTF file name inside the fonts directory.
 
         Returns:
             Summary dict with frame size and payload length.
         """
         await self.stop_scene()
+        self._restore_frame = None
         font_path: Path | None = None
         if font_name:
             font_path = self._settings.fonts_dir / font_name
             if not font_path.is_file():
                 raise ValidationError(f"Font not found: {font_name}")
 
-        builder = self._builder(
-            rotation=rotation, brightness=brightness, quality=quality
-        )
+        builder = self._builder(rotation=rotation)
         fg = parse_hex_color(color)
         bg = parse_hex_color(background)
         frame = await asyncio.to_thread(
@@ -328,11 +355,7 @@ class DisplayService:
         await self._send_payload(payload, builder.width, builder.height)
         self._last_content = {
             "type": "text",
-            "params": {
-                "rotation": rotation,
-                "brightness": brightness,
-                "quality": quality,
-            },
+            "params": {"rotation": rotation},
             "payload": {
                 "text": text,
                 "font_size": font_size,
@@ -348,9 +371,18 @@ class DisplayService:
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
     async def power_off(self) -> None:
-        """Blank the display with a black frame (kept alive by keepalive)."""
+        """Blank the display with a black frame, caching the visible frame.
+
+        The cached frame is restored by :meth:`power_on`, so the panel can
+        be blanked for power saving without losing the current content.
+        """
         handshake = self.require_connection()
         await self.stop_scene()
+        if self._restore_frame is None:
+            cached = self._last_frame
+            cached_size = self._last_frame_size
+            if cached is not None and cached_size is not None:
+                self._restore_frame = (cached, cached_size, self._last_content)
         builder = self._builder()
         image = build_black_frame(
             handshake.resolution.width, handshake.resolution.height
@@ -361,25 +393,29 @@ class DisplayService:
         )
         self._last_content = {
             "type": "color",
-            "params": {"brightness": 100},
+            "params": {},
             "payload": {"color": "000000"},
         }
         logger.info("display_blanked")
 
     async def power_on(self) -> None:
-        """Re-send the last frame, restoring content after a blank.
+        """Restore the frame hidden by the last blank, or resend the last.
 
         Raises:
             ValidationError: If no frame has been sent yet.
         """
-        if self._last_frame is None or self._last_frame_size is None:
+        payload: bytes | None
+        size: tuple[int, int] | None
+        if self._restore_frame is not None:
+            payload, size, content = self._restore_frame
+            self._restore_frame = None
+            self._last_content = content
+        else:
+            payload, size = self._last_frame, self._last_frame_size
+        if payload is None or size is None:
             raise ValidationError("No cached frame to restore")
-        width, height = self._last_frame_size
-        async with self._lock:
-            await asyncio.to_thread(self._lcd.send, self._last_frame, width, height)
-        self._bus.publish_soon(
-            "frame_updated", {"width": width, "height": height, "ts": time.monotonic()}
-        )
+        width, height = size
+        await self._send_payload(payload, width, height)
         logger.info("display_restored")
 
     async def run_test(self, delay: float = 1.0) -> None:
@@ -400,38 +436,160 @@ class DisplayService:
             await asyncio.sleep(delay)
         self._last_content = {
             "type": "color",
-            "params": {"brightness": 100},
+            "params": {},
             "payload": {"color": "000000"},
         }
         logger.info("test_pattern_done")
 
     # ------------------------------------------------------------------
-    # Keepalive
+    # Display settings
     # ------------------------------------------------------------------
 
-    async def set_keepalive(self, enabled: bool, interval: float | None = None) -> None:
-        """Enable or disable the keepalive loop.
+    def display_settings(self) -> dict[str, Any]:
+        """Return the current display settings snapshot."""
+        return self._display_settings.model_dump()
+
+    @property
+    def brightness(self) -> int:
+        """Global software brightness percent applied to all content."""
+        return self._display_settings.brightness
+
+    @property
+    def quality(self) -> int:
+        """Global JPEG encoding quality applied to all content."""
+        return self._display_settings.quality
+
+    async def set_display_settings(
+        self,
+        *,
+        keepalive_enabled: bool | None = None,
+        keepalive_interval: float | None = None,
+        brightness: int | None = None,
+        quality: int | None = None,
+        blank_on_display_off: bool | None = None,
+    ) -> dict[str, Any]:
+        """Update and persist the global display settings.
 
         Args:
-            enabled: Whether the panel refresh loop should run.
-            interval: Optional new resend interval in seconds.
-        """
-        if interval is not None:
-            if interval < 0.1:
-                raise ValidationError("Keepalive interval must be >= 0.1 seconds")
-            self._keepalive_interval = interval
-        self._keepalive_enabled = enabled
+            keepalive_enabled: Whether the keepalive resend loop should run.
+            keepalive_interval: Resend interval in seconds (>= 0.1).
+            brightness: Global brightness percent (0-200).
+            quality: Global JPEG quality (1-100).
+            blank_on_display_off: Blank the panel when the Windows display
+                powers off; restore it when the display turns back on.
 
-        if enabled and self.is_connected:
+        Returns:
+            The updated settings snapshot.
+
+        Raises:
+            ValidationError: If a value is out of range.
+        """
+        if keepalive_interval is not None and keepalive_interval < 0.1:
+            raise ValidationError("Keepalive interval must be >= 0.1 seconds")
+        if brightness is not None and not 0 <= brightness <= 200:
+            raise ValidationError("Brightness must be 0-200 percent")
+        if quality is not None and not 1 <= quality <= 100:
+            raise ValidationError("Quality must be 1-100")
+
+        update: dict[str, Any] = {
+            key: value
+            for key, value in (
+                ("keepalive_enabled", keepalive_enabled),
+                ("keepalive_interval", keepalive_interval),
+                ("brightness", brightness),
+                ("quality", quality),
+                ("blank_on_display_off", blank_on_display_off),
+            )
+            if value is not None
+        }
+        self._display_settings = self._display_settings.model_copy(update=update)
+        save_display_settings(self._display_settings, self._settings_file)
+
+        if self._display_settings.keepalive_enabled and self.is_connected:
             await self._start_keepalive()
         else:
             await self._stop_keepalive()
+        await self._refresh_visible_content()
+        await self._bus.publish("display_settings", self.display_settings())
+        logger.info("display_settings_changed", **update)
+        return self.display_settings()
 
-        await self._bus.publish(
-            "keepalive",
-            {"enabled": enabled, "interval": self._keepalive_interval},
-        )
-        logger.info("keepalive_changed", enabled=enabled)
+    def on_monitor_power(self, monitor_on: bool) -> None:
+        """React to a Windows monitor power event (watcher thread).
+
+        Marshals the action onto the event loop; no-ops unless the
+        ``blank_on_display_off`` setting is enabled.
+
+        Args:
+            monitor_on: True when the Windows display turned on.
+        """
+        if not self._display_settings.blank_on_display_off:
+            return
+        if self._loop.is_closed():
+            return
+        coro = self.power_on() if monitor_on else self.power_off()
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        future.add_done_callback(_consume_future)
+
+    async def _refresh_visible_content(self) -> None:
+        """Re-render the visible content after output settings changed."""
+        content = self._last_content
+        if content is None or not self.is_connected:
+            return
+        if content.get("type") == "scene":
+            if self._scene_renderer is not None:
+                self._scene_renderer.set_output(
+                    self._display_settings.brightness,
+                    self._display_settings.quality,
+                )
+            return
+        if self._video_state["playing"]:
+            # Video frames are pre-extracted; new settings apply on the
+            # next playback start.
+            return
+        try:
+            await self._reapply_content(content)
+        except OledWebUIError as exc:
+            logger.warning("content_refresh_failed", error=str(exc))
+
+    async def _reapply_content(self, content: dict[str, Any]) -> None:
+        """Re-render one-shot content with the current global settings.
+
+        Args:
+            content: The ``last_content`` snapshot to replay.
+        """
+        content_type = content.get("type")
+        params = content.get("params", {})
+        payload = content.get("payload", {})
+        if content_type == "image":
+            path = self._settings.uploads_dir / str(payload.get("file", ""))
+            if not path.is_file():
+                logger.warning("content_refresh_missing_file", file=path.name)
+                return
+            await self.send_image(
+                path,
+                rotation=int(params.get("rotation", 0)),
+                fit=str(params.get("fit", "contain")),
+            )
+        elif content_type == "color":
+            await self.send_color(str(payload.get("color", "000000")))
+        elif content_type == "text":
+            font_name = payload.get("font_name")
+            await self.send_text(
+                text=str(payload.get("text", "")),
+                font_size=int(payload.get("font_size", 48)),
+                color=str(payload.get("color", "ffffff")),
+                background=str(payload.get("background", "000000")),
+                align=str(payload.get("align", "center")),
+                valign=str(payload.get("valign", "middle")),
+                padding=int(payload.get("padding", 20)),
+                rotation=int(params.get("rotation", 0)),
+                font_name=str(font_name) if font_name else None,
+            )
+
+    # ------------------------------------------------------------------
+    # Keepalive
+    # ------------------------------------------------------------------
 
     async def _start_keepalive(self) -> None:
         if self._keepalive_task is not None and not self._keepalive_task.done():
@@ -460,7 +618,8 @@ class DisplayService:
         while not self._keepalive_stop.is_set():
             try:
                 await asyncio.wait_for(
-                    self._keepalive_stop.wait(), timeout=self._keepalive_interval
+                    self._keepalive_stop.wait(),
+                    timeout=self._display_settings.keepalive_interval,
                 )
                 break
             except TimeoutError:
@@ -489,20 +648,19 @@ class DisplayService:
         fps: int = 30,
         loop: bool = False,
         rotation: int = 0,
-        brightness: int = 100,
         fit: str = "contain",
-        quality: int = 95,
     ) -> None:
         """Start streaming a video file to the display in the background.
+
+        Brightness and JPEG quality are taken from the global display
+        settings at the moment playback starts (frames are pre-extracted).
 
         Args:
             video_path: Video file readable by ffmpeg.
             fps: Target frames per second (1-60).
             loop: Restart playback when the file ends.
             rotation: Extra rotation in degrees.
-            brightness: Software brightness 0-200 percent.
             fit: Fit mode (applied before encoding).
-            quality: JPEG quality 1-100.
 
         Raises:
             ValidationError: If a video is already playing.
@@ -513,6 +671,7 @@ class DisplayService:
         if self._video_task is not None and not self._video_task.done():
             raise ValidationError("A video is already playing")
 
+        self._restore_frame = None
         self._video_stop.clear()
         self._video_state = {
             "playing": True,
@@ -523,7 +682,7 @@ class DisplayService:
             "frames_sent": 0,
         }
         self._video_task = asyncio.create_task(
-            self._video_loop(video_path, fps, loop, rotation, brightness, fit, quality)
+            self._video_loop(video_path, fps, loop, rotation, fit)
         )
         self._bg_tasks.add(self._video_task)
         self._video_task.add_done_callback(self._bg_tasks.discard)
@@ -551,9 +710,7 @@ class DisplayService:
         fps: int,
         loop: bool,
         rotation: int,
-        brightness: int,
         fit: str,
-        quality: int,
     ) -> None:
         """Prepare panel-ready JPEG frames once, then stream the files.
 
@@ -567,9 +724,7 @@ class DisplayService:
             fps: Target frames per second.
             loop: Restart playback when the file ends.
             rotation: User rotation in degrees.
-            brightness: Software brightness 0-200 percent.
             fit: Fit mode applied during extraction.
-            quality: JPEG quality applied during extraction.
         """
         handshake = self.require_connection()
         width = handshake.resolution.width
@@ -586,8 +741,8 @@ class DisplayService:
                 height,
                 fit,
                 rotation,
-                brightness,
-                quality,
+                self._display_settings.brightness,
+                self._display_settings.quality,
                 self._video_stop,
             )
             self._video_state["preparing"] = False
@@ -665,7 +820,10 @@ class DisplayService:
         renderer = SceneRenderer(
             document,
             handshake.resolution,
+            brightness=self._display_settings.brightness,
+            quality=self._display_settings.quality,
         )
+        self._scene_renderer = renderer
         self._scene_state = {
             "running": True,
             "scene_id": scene_id,
@@ -679,10 +837,7 @@ class DisplayService:
         self._scene_task.add_done_callback(self._bg_tasks.discard)
         self._last_content = {
             "type": "scene",
-            "params": {
-                "brightness": document.brightness,
-                "quality": document.quality,
-            },
+            "params": {},
             "payload": {"scene_id": scene_id, "name": scene_name},
         }
         await self._bus.publish(
@@ -711,6 +866,7 @@ class DisplayService:
     async def _stop_scene_task(self) -> None:
         """Cancel the scene loop task without publishing."""
         task = self._scene_task
+        self._scene_renderer = None
         if task is None or task.done():
             return
         task.cancel()
@@ -771,10 +927,7 @@ class DisplayService:
             "connected": self.is_connected,
             "device": device,
             "resolution": {"width": panel_width, "height": panel_height},
-            "keepalive": {
-                "enabled": self._keepalive_enabled,
-                "interval": self._keepalive_interval,
-            },
+            "settings": self.display_settings(),
             "video": dict(self._video_state),
             "scene": dict(self._scene_state),
             "has_frame": self.get_preview() is not None,

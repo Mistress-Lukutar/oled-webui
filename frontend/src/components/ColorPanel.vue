@@ -5,7 +5,6 @@ import { useDisplayStore } from '../composables/useDisplayStore'
 const { state, actions } = useDisplayStore()
 
 const color = ref('#ff0000')
-const brightness = ref(100)
 const sending = ref(false)
 
 const swatches: { hex: string; name: string }[] = [
@@ -21,7 +20,7 @@ const swatches: { hex: string; name: string }[] = [
 
 async function send(): Promise<void> {
   sending.value = true
-  await actions.sendColor(color.value.replace('#', ''), brightness.value)
+  await actions.sendColor(color.value.replace('#', ''))
   sending.value = false
 }
 </script>
@@ -45,11 +44,6 @@ async function send(): Promise<void> {
         :title="swatch.name"
         @click="color = swatch.hex"
       />
-    </div>
-
-    <div class="field">
-      <label>Brightness: {{ brightness }}%</label>
-      <input v-model.number="brightness" type="range" min="0" max="200" />
     </div>
 
     <button class="primary send" :disabled="!state.connected || sending" @click="send">

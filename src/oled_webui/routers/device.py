@@ -1,9 +1,9 @@
 """
 File:   device.py
-Brief:  Device connection, status and keepalive endpoints.
+Brief:  Device connection, status and display settings endpoints.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from oled_webui.dependencies import DisplayDep
-from oled_webui.models.schemas import KeepaliveRequest, StatusResponse
+from oled_webui.models.schemas import DisplaySettingsRequest, StatusResponse
 
 router = APIRouter(prefix="/api/device", tags=["device"])
 
@@ -36,11 +36,25 @@ async def disconnect(display: DisplayDep) -> StatusResponse:
     return StatusResponse(data=display.status())
 
 
-@router.post("/keepalive", response_model=StatusResponse)
-async def set_keepalive(req: KeepaliveRequest, display: DisplayDep) -> StatusResponse:
-    """Enable or disable the keepalive refresh loop."""
-    await display.set_keepalive(req.enabled, req.interval)
-    return StatusResponse(data=display.status()["keepalive"])
+@router.get("/settings", response_model=StatusResponse)
+async def get_display_settings(display: DisplayDep) -> StatusResponse:
+    """Return the persisted display settings snapshot."""
+    return StatusResponse(data=display.display_settings())
+
+
+@router.post("/settings", response_model=StatusResponse)
+async def set_display_settings(
+    req: DisplaySettingsRequest, display: DisplayDep
+) -> StatusResponse:
+    """Update global display settings (keepalive, brightness, quality)."""
+    data = await display.set_display_settings(
+        keepalive_enabled=req.keepalive_enabled,
+        keepalive_interval=req.keepalive_interval,
+        brightness=req.brightness,
+        quality=req.quality,
+        blank_on_display_off=req.blank_on_display_off,
+    )
+    return StatusResponse(data=data)
 
 
 @router.get("/info", response_model=StatusResponse)

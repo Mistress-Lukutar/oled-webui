@@ -3,7 +3,7 @@ File:   config.py
 Brief:  Application settings loaded from environment variables and .env.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -27,6 +27,10 @@ class Settings(BaseSettings):
         data_dir: Directory for presets, uploads, fonts and the last frame.
         keepalive_interval: Seconds between keepalive frame resends.
         keepalive_enabled: Whether keepalive starts automatically on connect.
+        brightness: Global software brightness percent for all content.
+        jpeg_quality: Global JPEG encoding quality for all content.
+        blank_on_display_off: Blank the panel when the Windows display
+            powers off.
         preview_throttle: Minimum seconds between preview SSE events during video.
         auto_connect: Try to open the USB device on server startup.
     """
@@ -50,6 +54,16 @@ class Settings(BaseSettings):
     )
     keepalive_enabled: bool = Field(
         default=True, description="Start keepalive automatically on connect"
+    )
+    brightness: int = Field(
+        default=100, ge=0, le=200, description="Global brightness percent"
+    )
+    jpeg_quality: int = Field(
+        default=95, ge=1, le=100, description="Global JPEG quality"
+    )
+    blank_on_display_off: bool = Field(
+        default=False,
+        description="Blank the panel when the Windows display powers off",
     )
     preview_throttle: float = Field(
         default=0.2, ge=0.1, description="Min seconds between video preview events"

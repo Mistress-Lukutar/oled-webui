@@ -7,9 +7,7 @@ const { state, actions } = useDisplayStore()
 
 const file = ref<File | null>(null)
 const rotation = ref(0)
-const brightness = ref(100)
 const fit = ref<'contain' | 'stretch' | 'width' | 'height'>('contain')
-const quality = ref(95)
 const sending = ref(false)
 
 const canSend = computed(() => file.value !== null && state.connected)
@@ -19,9 +17,7 @@ async function send(): Promise<void> {
   sending.value = true
   await actions.uploadImage(file.value, {
     rotation: rotation.value,
-    brightness: brightness.value,
     fit: fit.value,
-    quality: quality.value,
   })
   sending.value = false
 }
@@ -59,16 +55,6 @@ async function send(): Promise<void> {
           <option value="height">Fit height</option>
         </select>
       </div>
-    </div>
-
-    <div class="field">
-      <label>Brightness: {{ brightness }}%</label>
-      <input v-model.number="brightness" type="range" min="0" max="200" />
-    </div>
-
-    <div class="field">
-      <label>JPEG quality: {{ quality }}</label>
-      <input v-model.number="quality" type="range" min="10" max="100" />
     </div>
 
     <button class="primary send" :disabled="!canSend || sending" @click="send">

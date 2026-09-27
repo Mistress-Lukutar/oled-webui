@@ -1,12 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useDisplayStore } from '../composables/useDisplayStore'
+import DisplaySettingsModal from './DisplaySettingsModal.vue'
 
 const { state, actions } = useDisplayStore()
-
-function toggleKeepalive(event: Event): void {
-  const checked = (event.target as HTMLInputElement).checked
-  void actions.toggleKeepalive(checked)
-}
+const showSettings = ref(false)
 </script>
 
 <template>
@@ -24,15 +22,9 @@ function toggleKeepalive(event: Event): void {
       }}
     </span>
 
-    <label class="keepalive">
-      <input
-        type="checkbox"
-        :checked="state.keepalive.enabled"
-        :disabled="!state.connected"
-        @change="toggleKeepalive"
-      />
-      Keepalive
-    </label>
+    <button class="settings" title="Display settings" @click="showSettings = true">
+      ⚙ Settings
+    </button>
 
     <span class="badge" :class="{ active: state.video.playing }">
       {{ state.video.playing ? `Video: ${state.video.file}` : 'Video idle' }}
@@ -43,6 +35,8 @@ function toggleKeepalive(event: Event): void {
     </button>
     <button v-else @click="actions.disconnect()">Disconnect</button>
   </div>
+
+  <DisplaySettingsModal v-if="showSettings" @close="showSettings = false" />
 </template>
 
 <style scoped>
@@ -75,12 +69,7 @@ function toggleKeepalive(event: Event): void {
   font-family: Consolas, monospace;
 }
 
-.keepalive {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
+.settings {
   font-size: 13px;
-  color: var(--text);
 }
 </style>

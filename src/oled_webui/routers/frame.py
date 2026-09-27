@@ -3,7 +3,7 @@ File:   frame.py
 Brief:  Frame content endpoints: image, color, text, power, preview.
 Author: Mistress-Lukutar
 Date:   2026-09-27
-Version: v0.2.0
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -57,13 +57,11 @@ async def send_image(
     settings: SettingsDep,
     file: UploadFile,
     rotation: int = Form(default=0),
-    brightness: int = Form(default=100, ge=0, le=200),
     fit: str = Form(default="contain"),
-    quality: int = Form(default=95, ge=1, le=100),
 ) -> StatusResponse:
     """Upload an image and show it on the display."""
     path = _save_upload(file, settings.uploads_dir, "image")
-    result = await display.send_image(path, rotation, brightness, fit, quality)
+    result = await display.send_image(path, rotation, fit)
     return StatusResponse(data=result)
 
 
@@ -71,10 +69,9 @@ async def send_image(
 async def send_color(
     display: ConnectedDisplayDep,
     color: str = Form(default="ffffff", pattern=r"^#?[0-9a-fA-F]{6}$"),
-    brightness: int = Form(default=100, ge=0, le=200),
 ) -> StatusResponse:
     """Fill the display with a solid color."""
-    result = await display.send_color(color, brightness)
+    result = await display.send_color(color)
     return StatusResponse(data=result)
 
 
@@ -90,8 +87,6 @@ async def send_text(display: ConnectedDisplayDep, req: TextRequest) -> StatusRes
         valign=req.valign,
         padding=req.padding,
         rotation=req.rotation,
-        brightness=req.brightness,
-        quality=req.quality,
         font_name=req.font_name,
     )
     return StatusResponse(data=result)

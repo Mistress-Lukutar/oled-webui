@@ -515,13 +515,8 @@ const dataSourceList = [...DATA_SOURCES]
           <div class="field"><label>keepalive s</label>
             <input type="number" min="0" step="0.1" :value="num(state.doc?.keepalive_interval, 2)" @input="setDoc('keepalive_interval', Number(($event.target as HTMLInputElement).value))" />
           </div>
-          <div class="field"><label>brightness %</label>
-            <input type="number" min="0" max="200" :value="num(state.doc?.brightness, 100)" @input="setDoc('brightness', Number(($event.target as HTMLInputElement).value))" />
-          </div>
         </div>
-        <div class="field"><label>quality (1..100)</label>
-          <input type="number" min="1" max="100" :value="num(state.doc?.quality, 95)" @input="setDoc('quality', Number(($event.target as HTMLInputElement).value))" />
-        </div>
+        <div class="hint">Brightness and JPEG quality are global display settings (⚙ Settings).</div>
       </div>
 
       <div class="section">

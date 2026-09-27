@@ -5,6 +5,7 @@
 import { computed, reactive, readonly } from 'vue'
 import { API } from '../api'
 import type {
+  DisplaySettings,
   LastContent,
   Preset,
   RenderOptions,
@@ -18,7 +19,7 @@ interface StoreState {
   connected: boolean
   device: StatusData['device']
   resolution: StatusData['resolution']
-  keepalive: { enabled: boolean; interval: number }
+  settings: DisplaySettings
   video: StatusData['video']
   scene: SceneState
   hasFrame: boolean
@@ -44,7 +45,13 @@ const state = reactive<StoreState>({
   connected: false,
   device: null,
   resolution: { width: 480, height: 480 },
-  keepalive: { enabled: false, interval: 1.5 },
+  settings: {
+    keepalive_enabled: true,
+    keepalive_interval: 1.5,
+    brightness: 100,
+    quality: 95,
+    blank_on_display_off: false,
+  },
   video: { playing: false, preparing: false, file: null, loop: false, fps: 0, frames_sent: 0 },
   scene: { ...NO_SCENE },
   hasFrame: false,
@@ -61,7 +68,7 @@ function applyStatus(status: StatusData): void {
   state.connected = status.connected
   state.device = status.device
   state.resolution = status.resolution
-  state.keepalive = status.keepalive
+  state.settings = status.settings
   state.video = status.video
   state.scene = status.scene
   state.hasFrame = status.has_frame
@@ -105,7 +112,7 @@ function handleSseEvent(event: MessageEvent): void {
     void refreshStatus()
     return
   }
-  if (event.type === 'video' || event.type === 'keepalive') {
+  if (event.type === 'video' || event.type === 'display_settings') {
     void refreshStatus()
     return
   }
@@ -134,7 +141,7 @@ function startSse(): void {
   for (const type of [
     'connection',
     'frame_updated',
-    'keepalive',
+    'display_settings',
     'video',
     'scene',
     'error',
@@ -186,15 +193,15 @@ const actions = {
     })
   },
 
-  async toggleKeepalive(enabled: boolean): Promise<boolean> {
+  async setDisplaySettings(patch: Partial<DisplaySettings>): Promise<boolean> {
     return wrap(async () => {
-      state.keepalive = await API.setKeepalive(enabled, state.keepalive.interval)
+      state.settings = await API.setDisplaySettings(patch)
     })
   },
 
-  async sendColor(color: string, brightness: number): Promise<boolean> {
+  async sendColor(color: string): Promise<boolean> {
     return wrap(async () => {
-      await API.sendColor(color, brightness)
+      await API.sendColor(color)
     })
   },
 

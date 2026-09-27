@@ -8,13 +8,18 @@ from a browser. Protocol and transport are ported from the original
 
 - **Device** — connect/disconnect over raw USB bulk transfers, handshake,
   panel info (PM/SUB, resolution).
-- **Image** — upload an image, tune rotation / brightness / fit / JPEG
-  quality, live preview before and after sending.
+- **Image** — upload an image, tune rotation / fit, live preview before and
+  after sending.
 - **Color** — fill the panel with a solid color, quick swatches.
 - **Text** — multi-line text with size, colors, alignment, padding and
   optional custom TTF/OTF fonts (drop them into `data/fonts/`).
 - **Video** — upload a video, stream it to the panel via ffmpeg at a chosen
   FPS, loop, stop anytime.
+- **Display settings** — one global dialog (⚙ in the status bar) for
+  keepalive, brightness and JPEG quality plus an energy-saving option that
+  blanks the panel when the Windows display powers off and restores the
+  content when it turns back on. Settings persist across restarts and
+  apply to every content type.
 - **Scenes** — declarative YAML layouts: a static background collage plus
   live widgets (text, bar, ring, graph, image) driven by system metrics
   (CPU, RAM, disk, network, temps, clock; GPU via NVML when available).
@@ -30,9 +35,9 @@ from a browser. Protocol and transport are ported from the original
 - **Live preview** — the UI mirrors the last frame sent to the panel,
   updated in real time over SSE.
 
-Brightness is software-only (pixel LUT scaling, 0–200 %) — this panel has no
-hardware backlight control. "Off" sends a black frame kept alive by the
-keepalive loop; actual USB power cut is out of scope.
+Brightness is software-only (pixel LUT scaling, 0–200 %, global setting) —
+this panel has no hardware backlight control. "Off" sends a black frame kept
+alive by the keepalive loop; actual USB power cut is out of scope.
 
 ## Stack
 
@@ -72,7 +77,13 @@ Environment variables (prefix `OLED_`, `.env` supported):
 | `OLED_DATA_DIR`       | `./data`        | Presets, scenes, uploads, fonts, last frame |
 | `OLED_KEEPALIVE_ENABLED` | `true`       | Keepalive auto-start on connect          |
 | `OLED_KEEPALIVE_INTERVAL` | `1.5`       | Keepalive resend interval, seconds       |
+| `OLED_BRIGHTNESS`     | `100`           | Initial global brightness percent        |
+| `OLED_JPEG_QUALITY`   | `95`            | Initial global JPEG quality              |
+| `OLED_BLANK_ON_DISPLAY_OFF` | `false`   | Blank panel when the Windows display powers off |
 | `OLED_AUTO_CONNECT`   | `true`          | Connect to USB device on startup         |
+
+Env vars seed the defaults on first run; values changed in the settings
+dialog are stored in `data/display_settings.json` and take precedence.
 
 ## USB driver
 
@@ -87,9 +98,9 @@ device and *WinUSB*). On Linux, install `libusb-1.0` and add a udev rule for
 |---|---|---|
 | `/api/device/status` | GET | Full status snapshot |
 | `/api/device/connect` `/disconnect` | POST | Connection control |
-| `/api/device/keepalive` | POST | Toggle keepalive `{enabled, interval}` |
+| `/api/device/settings` | GET/POST | Read / update display settings `{keepalive_enabled, keepalive_interval, brightness, quality, blank_on_display_off}` |
 | `/api/frame/image` | POST | multipart `file` + render params |
-| `/api/frame/color` | POST | multipart `color`, `brightness` |
+| `/api/frame/color` | POST | multipart `color` |
 | `/api/frame/text` | POST | JSON `TextRequest` |
 | `/api/frame/off` `/on` `/test` | POST | Power / test pattern |
 | `/api/frame/preview` | GET | Last frame as JPEG |
@@ -115,7 +126,7 @@ One JSON file per preset in `data/presets/`, binary assets stored alongside:
   "id": "9f2c41a8b0d3",
   "name": "Living room",
   "type": "image",
-  "params": {"rotation": 0, "brightness": 100, "fit": "contain", "quality": 95},
+  "params": {"rotation": 0, "fit": "contain"},
   "payload": {"file": "9f2c41a8b0d3.png"},
   "created_at": 1769500000.0,
   "has_asset": true
