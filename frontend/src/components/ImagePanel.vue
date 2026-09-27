@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplayStore } from '../composables/useDisplayStore'
+import FileDropZone from './FileDropZone.vue'
 
 const { state, actions } = useDisplayStore()
 
 const file = ref<File | null>(null)
-const localPreview = ref<string | null>(null)
 const rotation = ref(0)
 const brightness = ref(100)
 const fit = ref<'contain' | 'stretch' | 'width' | 'height'>('contain')
@@ -13,14 +13,6 @@ const quality = ref(95)
 const sending = ref(false)
 
 const canSend = computed(() => file.value !== null && state.connected)
-
-function onFileChange(event: Event): void {
-  const input = event.target as HTMLInputElement
-  const selected = input.files?.[0] ?? null
-  file.value = selected
-  if (localPreview.value !== null) URL.revokeObjectURL(localPreview.value)
-  localPreview.value = selected ? URL.createObjectURL(selected) : null
-}
 
 async function send(): Promise<void> {
   if (file.value === null) return
@@ -37,14 +29,16 @@ async function send(): Promise<void> {
 
 <template>
   <div>
-    <div class="field">
-      <label>Image file</label>
-      <input type="file" accept="image/*" @change="onFileChange" />
-    </div>
-
-    <div v-if="localPreview" class="local-preview">
-      <img :src="localPreview" alt="Selected image" />
-    </div>
+    <FileDropZone
+      v-model="file"
+      accept="image/*"
+      :mime-types="['image/']"
+      :extensions="['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp']"
+      icon="image"
+      title="Drop an image here"
+      hint="or click to browse · Ctrl+V pastes from clipboard"
+      formats="PNG · JPG · GIF · WebP · BMP"
+    />
 
     <div class="row field">
       <div>
@@ -84,20 +78,6 @@ async function send(): Promise<void> {
 </template>
 
 <style scoped>
-.local-preview {
-  margin-bottom: 12px;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: #000;
-  text-align: center;
-}
-
-.local-preview img {
-  max-width: 100%;
-  max-height: 160px;
-}
-
 .send {
   width: 100%;
 }

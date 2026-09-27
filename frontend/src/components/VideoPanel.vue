@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDisplayStore } from '../composables/useDisplayStore'
+import FileDropZone from './FileDropZone.vue'
 
 const { state, actions } = useDisplayStore()
 
@@ -14,11 +15,6 @@ const quality = ref(90)
 const starting = ref(false)
 
 const playing = computed(() => state.video.playing)
-
-function onFileChange(event: Event): void {
-  const input = event.target as HTMLInputElement
-  file.value = input.files?.[0] ?? null
-}
 
 async function start(): Promise<void> {
   if (file.value === null) return
@@ -48,10 +44,17 @@ async function start(): Promise<void> {
     </div>
 
     <template v-else>
-      <div class="field">
-        <label>Video file (ffmpeg decodes it on the host)</label>
-        <input type="file" accept="video/*,.gif" @change="onFileChange" />
-      </div>
+      <FileDropZone
+        v-model="file"
+        accept="video/*,.gif"
+        :mime-types="['video/', 'image/gif']"
+        :extensions="['.mp4', '.avi', '.mkv', '.mov', '.webm', '.gif', '.m4v']"
+        icon="video"
+        preview="video"
+        title="Drop a video here"
+        hint="or click to browse · Ctrl+V pastes from clipboard"
+        formats="MP4 · AVI · MKV · MOV · WEBM · GIF"
+      />
 
       <div class="row field">
         <div>
