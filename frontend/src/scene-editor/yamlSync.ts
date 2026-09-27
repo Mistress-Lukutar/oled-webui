@@ -131,7 +131,7 @@ function checkEntry(errors: string[], index: number, entry: EntryRaw): void {
   for (const key of unknownWidgetKeys(entry)) {
     errors.push(`${where} (${type}): unknown key "${key}"`)
   }
-  if (type !== 'text' && typeof entry['source'] !== 'string') {
+  if (type !== 'text' && type !== 'image' && typeof entry['source'] !== 'string') {
     errors.push(`${where} (${type}): "source" is required`)
   }
   if (type === 'image' && typeof entry['path'] !== 'string') {

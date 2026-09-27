@@ -3,10 +3,11 @@
  * Near-fullscreen scene editor modal: toolbar, layers, viewport/YAML
  * center area and the inspector. Opens instead of the old inline editor.
  */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { API } from '../../api'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
+import EditorCanvas from './EditorCanvas.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import LayersPanel from './LayersPanel.vue'
 import YamlPanel from './YamlPanel.vue'
@@ -29,6 +30,26 @@ const VIEW_MODES = [
 ] as const
 
 const widgetCount = (): number => state.doc?.widgets?.length ?? 0
+
+const RESOLUTIONS: Record<string, { width: number; height: number }> = {
+  '480x480': { width: 480, height: 480 },
+  '1600x720': { width: 1600, height: 720 },
+  '1920x462': { width: 1920, height: 462 },
+}
+
+const resolutionKey = computed((): string => {
+  const override = state.resolutionOverride
+  if (override === null) return 'auto'
+  for (const [key, res] of Object.entries(RESOLUTIONS)) {
+    if (res.width === override.width && res.height === override.height) return key
+  }
+  return 'auto'
+})
+
+function onResolutionChange(event: Event): void {
+  const key = (event.target as HTMLSelectElement).value
+  editor.setResolutionOverride(RESOLUTIONS[key] ?? null)
+}
 
 onMounted(async () => {
   try {
@@ -168,9 +189,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               v-if="state.viewMode === 'design' || state.viewMode === 'split'"
               class="viewport-wrap"
             >
-              <div class="viewport-placeholder">
-                Canvas viewport — stage 2
-              </div>
+              <EditorCanvas />
               <div
                 v-if="previewUrl !== null"
                 class="frame-preview"
@@ -191,7 +210,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
           </div>
           <div class="statusbar">
-            <span>{{ appState.resolution.width }}×{{ appState.resolution.height }}</span>
+            <select
+              class="res-select"
+              :value="resolutionKey"
+              title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
+              @change="onResolutionChange"
+            >
+              <option value="auto">
+                Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
+              </option>
+              <option value="480x480">480×480</option>
+              <option value="1600x720">1600×720</option>
+              <option value="1920x462">1920×462</option>
+            </select>
             <span>{{ widgetCount() }} widgets</span>
             <span
               v-if="state.errors.length > 0 || state.syntaxError !== null"
@@ -344,14 +375,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.viewport-placeholder {
-  color: var(--text-dim);
-  font-size: 13px;
 }
 
 .yaml-wrap {
@@ -403,12 +426,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .statusbar {
   display: flex;
   gap: 16px;
+  align-items: center;
   padding: 4px 12px;
   border-top: 1px solid var(--border);
   background: var(--bg-panel);
   font-size: 11px;
   color: var(--text-dim);
   flex: none;
+}
+
+.res-select {
+  width: auto;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 6px;
 }
 
 .status-errors {

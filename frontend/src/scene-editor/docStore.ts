@@ -27,6 +27,8 @@ interface EditorState {
   selection: number[]
   dirty: boolean
   viewMode: ViewMode
+  /** Canvas size override (panel profiles) for editing without hardware. */
+  resolutionOverride: { width: number; height: number } | null
   /** Timeline state shared by the canvas and the timeline panel. */
   time: number
   playing: boolean
@@ -45,6 +47,7 @@ const state = reactive<EditorState>({
   selection: [],
   dirty: false,
   viewMode: 'design',
+  resolutionOverride: null,
   time: 0,
   playing: false,
   loopDuration: 10,
@@ -89,6 +92,12 @@ function setSelection(indices: number[]): void {
 
 function setViewMode(mode: ViewMode): void {
   state.viewMode = mode
+}
+
+function setResolutionOverride(
+  resolution: { width: number; height: number } | null,
+): void {
+  state.resolutionOverride = resolution
 }
 
 function setName(name: string): void {
@@ -155,6 +164,7 @@ export const editor = {
   getWidgets,
   setSelection,
   setViewMode,
+  setResolutionOverride,
   setName,
   setTime,
   setPlaying,
