@@ -11,6 +11,7 @@ import { viewCenter } from '../../scene-editor/viewState'
 import EditorCanvas from './EditorCanvas.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import LayersPanel from './LayersPanel.vue'
+import TimelinePanel from './TimelinePanel.vue'
 import YamlPanel from './YamlPanel.vue'
 
 const props = defineProps<{ sceneId: string }>()
@@ -363,6 +364,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <InspectorPanel />
         </aside>
       </div>
+
+      <TimelinePanel />
     </div>
   </div>
 </template>

@@ -232,6 +232,14 @@ function rotateRawTo(sourceIndex: number, degrees: number): void {
 
 const SNAP_THRESHOLD = 5 / 1 // screen px; converted per event
 
+function capturePointer(panel: HTMLCanvasElement, event: PointerEvent): void {
+  try {
+    panel.setPointerCapture(event.pointerId)
+  } catch {
+    // Synthetic pointers (tests) have no active pointer to capture.
+  }
+}
+
 function onPointerdown(event: PointerEvent): void {
   const panel = canvas.value
   if (panel === null) return
@@ -243,7 +251,7 @@ function onPointerdown(event: PointerEvent): void {
       panX: panX.value,
       panY: panY.value,
     }
-    panel.setPointerCapture(event.pointerId)
+    capturePointer(panel, event)
     event.preventDefault()
     return
   }
@@ -262,7 +270,7 @@ function onPointerdown(event: PointerEvent): void {
         center: { x: single.box.x + single.box.w / 2, y: single.box.y + single.box.h / 2 },
       }
       editor.beginBatch()
-      panel.setPointerCapture(event.pointerId)
+      capturePointer(panel, event)
       return
     }
     if (handle !== null && !single.isInstance) {
@@ -275,7 +283,7 @@ function onPointerdown(event: PointerEvent): void {
         startY: point.y,
       }
       editor.beginBatch()
-      panel.setPointerCapture(event.pointerId)
+      capturePointer(panel, event)
       return
     }
   }
@@ -325,7 +333,7 @@ function onPointerdown(event: PointerEvent): void {
       }
       interaction = { kind: 'drag', startX: point.x, startY: point.y, origins }
       editor.beginBatch()
-      panel.setPointerCapture(event.pointerId)
+      capturePointer(panel, event)
       return
     }
   }
@@ -334,7 +342,7 @@ function onPointerdown(event: PointerEvent): void {
   if (!event.shiftKey) editor.setSelection([])
   interaction = { kind: 'marquee', startX: point.x, startY: point.y }
   marquee.value = { x1: point.x, y1: point.y, x2: point.x, y2: point.y }
-  panel.setPointerCapture(event.pointerId)
+  capturePointer(panel, event)
 }
 
 function onPointermove(event: PointerEvent): void {
