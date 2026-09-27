@@ -4,7 +4,7 @@
  * checks give instant feedback while typing.
  */
 
-import { parse, stringify } from 'yaml'
+import { Document, parse, stringify, YAMLMap, YAMLSeq } from 'yaml'
 import {
   EASINGS,
   WIDGET_TYPES,
@@ -232,13 +232,42 @@ export function parseSceneYaml(text: string): ParseResult {
   return { doc, errors }
 }
 
-/** Serialize the document back to YAML text. */
+/**
+ * Serialize the document back to YAML text. Short scalar sequences
+ * (rect, at, pos...) are emitted inline in flow style to match the
+ * hand-written scene conventions; everything else stays block-style.
+ */
 export function stringifySceneYaml(doc: SceneDocumentRaw): string {
-  return stringify(doc, {
-    lineWidth: 120,
-    defaultStringType: 'PLAIN',
-    singleQuote: false,
-  })
+  const yamlDoc = new Document(doc as Record<string, unknown>)
+  markShortSeqsFlow(yamlDoc.contents as YAMLMap | YAMLSeq | null)
+  return stringify(yamlDoc, { lineWidth: 120 })
+}
+
+function isCollection(node: unknown): node is YAMLMap | YAMLSeq {
+  return node instanceof YAMLMap || node instanceof YAMLSeq
+}
+
+function markShortSeqsFlow(node: YAMLMap | YAMLSeq | null): void {
+  if (node === null) return
+  if (node instanceof YAMLSeq) {
+    const items = node.items
+    if (
+      items.length > 0 &&
+      items.length <= 8 &&
+      items.every((item) => !(item instanceof YAMLMap) && !(item instanceof YAMLSeq))
+    ) {
+      node.flow = true
+    }
+    for (const item of items) {
+      if (isCollection(item)) markShortSeqsFlow(item)
+    }
+    return
+  }
+  if (node instanceof YAMLMap) {
+    for (const pair of node.items) {
+      if (isCollection(pair.value)) markShortSeqsFlow(pair.value)
+    }
+  }
 }
 
 /** First widget referenced by a value template placeholder, if any. */

@@ -4,7 +4,7 @@
  * after graphical mutations and parsed back after text edits.
  */
 
-import { reactive, readonly } from 'vue'
+import { reactive, readonly, ref } from 'vue'
 import { API } from '../api'
 import type { SceneDetail } from '../api'
 import { parseSceneYaml, stringifySceneYaml, validateSceneDoc } from './yamlSync'
@@ -53,6 +53,75 @@ const state = reactive<EditorState>({
   loopDuration: 10,
 })
 
+// ----------------------------------------------------------------------
+// Undo/redo: JSON snapshots of the whole document. Batches (drags) push
+// exactly one snapshot via beginBatch()/endBatch().
+// ----------------------------------------------------------------------
+
+const MAX_HISTORY = 100
+let undoStack: string[] = []
+let redoStack: string[] = []
+let batchDepth = 0
+/** Bump whenever history contents change, for reactive canUndo/canRedo. */
+const historyVersion = ref(0)
+
+function snapshot(): string {
+  return JSON.stringify(state.doc)
+}
+
+function restore(snapshotText: string): void {
+  if (state.doc === null) return
+  const doc = JSON.parse(snapshotText) as SceneDocumentRaw
+  Object.assign(state.doc, doc)
+  // Drop keys that disappeared (Object.assign keeps stale extras).
+  for (const key of Object.keys(state.doc)) {
+    if (!(key in doc)) delete state.doc[key]
+  }
+  state.yamlText = stringifySceneYaml(state.doc)
+  state.errors = validateSceneDoc(state.doc)
+  state.selection = state.selection.filter((i) => i < (state.doc?.widgets?.length ?? 0))
+  state.dirty = true
+  historyVersion.value += 1
+}
+
+function pushHistory(): void {
+  undoStack.push(snapshot())
+  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  redoStack = []
+  historyVersion.value += 1
+}
+
+function beginBatch(): void {
+  if (batchDepth === 0) pushHistory()
+  batchDepth += 1
+}
+
+function endBatch(): void {
+  batchDepth = Math.max(0, batchDepth - 1)
+}
+
+function undo(): void {
+  if (undoStack.length === 0 || batchDepth > 0) return
+  redoStack.push(snapshot())
+  restore(undoStack.pop()!)
+}
+
+function redo(): void {
+  if (redoStack.length === 0 || batchDepth > 0) return
+  undoStack.push(snapshot())
+  restore(redoStack.pop()!)
+}
+
+function canUndo(): boolean {
+  void historyVersion.value
+  return undoStack.length > 0
+}
+
+function canRedo(): boolean {
+  void historyVersion.value
+  return redoStack.length > 0
+}
+
 function applyText(text: string, markDirty: boolean): void {
   const result = parseSceneYaml(text)
   state.yamlText = text
@@ -76,9 +145,12 @@ function getWidgets(): readonly EntryRaw[] {
 /**
  * Apply a mutation to the raw document and regenerate the YAML text.
  * All graphical edits must go through this to keep both views in sync.
+ * History: batches capture one snapshot via beginBatch(); standalone
+ * calls capture automatically.
  */
 function mutate(fn: (doc: SceneDocumentRaw) => void): void {
   if (state.doc === null || state.syntaxError !== null) return
+  if (batchDepth === 0) pushHistory()
   fn(state.doc)
   state.yamlText = stringifySceneYaml(state.doc)
   state.errors = validateSceneDoc(state.doc)
@@ -129,6 +201,10 @@ async function load(sceneId: string): Promise<void> {
   state.time = 0
   state.playing = false
   state.viewMode = 'design'
+  undoStack = []
+  redoStack = []
+  batchDepth = 0
+  historyVersion.value += 1
   applyText(detail.yaml, false)
 }
 
@@ -155,6 +231,53 @@ async function removeAsset(name: string): Promise<void> {
   state.assets = result.assets
 }
 
+/** Delete raw widget entries by index (indices must be sorted asc). */
+function deleteEntries(indices: number[]): void {
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    for (const index of [...indices].sort((a, b) => b - a)) {
+      if (index >= 0 && index < widgets.length) widgets.splice(index, 1)
+    }
+  })
+}
+
+/** Deep-clone raw entries and insert the copies after the last source. */
+function duplicateEntries(indices: number[]): void {
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    const clones = indices
+      .filter((i) => i >= 0 && i < widgets.length)
+      .map((i) => JSON.parse(JSON.stringify(widgets[i])) as EntryRaw)
+    widgets.splice(Math.max(...indices) + 1, 0, ...clones)
+  })
+}
+
+/** Move an entry to a new position (layers panel reorder = z-order). */
+function moveEntry(from: number, to: number): void {
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    if (from < 0 || from >= widgets.length) return
+    const target = Math.max(0, Math.min(widgets.length - 1, to))
+    const [entry] = widgets.splice(from, 1)
+    if (entry !== undefined) widgets.splice(target, 0, entry)
+  })
+}
+
+/** Set one field on a raw entry (graphical edits, inspector). */
+function setEntryField(index: number, field: string, value: unknown): void {
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    const entry = widgets[index]
+    if (entry === undefined || !isObject(entry)) return
+    if (value === undefined) delete entry[field]
+    else entry[field] = value
+  })
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export const editor = {
   state: readonly(state),
   load,
@@ -171,6 +294,16 @@ export const editor = {
   setLoopDuration,
   uploadAssets,
   removeAsset,
+  beginBatch,
+  endBatch,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+  deleteEntries,
+  duplicateEntries,
+  moveEntry,
+  setEntryField,
 }
 
 export type EditorStore = typeof editor

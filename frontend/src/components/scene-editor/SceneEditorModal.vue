@@ -120,9 +120,71 @@ function onKeydown(event: KeyboardEvent): void {
     if (!saving.value && state.syntaxError === null) void save()
     return
   }
-  if (event.key === 'Escape' && !event.defaultPrevented) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    if (event.shiftKey) editor.redo()
+    else editor.undo()
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    editor.redo()
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+    if (isTypingTarget(event.target) || state.selection.length === 0) return
+    event.preventDefault()
+    editor.duplicateEntries([...state.selection])
+    return
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (isTypingTarget(event.target) || state.selection.length === 0) return
+    event.preventDefault()
+    editor.deleteEntries([...state.selection])
+    return
+  }
+  if (event.key.startsWith('Arrow') && state.selection.length > 0) {
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    const step = event.shiftKey ? 10 : 1
+    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+    const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+    editor.mutate((doc) => {
+      for (const index of state.selection) {
+        const entry = doc.widgets?.[index] as Record<string, unknown> | undefined
+        if (entry === undefined) continue
+        if (typeof entry['use'] === 'string') {
+          const at = entry['at']
+          const base = Array.isArray(at) && at.length === 2 ? at : [0, 0]
+          entry['at'] = [Number(base[0]) + dx, Number(base[1]) + dy]
+        } else {
+          const rect = entry['rect']
+          if (Array.isArray(rect) && rect.length === 4) {
+            entry['rect'] = [Number(rect[0]) + dx, Number(rect[1]) + dy, rect[2], rect[3]]
+          }
+        }
+      }
+    })
+    return
+  }
+  if (event.key === 'Escape') {
+    if (state.selection.length > 0 && !isTypingTarget(event.target)) {
+      editor.setSelection([])
+      return
+    }
     requestClose()
   }
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  )
 }
 
 window.addEventListener('keydown', onKeydown)
@@ -155,6 +217,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </button>
         </div>
         <span class="spacer"></span>
+        <button
+          :disabled="!editor.canUndo()"
+          class="icon-btn"
+          title="Undo (Ctrl+Z)"
+          @click="editor.undo()"
+        >
+          ⟲
+        </button>
+        <button
+          :disabled="!editor.canRedo()"
+          class="icon-btn"
+          title="Redo (Ctrl+Shift+Z)"
+          @click="editor.redo()"
+        >
+          ⟳
+        </button>
         <button :disabled="checking || loading" @click="checkFrame">
           {{ checking ? 'Rendering…' : 'Check frame' }}
         </button>
@@ -440,6 +518,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   padding: 2px 6px;
   font-size: 11px;
   border-radius: 6px;
+}
+
+.icon-btn {
+  padding: 6px 10px;
 }
 
 .status-errors {
