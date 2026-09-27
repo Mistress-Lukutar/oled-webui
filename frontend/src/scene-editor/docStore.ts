@@ -274,6 +274,78 @@ function setEntryField(index: number, field: string, value: unknown): void {
   })
 }
 
+/** Apply an arbitrary update to one raw entry (inspector forms). */
+function updateWidget(index: number, update: (entry: Record<string, unknown>) => void): void {
+  mutate((doc) => {
+    const entry = doc.widgets?.[index]
+    if (entry === undefined || !isObject(entry)) return
+    update(entry)
+  })
+}
+
+/** Default widget templates for the add palette. */
+const WIDGET_DEFAULTS: Record<string, Record<string, unknown>> = {
+  text: {
+    type: 'text',
+    value: 'Text',
+    align: 'center',
+    style: { size: 24, color: '#FFFFFF' },
+  },
+  bar: {
+    type: 'bar',
+    source: 'cpu.percent',
+    style: { fg: '#7CFC00', bg: '#222222', radius: 4 },
+  },
+  ring: {
+    type: 'ring',
+    source: 'cpu.percent',
+    style: { fg: '#7CFC00', bg: '#222222', width: 8 },
+  },
+  graph: {
+    type: 'graph',
+    source: 'cpu.percent',
+    history: 60,
+    style: { fg: '#7CFC00', fill: true, line_width: 2 },
+  },
+  image: {
+    type: 'image',
+    path: '',
+    scale: 1,
+  },
+}
+
+const WIDGET_SIZES: Record<string, [number, number, number, number]> = {
+  text: [-100, -20, 200, 40],
+  bar: [-100, -8, 200, 16],
+  ring: [-45, -45, 90, 90],
+  graph: [-100, -40, 200, 80],
+  image: [-32, -32, 64, 64],
+}
+
+/** Insert a new widget of the given type centered on the viewport. */
+function addWidget(type: string, center: { x: number; y: number }): void {
+  const defaults = WIDGET_DEFAULTS[type]
+  const offset = WIDGET_SIZES[type]
+  if (defaults === undefined || offset === undefined) return
+  let newIndex = -1
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    newIndex = widgets.length
+    const entry: Record<string, unknown> = {
+      ...JSON.parse(JSON.stringify(defaults)),
+      rect: [
+        Math.round(center.x) + offset[0],
+        Math.round(center.y) + offset[1],
+        offset[2],
+        offset[3],
+      ],
+    }
+    widgets.push(entry as EntryRaw)
+    doc.widgets = widgets
+  })
+  if (newIndex >= 0) setSelection([newIndex])
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -304,6 +376,8 @@ export const editor = {
   duplicateEntries,
   moveEntry,
   setEntryField,
+  updateWidget,
+  addWidget,
 }
 
 export type EditorStore = typeof editor

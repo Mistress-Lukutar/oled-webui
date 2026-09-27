@@ -7,6 +7,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { API } from '../../api'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
+import { viewCenter } from '../../scene-editor/viewState'
 import EditorCanvas from './EditorCanvas.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import LayersPanel from './LayersPanel.vue'
@@ -49,6 +50,23 @@ const resolutionKey = computed((): string => {
 function onResolutionChange(event: Event): void {
   const key = (event.target as HTMLSelectElement).value
   editor.setResolutionOverride(RESOLUTIONS[key] ?? null)
+}
+
+const ADD_BUTTONS = [
+  { type: 'text', label: 'T', title: 'Add text widget (T)' },
+  { type: 'bar', label: '▮', title: 'Add bar widget (B)' },
+  { type: 'ring', label: '◯', title: 'Add ring widget (R)' },
+  { type: 'graph', label: '∿', title: 'Add graph widget (G)' },
+  { type: 'image', label: '▣', title: 'Add image widget (I)' },
+] as const
+
+function addWidget(type: string): void {
+  const override = state.resolutionOverride
+  const panel = override ?? {
+    width: appState.resolution.width,
+    height: appState.resolution.height,
+  }
+  editor.addWidget(type, viewCenter(panel.width, panel.height))
 }
 
 onMounted(async () => {
@@ -176,6 +194,24 @@ function onKeydown(event: KeyboardEvent): void {
     }
     requestClose()
   }
+  if (
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !isTypingTarget(event.target)
+  ) {
+    const addKeys: Record<string, string> = {
+      t: 'text',
+      b: 'bar',
+      r: 'ring',
+      g: 'graph',
+      i: 'image',
+    }
+    const type = addKeys[event.key.toLowerCase()]
+    if (type !== undefined) {
+      addWidget(type)
+    }
+  }
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -214,6 +250,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             @click="editor.setViewMode(mode.id)"
           >
             {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
+          </button>
+        </div>
+        <div class="seg add-seg">
+          <button
+            v-for="btn in ADD_BUTTONS"
+            :key="btn.type"
+            class="seg-btn add-btn"
+            :title="btn.title"
+            @click="addWidget(btn.type)"
+          >
+            {{ btn.label }}
           </button>
         </div>
         <span class="spacer"></span>
@@ -392,6 +439,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .seg-btn.on {
   background: var(--accent-dim);
   color: #fff;
+}
+
+.add-seg .add-btn {
+  width: 34px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.add-seg .add-btn:hover {
+  color: var(--accent);
 }
 
 .spacer {

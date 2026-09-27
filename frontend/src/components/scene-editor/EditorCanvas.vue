@@ -26,6 +26,7 @@ import type { HandleId, SnapGuide, WidgetBox } from '../../scene-editor/geometry
 import { isComponentInstance } from '../../scene-editor/types'
 import type { EntryRaw, SceneDocumentRaw } from '../../scene-editor/types'
 import type { EvalEntry } from '../../scene-editor/runtime'
+import { viewState } from '../../scene-editor/viewState'
 
 const { state: appState } = useDisplayStore()
 const { state } = editor
@@ -549,6 +550,13 @@ const transformStyle = computed(() => ({
   height: `${panelHeight.value * zoom.value}px`,
   transform: `translate(${panX.value}px, ${panY.value}px)`,
 }))
+
+// Publish the view state for other panels (widget insertion).
+watchEffect(() => {
+  viewState.zoom = zoom.value
+  viewState.panX = panX.value
+  viewState.panY = panY.value
+})
 
 // ----------------------------------------------------------------------
 // Drawing: scene + interaction overlay
