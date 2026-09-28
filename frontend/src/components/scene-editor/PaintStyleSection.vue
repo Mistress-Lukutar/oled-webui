@@ -4,12 +4,23 @@
  * type. Which rows appear is driven by the type's PaintSlotConfig; every
  * edit is emitted as (key, value) pairs where undefined drops the key at
  * its schema default, mirroring InspectorPanel.setStyle semantics.
+ *
+ * Takes an array of style mappings: for a multi-selection the toggles go
+ * indeterminate and color/number fields show their "mixed" state when the
+ * selection holds differing values; an edit then applies to every style.
  */
 import { computed } from 'vue'
+import {
+  commonCornerRounded,
+  commonFillOn,
+  commonStrokeOn,
+  commonStyleValue,
+} from '../../scene-editor/mixed'
 import type { PaintSlotConfig, StrokeAlign } from '../../scene-editor/types'
 
 const props = defineProps<{
-  style: Record<string, unknown>
+  /** One style mapping per selected widget (single selection = one). */
+  styles: Array<Record<string, unknown>>
   config: PaintSlotConfig
   /** Radius used when switching from square to rounded corners. */
   defaultRadius?: number
@@ -36,13 +47,26 @@ function strOrDrop(key: string, value: string, def: string): void {
   emit('set', key, value === def ? undefined : value)
 }
 
-const fillOn = computed(() => props.style['fill'] !== false)
-const strokeOn = computed(() => num(props.style['stroke_width']) > 0)
+const fillState = computed(() => commonFillOn(props.styles))
+const strokeState = computed(() => commonStrokeOn(props.styles))
+const fillColor = computed(() => commonStyleValue(props.styles, 'fill_color', '#222222'))
+const strokeColor = computed(() => commonStyleValue(props.styles, 'stroke_color', '#888888'))
+const strokeWidth = computed(() => commonStyleValue(props.styles, 'stroke_width', 0))
+
 const strokeAlign = computed<StrokeAlign>(() => {
-  const value = props.style['stroke_align']
-  return value === 'center' || value === 'outside' ? value : 'inside'
+  const { value, mixed } = commonStyleValue(props.styles, 'stroke_align', 'inside')
+  return !mixed && (value === 'center' || value === 'outside')
+    ? value
+    : 'inside'
 })
-const cornerRounded = computed(() => num(props.style['radius']) > 0)
+const strokeAlignMixed = computed(() => commonStyleValue(props.styles, 'stroke_align', 'inside').mixed)
+
+const cornerState = computed(() => commonCornerRounded(props.styles))
+const radius = computed(() => commonStyleValue(props.styles, 'radius', 0))
+
+const fillOn = computed(() => fillState.value.on && !fillState.value.mixed)
+const strokeOn = computed(() => strokeState.value.on && !strokeState.value.mixed)
+const cornerRounded = computed(() => cornerState.value.rounded && !cornerState.value.mixed)
 
 function setFill(on: boolean): void {
   emit('set', 'fill', on ? undefined : false)
@@ -76,15 +100,18 @@ function setCornerRounded(rounded: boolean): void {
         <input
           type="checkbox"
           class="paint-toggle"
+          :class="{ mixed: fillState.mixed }"
           :checked="fillOn"
+          :indeterminate.prop="fillState.mixed"
           title="Draw the fill"
           @change="setFill(($event.target as HTMLInputElement).checked)"
         />
         <input
           type="color"
-          :value="String(style['fill_color'] ?? '#222222')"
+          :class="{ mixed: fillColor.mixed }"
+          :value="String(fillColor.value)"
           :disabled="!fillOn"
-          :title="`${config.fill.label} fill color`"
+          :title="fillColor.mixed ? `${config.fill.label} fill color (mixed)` : `${config.fill.label} fill color`"
           @input="emit('set', 'fill_color', ($event.target as HTMLInputElement).value)"
         />
       </div>
@@ -93,15 +120,18 @@ function setCornerRounded(rounded: boolean): void {
         <input
           type="checkbox"
           class="paint-toggle"
+          :class="{ mixed: strokeState.mixed }"
           :checked="strokeOn"
+          :indeterminate.prop="strokeState.mixed"
           title="Draw the stroke"
           @change="setStroke(($event.target as HTMLInputElement).checked)"
         />
         <input
           type="color"
-          :value="String(style['stroke_color'] ?? '#888888')"
+          :class="{ mixed: strokeColor.mixed }"
+          :value="String(strokeColor.value)"
           :disabled="!strokeOn"
-          :title="`${config.stroke.label} stroke color`"
+          :title="strokeColor.mixed ? `${config.stroke.label} stroke color (mixed)` : `${config.stroke.label} stroke color`"
           @input="emit('set', 'stroke_color', ($event.target as HTMLInputElement).value)"
         />
       </div>
@@ -110,10 +140,12 @@ function setCornerRounded(rounded: boolean): void {
       <span class="paint-label">Weight</span>
       <input
         class="paint-num"
+        :class="{ mixed: strokeWidth.mixed }"
         type="number"
         min="0"
         max="64"
-        :value="num(style['stroke_width'])"
+        :value="strokeWidth.mixed ? '' : num(strokeWidth.value)"
+        :placeholder="strokeWidth.mixed ? 'mixed' : ''"
         title="Stroke width"
         @input="numOrDrop('stroke_width', ($event.target as HTMLInputElement).value, 0)"
       />
@@ -121,11 +153,11 @@ function setCornerRounded(rounded: boolean): void {
     </div>
     <div v-if="config.stroke?.align" class="paint-row">
       <span class="paint-label">Align</span>
-      <div class="seg-group">
+      <div class="seg-group" :class="{ mixed: strokeAlignMixed }">
         <button
           type="button"
           class="seg-btn"
-          :class="{ active: strokeAlign === 'center' }"
+          :class="{ active: strokeAlign === 'center' && !strokeAlignMixed }"
           title="Align stroke: center"
           @click="setStrokeAlign('center')"
         >
@@ -137,7 +169,7 @@ function setCornerRounded(rounded: boolean): void {
         <button
           type="button"
           class="seg-btn"
-          :class="{ active: strokeAlign === 'inside' }"
+          :class="{ active: strokeAlign === 'inside' && !strokeAlignMixed }"
           title="Align stroke: inside"
           @click="setStrokeAlign('inside')"
         >
@@ -149,7 +181,7 @@ function setCornerRounded(rounded: boolean): void {
         <button
           type="button"
           class="seg-btn"
-          :class="{ active: strokeAlign === 'outside' }"
+          :class="{ active: strokeAlign === 'outside' && !strokeAlignMixed }"
           title="Align stroke: outside"
           @click="setStrokeAlign('outside')"
         >
@@ -162,11 +194,11 @@ function setCornerRounded(rounded: boolean): void {
     </div>
     <div v-if="config.corners" class="paint-row">
       <span class="paint-label">Corner</span>
-      <div class="seg-group">
+      <div class="seg-group" :class="{ mixed: cornerState.mixed }">
         <button
           type="button"
           class="seg-btn"
-          :class="{ active: !cornerRounded }"
+          :class="{ active: !cornerRounded && !cornerState.mixed }"
           title="Square corners"
           @click="setCornerRounded(false)"
         >
@@ -188,9 +220,11 @@ function setCornerRounded(rounded: boolean): void {
       </div>
       <input
         class="paint-num"
+        :class="{ mixed: radius.mixed }"
         type="number"
         min="0"
-        :value="num(style['radius'])"
+        :value="radius.mixed ? '' : num(radius.value)"
+        :placeholder="radius.mixed ? 'mixed' : ''"
         title="Corner radius"
         @input="numOrDrop('radius', ($event.target as HTMLInputElement).value, 0)"
       />
@@ -262,6 +296,13 @@ function setCornerRounded(rounded: boolean): void {
   font-size: 12px;
 }
 
+.paint-select {
+  flex: 1;
+  width: auto;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .seg-group {
   display: flex;
   flex: none;
@@ -295,5 +336,15 @@ function setCornerRounded(rounded: boolean): void {
 .seg-btn.active {
   color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+
+/* Multi-selection state: the field holds differing values. */
+.mixed {
+  border: 1px dashed var(--warning) !important;
+}
+
+input.mixed::placeholder {
+  color: var(--warning);
+  font-style: italic;
 }
 </style>

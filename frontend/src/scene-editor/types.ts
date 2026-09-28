@@ -347,3 +347,39 @@ export const PAINT_SLOTS: Record<string, PaintSlotConfig> = {
     corners: true,
   },
 }
+
+/** Type-specific style keys editable on a multi-selection of one type. */
+export const EXTRA_STYLE_KEYS: Record<string, string[]> = {
+  text: ['family', 'size', 'leading', 'tracking', 'direction'],
+  bar: ['progress_color', 'orientation'],
+  ring: ['start_angle', 'sweep'],
+  graph: ['scale_max'],
+  image: [],
+}
+
+/**
+ * Paint slots editable on a multi-selection: a slot survives only when
+ * every selected type supports it. Labels degrade to the generic
+ * "Fill"/"Stroke" when the selected types name the slots differently.
+ */
+export function intersectPaintConfigs(
+  configs: PaintSlotConfig[],
+): PaintSlotConfig | null {
+  if (configs.length === 0) return null
+  const fill = configs.every((c) => c.fill !== null)
+    ? { label: sameLabels(configs.map((c) => c.fill!.label)) ? configs[0]!.fill!.label : 'Fill' }
+    : null
+  const stroke = configs.every((c) => c.stroke !== null)
+    ? {
+        label: sameLabels(configs.map((c) => c.stroke!.label))
+          ? configs[0]!.stroke!.label
+          : 'Stroke',
+        align: configs.every((c) => c.stroke!.align),
+      }
+    : null
+  return { fill, stroke, corners: configs.every((c) => c.corners) }
+}
+
+function sameLabels(labels: string[]): boolean {
+  return labels.every((label) => label === labels[0])
+}

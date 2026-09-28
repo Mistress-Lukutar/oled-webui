@@ -19,6 +19,7 @@ import {
 import type { EntryRaw, PaintSlotConfig } from '../../scene-editor/types'
 import { viewCenter } from '../../scene-editor/viewState'
 import ExprField from './ExprField.vue'
+import MultiEditPanel from './MultiEditPanel.vue'
 import PaintStyleSection from './PaintStyleSection.vue'
 
 const { state: appState, actions: appActions, showError } = useDisplayStore()
@@ -250,15 +251,7 @@ const dataSourceList = [...DATA_SOURCES]
     <div class="panel-title">Inspector</div>
 
     <!-- Multi selection -->
-    <template v-if="state.selection.length > 1">
-      <div class="section">
-        <div class="hint">{{ state.selection.length }} widgets selected</div>
-        <div class="btn-row">
-          <button @click="editor.duplicateEntries([...state.selection])">Duplicate</button>
-          <button class="danger" @click="editor.deleteEntries([...state.selection])">Delete</button>
-        </div>
-      </div>
-    </template>
+    <MultiEditPanel v-if="state.selection.length > 1" />
 
     <!-- Component instance -->
     <template v-else-if="entry !== null && isInstance">
@@ -444,7 +437,7 @@ const dataSourceList = [...DATA_SOURCES]
         <div class="section-title">Style</div>
         <PaintStyleSection
           v-if="widgetType !== null && paintConfig !== null"
-          :style="style"
+          :styles="[style]"
           :config="paintConfig"
           :default-radius="defaultRadius"
           @set="setStyle"

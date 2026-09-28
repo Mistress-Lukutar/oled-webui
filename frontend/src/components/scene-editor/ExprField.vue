@@ -17,6 +17,8 @@ const props = defineProps<{
   /** Sample value for the "v" variable display. */
   sampleV?: number
   step?: number
+  /** Multi-selection: values differ across the selection. */
+  mixed?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: number | string | undefined] }>()
@@ -118,7 +120,10 @@ function commitFx(): void {
       v-if="!isFx"
       type="number"
       :step="step ?? 1"
-      :value="numberValue"
+      :class="{ mixed: props.mixed }"
+      :value="props.mixed ? '' : numberValue"
+      :placeholder="props.mixed ? 'mixed' : ''"
+      title="mixed — the selection holds different values; editing applies to all"
       @input="onNumberInput"
     />
     <div v-else class="fx-area">
@@ -199,5 +204,15 @@ label {
 
 .fx-value {
   color: var(--text-dim);
+}
+
+/* Multi-selection state: the field holds differing values. */
+input.mixed {
+  border: 1px dashed var(--warning);
+}
+
+input.mixed::placeholder {
+  color: var(--warning);
+  font-style: italic;
 }
 </style>
