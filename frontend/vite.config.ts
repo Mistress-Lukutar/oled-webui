@@ -10,9 +10,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8090',
+      // 127.0.0.1 explicitly: Node resolves `localhost` to ::1 first and
+      // the API server only listens on IPv4.
+      '/api': 'http://127.0.0.1:8090',
       '/events': {
-        target: 'http://localhost:8090',
+        target: 'http://127.0.0.1:8090',
         // SSE is plain HTTP; proxy must not buffer the stream.
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes) => {
