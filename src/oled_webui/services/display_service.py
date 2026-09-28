@@ -3,7 +3,7 @@ File:   display_service.py
 Brief:  Central display orchestrator: USB serialization, keepalive, video.
 Author: Mistress-Lukutar
 Date:   2026-09-28
-Version: v0.4.0
+Version: v0.5.0
 """
 
 from __future__ import annotations
@@ -127,6 +127,13 @@ class DisplayService:
         self._last_frame_size: tuple[int, int] | None = None
         self._last_content: dict[str, Any] | None = None
         self._restore_frame: _RestoreFrame | None = None
+        # Playback config captured at blank time so power_on can restart
+        # the scene or video instead of showing a frozen frame.
+        self._resume_content: dict[str, Any] | None = None
+        # Parameters of the currently playing video, kept for that restart.
+        self._video_params: dict[str, Any] | None = None
+        # Document of the currently running scene, kept for that restart.
+        self._scene_document: SceneDocument | None = None
         self._last_preview_emit: float = 0.0
 
         self._bg_tasks: set[asyncio.Task[Any]] = set()
@@ -277,6 +284,7 @@ class DisplayService:
         """
         await self.stop_scene()
         self._restore_frame = None
+        self._resume_content = None
         builder = self._builder(rotation, fit)
         frame = await asyncio.to_thread(builder.build_frame, image_path)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
@@ -306,6 +314,7 @@ class DisplayService:
         """
         await self.stop_scene()
         self._restore_frame = None
+        self._resume_content = None
         rgb = parse_hex_color(color)
         builder = self._builder()
         image = builder.build_color_image(rgb)
@@ -353,6 +362,7 @@ class DisplayService:
         """
         await self.stop_scene()
         self._restore_frame = None
+        self._resume_content = None
         font_path: Path | None = None
         if font_name:
             font_path = self._settings.fonts_dir / font_name
@@ -398,12 +408,30 @@ class DisplayService:
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
     async def power_off(self) -> None:
-        """Blank the display with a black frame, caching the visible frame.
+        """Blank the display, remembering how to resume live playback.
+
+        A running scene or video is captured (config, not the exact frame)
+        into the resume snapshot and stopped; static content is cached in
+        the restore frame. :meth:`power_on` replays the snapshot, or falls
+        back to the cached frame.
 
         The cached frame is restored by :meth:`power_on`, so the panel can
         be blanked for power saving without losing the current content.
         """
         handshake = self.require_connection()
+        if self._video_state["playing"] and self._video_params is not None:
+            self._resume_content = {"type": "video", **dict(self._video_params)}
+        elif self._scene_state["running"] and self._scene_document is not None:
+            self._resume_content = {
+                "type": "scene",
+                "scene_id": self._scene_state["scene_id"],
+                "name": self._scene_state["name"],
+                "document": self._scene_document,
+            }
+        else:
+            self._resume_content = None
+        # Playback must stop, or its next frames would repaint the panel.
+        await self.stop_video()
         await self.stop_scene()
         if self._restore_frame is None:
             cached = self._last_frame
@@ -431,11 +459,25 @@ class DisplayService:
         logger.info("display_blanked")
 
     async def power_on(self) -> None:
-        """Restore the frame hidden by the last blank, or resend the last.
+        """Restore what the last blank hid, restarting scene/video playback.
+
+        The playback config captured by :meth:`power_off` is replayed; the
+        exact frame position is not. Static content is restored from the
+        cached frame.
 
         Raises:
-            ValidationError: If no frame has been sent yet.
+            ValidationError: If nothing was live and no frame has been
+                sent yet.
         """
+        if self._resume_content is not None:
+            resume = self._resume_content
+            self._resume_content = None
+            self._restore_frame = None
+            try:
+                await self._resume_playback(resume)
+                return
+            except OledWebUIError as exc:
+                logger.warning("display_resume_failed", error=str(exc))
         payload: bytes | None
         size: tuple[int, int] | None
         if self._restore_frame is not None:
@@ -449,6 +491,27 @@ class DisplayService:
         width, height = size
         await self._send_payload(payload, width, height)
         logger.info("display_restored")
+
+    async def _resume_playback(self, resume: dict[str, Any]) -> None:
+        """Restart the scene or video captured by the last blank.
+
+        Args:
+            resume: Playback snapshot with a ``type`` of scene or video
+                and the parameters needed to start it again.
+        """
+        if resume["type"] == "scene":
+            document: SceneDocument = resume["document"]
+            await self.start_scene(
+                document, str(resume["scene_id"]), str(resume["name"])
+            )
+        else:
+            await self.play_video(
+                Path(str(resume["path"])),
+                fps=int(resume["fps"]),
+                loop=bool(resume["loop"]),
+                rotation=int(resume["rotation"]),
+                fit=str(resume["fit"]),
+            )
 
     async def run_test(self, delay: float = 1.0) -> None:
         """Cycle red, green, blue and black frames across the display.
@@ -742,6 +805,14 @@ class DisplayService:
             raise ValidationError("A video is already playing")
 
         self._restore_frame = None
+        self._resume_content = None
+        self._video_params = {
+            "path": str(video_path),
+            "fps": fps,
+            "loop": loop,
+            "rotation": rotation,
+            "fit": fit,
+        }
         self._video_stop.clear()
         self._video_state = {
             "playing": True,
@@ -767,6 +838,7 @@ class DisplayService:
         if task is None or task.done():
             return
         self._video_stop.set()
+        self._video_params = None
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -850,6 +922,7 @@ class DisplayService:
         finally:
             self._video_state["playing"] = False
             self._video_state["preparing"] = False
+            self._video_params = None
             await self._bus.publish(
                 "video",
                 {
@@ -894,6 +967,8 @@ class DisplayService:
             quality=self._display_settings.quality,
         )
         self._scene_renderer = renderer
+        self._scene_document = document
+        self._resume_content = None
         self._scene_state = {
             "running": True,
             "scene_id": scene_id,
