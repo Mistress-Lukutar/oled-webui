@@ -191,3 +191,28 @@ def test_image_preset_roundtrip(client: TestClient) -> None:
 
     applied = client.post(f"/api/presets/{preset_id}/apply")
     assert applied.status_code == 200
+
+
+def test_settings_change_reapplies_preset_image(
+    client: TestClient, sent_frames: list[dict]
+) -> None:
+    """Brightness changes re-render content applied via an image preset.
+
+    Regression: preset-applied images live in the preset assets folder,
+    but the settings refresh only looked in the uploads directory and
+    silently skipped the re-render (content_refresh_missing_file).
+    """
+    client.post(
+        "/api/frame/image",
+        files={"file": ("pic.png", _png_bytes(color="red"), "image/png")},
+    )
+    saved = client.post("/api/presets/save-current", json={"name": "Pic"})
+    preset_id = saved.json()["data"]["id"]
+
+    client.post(f"/api/presets/{preset_id}/apply")
+    frames_after_apply = len(sent_frames)
+
+    updated = client.post("/api/device/settings", json={"brightness": 40})
+    assert updated.status_code == 200
+    assert len(sent_frames) == frames_after_apply + 1
+    assert sent_frames[-1]["payload"] != sent_frames[-2]["payload"]

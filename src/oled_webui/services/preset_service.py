@@ -144,7 +144,12 @@ class PresetService:
 
         if preset_type == "image":
             upload_name = str(preset.payload.get("file", ""))
-            source = self._uploads_dir / upload_name
+            stored_path = preset.payload.get("path")
+            source = (
+                Path(str(stored_path))
+                if stored_path
+                else self._uploads_dir / upload_name
+            )
             if not source.is_file():
                 raise ValidationError(
                     f"Source image no longer available: {upload_name}"

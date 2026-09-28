@@ -265,7 +265,9 @@ class DisplayService:
         self._last_content = {
             "type": "image",
             "params": {"rotation": rotation, "fit": fit},
-            "payload": {"file": image_path.name},
+            # Absolute path kept so settings changes can re-render sources
+            # that live outside the uploads directory (preset assets).
+            "payload": {"file": image_path.name, "path": str(image_path)},
         }
         logger.info("image_sent", file=image_path.name, bytes=len(payload))
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
@@ -552,6 +554,30 @@ class DisplayService:
         except OledWebUIError as exc:
             logger.warning("content_refresh_failed", error=str(exc))
 
+    def _resolve_image_content(self, payload: dict[str, Any]) -> Path | None:
+        """Locate the source file of an image content snapshot.
+
+        Snapshots recorded by :meth:`send_image` carry the absolute source
+        path, which also covers preset assets; the uploads directory is
+        used as a fallback for the file name alone.
+
+        Args:
+            payload: The content payload with ``path``/``file`` hints.
+
+        Returns:
+            An existing file path, or None when the source is gone.
+        """
+        stored = payload.get("path")
+        if stored:
+            path = Path(str(stored))
+            if path.is_file():
+                return path
+        name = str(payload.get("file", ""))
+        if not name:
+            return None
+        path = self._settings.uploads_dir / name
+        return path if path.is_file() else None
+
     async def _reapply_content(self, content: dict[str, Any]) -> None:
         """Re-render one-shot content with the current global settings.
 
@@ -562,9 +588,12 @@ class DisplayService:
         params = content.get("params", {})
         payload = content.get("payload", {})
         if content_type == "image":
-            path = self._settings.uploads_dir / str(payload.get("file", ""))
-            if not path.is_file():
-                logger.warning("content_refresh_missing_file", file=path.name)
+            path = self._resolve_image_content(payload)
+            if path is None:
+                logger.warning(
+                    "content_refresh_missing_file",
+                    file=str(payload.get("file", "")),
+                )
                 return
             await self.send_image(
                 path,
