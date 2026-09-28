@@ -15,6 +15,7 @@ import pytest
 from oled_webui.core.models import Resolution
 from oled_webui.scene.loader import load_scene
 from oled_webui.scene.runner import SceneRenderer
+from oled_webui.scene.schema import GraphWidget
 
 
 @pytest.fixture(name="scene_file")
@@ -117,6 +118,24 @@ def test_scene_renderer_yields_on_change(scene_file: Path) -> None:
     # graph history change on every poll, so the next tick must re-render.
     renderer._providers.poll()
     assert renderer.tick(now=0.5) is not None
+
+
+def test_scene_renderer_grows_graph_history(scene_file: Path) -> None:
+    """Each data poll appends a sample so the graph accumulates history."""
+    document = load_scene(scene_file)
+    renderer = SceneRenderer(document, Resolution(width=480, height=480))
+    graph_widget = next(
+        w for w in document.widgets if isinstance(w, GraphWidget)
+    )
+    graph_runtime = renderer._runtimes[id(graph_widget)]
+
+    renderer.tick(now=0.0)
+    assert len(graph_runtime.history) == 1
+    # refresh is 10 Hz, so a poll is due at now=0.2 and must add a sample.
+    renderer.tick(now=0.2)
+    assert len(graph_runtime.history) == 2
+    renderer.tick(now=0.4)
+    assert len(graph_runtime.history) == 3
 
 
 def test_scene_renderer_background_layer(tmp_path: Path) -> None:

@@ -184,7 +184,7 @@ class SceneRenderer:
             self._just_polled = True
             self._next_poll = now + 1.0 / self._scene.refresh
 
-        evaluated = self._evaluate(now)
+        evaluated = self._evaluate(now, poll=self._just_polled)
         self._just_polled = False
         signature = [item.signature for item in evaluated]
         if not self._output_dirty and signature == self._last_signature:
