@@ -265,7 +265,7 @@ function drawText(
   const familyValue = style['family']
   const custom =
     typeof familyValue === 'string' ? loadedFontFamily(sceneId, familyValue) : null
-  const fontSpec = `${size}px ${custom ?? "'Segoe UI', system-ui, sans-serif"}`
+  const fontSpec = `${size}px ${custom ? `"${custom}"` : "'Segoe UI', system-ui, sans-serif"}`
   ctx.save()
   ctx.font = fontSpec
   ctx.textBaseline = 'alphabetic'

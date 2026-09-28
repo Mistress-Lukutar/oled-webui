@@ -10,7 +10,16 @@ const pending = new Map<string, Promise<string | null>>()
 const loaded = new Set<string>()
 
 function familyName(basename: string): string {
-  return `scene-font-${basename}`
+  // Dots are invalid in unquoted CSS identifiers, so the canvas font
+  // shorthand `48px scene-font-X.ttf` would silently fail to parse.
+  // Keep the family a safe identifier and hash the original name to
+  // stay unique across extensions ("A.ttf" vs "A.otf").
+  let hash = 0
+  for (let i = 0; i < basename.length; i += 1) {
+    hash = (hash * 31 + basename.charCodeAt(i)) | 0
+  }
+  const clean = basename.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return `scene-font-${clean}-${(hash >>> 0).toString(36)}`
 }
 
 /**
