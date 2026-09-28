@@ -255,3 +255,44 @@ def test_render_rotates_non_image_widget(tmp_path: Path) -> None:
     ink_h = max(ys) - min(ys)
     # A wide horizontal label rotated 90° becomes a tall narrow one.
     assert ink_h > ink_w * 2
+
+
+def test_render_bar_border_align_extends_outside(tmp_path: Path) -> None:
+    """A border aligned outside must survive scratch padding and overflow the box."""
+    import io
+
+    from PIL import Image
+
+    def frame_pixel(align: str, x: int, y: int) -> tuple[int, int, int]:
+        scene_path = tmp_path / f"scene_{align}.yaml"
+        scene_path.write_text(
+            f"""
+            widgets:
+              - type: bar
+                source: cpu
+                rect: [20, 20, 100, 40]
+                style:
+                  bg: "#000000"
+                  border: 2
+                  border_color: "#FFFFFF"
+                  border_align: {align}
+            """,
+            encoding="utf-8",
+        )
+        document = load_scene(scene_path)
+        renderer = SceneRenderer(document, Resolution(width=120, height=120))
+        frame = Image.open(io.BytesIO(renderer.render_frame())).convert("RGB")
+        # The base builder rotates the panel 180°, so scene (x, y) lands at
+        # (W-1-x, H-1-y) in the encoded frame.
+        return frame.getpixel((119 - x, 119 - y))
+
+    def bright(pixel: tuple[int, int, int]) -> bool:
+        return all(channel > 160 for channel in pixel)
+
+    # The border is drawn on top of the opaque track...
+    assert bright(frame_pixel("inside", 21, 40))
+    # ...stays inside the widget box for the default alignment,
+    assert not bright(frame_pixel("inside", 19, 40))
+    # and sits fully outside of it for border_align: outside.
+    assert bright(frame_pixel("outside", 19, 40))
+    assert not bright(frame_pixel("outside", 21, 40))

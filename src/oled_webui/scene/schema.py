@@ -69,6 +69,9 @@ class BarStyle(_Strict):
     bg: str = Field("#222222", description="Track color")
     border: int = Field(0, ge=0, le=16, description="Border thickness in pixels")
     border_color: str = Field("#888888", description="Border color")
+    border_align: Literal["center", "inside", "outside"] = Field(
+        "inside", description="Border alignment: inside, centered on the edge, outside"
+    )
     radius: int = Field(0, ge=0, description="Corner radius in pixels")
     orientation: Literal["horizontal", "vertical"] = "horizontal"
 

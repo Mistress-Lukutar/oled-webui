@@ -81,6 +81,33 @@ def test_render_bar_empty_and_full() -> None:
         assert image.load()[2, 15][:3] == expected
 
 
+@pytest.mark.parametrize(
+    ("align", "border_rows"),
+    (("inside", (2, 3)), ("center", (1, 2)), ("outside", (0, 1))),
+)
+def test_render_bar_border_align(
+    align: str, border_rows: tuple[int, int]
+) -> None:
+    """A 2 px border shifts per border_align around the edge at y=2."""
+    image, draw = _scratch(14, 14)
+    widget = _bar_widget(
+        border=2, border_color="#00FF00", bg="#0000FF", border_align=align
+    )
+    render_bar(draw, (2, 2, 10, 10), 0.0, widget)
+    pixels = image.load()
+    for row in border_rows:
+        assert pixels[7, row][:3] == (0, 255, 0)
+    assert pixels[7, border_rows[-1] + 1][:3] == (0, 0, 255)  # track below
+
+
+def test_render_bar_border_visible_over_opaque_bg() -> None:
+    """The track fill must not paint over the border."""
+    image, draw = _scratch()
+    widget = _bar_widget(border=2, border_color="#00FF00", bg="#0000FF")
+    render_bar(draw, (0, 0, 60, 30), 0.0, widget)
+    assert image.load()[30, 0][:3] == (0, 255, 0)
+
+
 def test_render_ring_draws_arc() -> None:
     image, draw = _scratch(60, 60)
     widget = RingWidget(

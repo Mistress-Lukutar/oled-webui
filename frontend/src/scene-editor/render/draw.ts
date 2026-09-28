@@ -82,6 +82,14 @@ function getScratchCanvas(tag: string, w: number, h: number): HTMLCanvasElement 
   return canvas
 }
 
+/** Extra scratch padding for a bar whose border leaves the widget box. */
+function barScratchPad(widget: Record<string, unknown>): number {
+  const style = (widget['style'] ?? {}) as Record<string, unknown>
+  const border = typeof style['border'] === 'number' ? style['border'] : 0
+  const align = style['border_align']
+  return border > 0 && (align === 'center' || align === 'outside') ? border : 0
+}
+
 function drawBar(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -95,18 +103,24 @@ function drawBar(
   const border = typeof style['border'] === 'number' ? style['border'] : 0
   const borderColor = cssColor(style['border_color'] as string, '#888888')
   const radius = typeof style['radius'] === 'number' ? style['radius'] : 0
+  const align = (style['border_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
   const horizontal = (style['orientation'] ?? 'horizontal') !== 'vertical'
   const fill01 = Math.max(0, Math.min(1, value01))
 
-  if (border > 0) {
-    ctx.lineWidth = border
-    ctx.strokeStyle = borderColor
-    roundedRect(ctx, border / 2, border / 2, w - border, h - border, radius)
-    ctx.stroke()
-  }
   ctx.fillStyle = bg
   roundedRect(ctx, 0, 0, w, h, radius)
   ctx.fill()
+
+  if (border > 0) {
+    // Mirror the PIL bbox shift in render_bar: the path is inset so the
+    // centered canvas stroke lands inside, across, or outside the edge.
+    const out = align === 'center' ? Math.floor(border / 2) : align === 'outside' ? border : 0
+    const inset = border / 2 - out
+    ctx.lineWidth = border
+    ctx.strokeStyle = borderColor
+    roundedRect(ctx, inset, inset, w - 2 * inset, h - 2 * inset, radius)
+    ctx.stroke()
+  }
 
   const inset = border > 0 ? border + 1 : 0
   if (horizontal) {
@@ -536,6 +550,9 @@ export function drawScene(opts: DrawSceneOptions): void {
     if (drawn) continue
 
     const widgetRecord = widget as Record<string, unknown>
+    // A bar border aligned center/outside extends past the widget box; pad
+    // the clipped scratch like the runner does for the Pillow render.
+    const pad = barScratchPad(widgetRecord)
     const paint = (c: CanvasRenderingContext2D): void => {
       if (type === 'bar') drawBar(c, w, h, entry.value01, widgetRecord)
       else if (type === 'ring') drawRing(c, w, h, entry.value01, widgetRecord)
@@ -547,14 +564,15 @@ export function drawScene(opts: DrawSceneOptions): void {
     if (rotation % 360 !== 0) {
       // Like the Pillow scratch layer: paint into a clipped box, then
       // rotate that box around the rect center with expansion.
-      const scratch = getScratchCanvas('widget', w, h)
+      const scratch = getScratchCanvas('widget', w + 2 * pad, h + 2 * pad)
       const sctx = scratch.getContext('2d')
       if (sctx === null) continue
-      sctx.clearRect(0, 0, w, h)
+      sctx.clearRect(0, 0, w + 2 * pad, h + 2 * pad)
       sctx.save()
       sctx.beginPath()
-      sctx.rect(0, 0, w, h)
+      sctx.rect(0, 0, w + 2 * pad, h + 2 * pad)
       sctx.clip()
+      sctx.translate(pad, pad)
       paint(sctx)
       sctx.restore()
       ctx.save()
@@ -562,7 +580,7 @@ export function drawScene(opts: DrawSceneOptions): void {
       // Pillow rotates counter-clockwise; canvas is clockwise.
       ctx.translate(x + w / 2, y + h / 2)
       ctx.rotate((-rotation * Math.PI) / 180)
-      ctx.drawImage(scratch, -w / 2, -h / 2)
+      ctx.drawImage(scratch, -w / 2 - pad, -h / 2 - pad)
       ctx.restore()
       continue
     }
@@ -571,7 +589,7 @@ export function drawScene(opts: DrawSceneOptions): void {
     // scratch layer.
     ctx.save()
     ctx.beginPath()
-    ctx.rect(x, y, w, h)
+    ctx.rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad)
     ctx.clip()
     ctx.globalAlpha = Math.max(0, Math.min(1, entry.opacity))
     ctx.translate(x, y)

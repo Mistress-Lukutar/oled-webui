@@ -210,6 +210,30 @@ function strOrDrop(key: string, value: string, def: string): void {
   setStyle(key, value === def ? undefined : value)
 }
 
+const borderAlign = computed<'center' | 'inside' | 'outside'>(() => {
+  const value = style.value['border_align']
+  return value === 'center' || value === 'outside' ? value : 'inside'
+})
+
+function setBorderAlign(value: 'center' | 'inside' | 'outside'): void {
+  strOrDrop('border_align', value, 'inside')
+}
+
+const cornerRounded = computed(() => num(style.value['radius']) > 0)
+
+/** Square corners drop `radius`; rounded ones default to a pill shape. */
+function setCornerRounded(rounded: boolean): void {
+  if (!rounded) {
+    setStyle('radius', undefined)
+    return
+  }
+  if (cornerRounded.value) return
+  const rect = entry.value?.['rect']
+  const w = Array.isArray(rect) ? num(rect[2], 8) : 8
+  const h = Array.isArray(rect) ? num(rect[3], 8) : 8
+  setStyle('radius', Math.max(1, Math.round(Math.min(w, h) / 2)))
+}
+
 function insertImageAsset(name: string): void {
   const panel = state.resolutionOverride ?? appState.resolution
   editor.addWidget('image', viewCenter(panel.width, panel.height))
@@ -497,18 +521,129 @@ const dataSourceList = [...DATA_SOURCES]
           </div>
         </template>
         <template v-else-if="widgetType === 'bar'">
-          <div class="grid2">
-            <div class="field"><label>fg</label><input type="color" :value="String(style['fg'] ?? '#7CFC00')" @input="setStyle('fg', ($event.target as HTMLInputElement).value)" /></div>
-            <div class="field"><label>bg</label><input type="color" :value="String(style['bg'] ?? '#222222')" @input="setStyle('bg', ($event.target as HTMLInputElement).value)" /></div>
+          <div class="paint-grid">
+            <div class="paint-cell">
+              <span class="paint-label">Fill</span>
+              <input
+                type="color"
+                :value="String(style['bg'] ?? '#222222')"
+                title="Track fill"
+                @input="setStyle('bg', ($event.target as HTMLInputElement).value)"
+              />
+            </div>
+            <div class="paint-cell">
+              <span class="paint-label">Stroke</span>
+              <input
+                type="color"
+                :value="String(style['border_color'] ?? '#888888')"
+                title="Border color"
+                @input="setStyle('border_color', ($event.target as HTMLInputElement).value)"
+              />
+            </div>
           </div>
-          <div class="field"><label>border (0..16)</label>
-            <input type="number" min="0" max="16" :value="num(style['border'])" @input="setStyle('border', Number(($event.target as HTMLInputElement).value))" />
+          <div class="paint-row">
+            <span class="paint-label">Weight</span>
+            <input
+              class="paint-num"
+              type="number"
+              min="0"
+              max="16"
+              :value="num(style['border'])"
+              title="Border width"
+              @input="numOrDrop('border', ($event.target as HTMLInputElement).value, 0, true)"
+            />
+            <span class="paint-unit">px</span>
           </div>
-          <div class="field"><label>radius</label>
-            <input type="number" min="0" :value="num(style['radius'])" @input="setStyle('radius', Number(($event.target as HTMLInputElement).value))" />
+          <div class="paint-row">
+            <span class="paint-label">Align</span>
+            <div class="seg-group">
+              <button
+                type="button"
+                class="seg-btn"
+                :class="{ active: borderAlign === 'center' }"
+                title="Align stroke: center"
+                @click="setBorderAlign('center')"
+              >
+                <svg viewBox="0 0 14 14" width="14" height="14">
+                  <rect x="5" y="5" width="6" height="6" fill="currentColor" opacity="0.3" />
+                  <rect x="4" y="4" width="8" height="8" fill="none" stroke="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                :class="{ active: borderAlign === 'inside' }"
+                title="Align stroke: inside"
+                @click="setBorderAlign('inside')"
+              >
+                <svg viewBox="0 0 14 14" width="14" height="14">
+                  <rect x="4" y="4" width="7" height="7" fill="currentColor" opacity="0.3" />
+                  <rect x="4.5" y="4.5" width="6" height="6" fill="none" stroke="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                :class="{ active: borderAlign === 'outside' }"
+                title="Align stroke: outside"
+                @click="setBorderAlign('outside')"
+              >
+                <svg viewBox="0 0 14 14" width="14" height="14">
+                  <rect x="5" y="5" width="6" height="6" fill="currentColor" opacity="0.3" />
+                  <rect x="3.5" y="3.5" width="9" height="9" fill="none" stroke="currentColor" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <div class="field"><label>orientation</label>
-            <select :value="(style['orientation'] as string | undefined) ?? 'horizontal'" @change="setStyle('orientation', ($event.target as HTMLSelectElement).value)">
+          <div class="paint-row">
+            <span class="paint-label">Corner</span>
+            <div class="seg-group">
+              <button
+                type="button"
+                class="seg-btn"
+                :class="{ active: !cornerRounded }"
+                title="Square corners"
+                @click="setCornerRounded(false)"
+              >
+                <svg viewBox="0 0 14 14" width="14" height="14">
+                  <path d="M4 11 V4 H11" fill="none" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                :class="{ active: cornerRounded }"
+                title="Rounded corners"
+                @click="setCornerRounded(true)"
+              >
+                <svg viewBox="0 0 14 14" width="14" height="14">
+                  <path d="M4 11 V8 Q4 4 8 4 H11" fill="none" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </button>
+            </div>
+            <input
+              class="paint-num"
+              type="number"
+              min="0"
+              :value="num(style['radius'])"
+              title="Corner radius"
+              @input="numOrDrop('radius', ($event.target as HTMLInputElement).value, 0, true)"
+            />
+            <span class="paint-unit">px</span>
+          </div>
+          <div class="paint-row">
+            <span class="paint-label">Progress</span>
+            <input
+              type="color"
+              :value="String(style['fg'] ?? '#7CFC00')"
+              title="Progress fill"
+              @input="setStyle('fg', ($event.target as HTMLInputElement).value)"
+            />
+            <select
+              class="paint-select"
+              :value="(style['orientation'] as string | undefined) ?? 'horizontal'"
+              @change="setStyle('orientation', ($event.target as HTMLSelectElement).value)"
+            >
               <option value="horizontal">horizontal</option>
               <option value="vertical">vertical</option>
             </select>
@@ -802,6 +937,106 @@ const dataSourceList = [...DATA_SOURCES]
 .mini-btn {
   padding: 3px 8px;
   font-size: 11px;
+}
+
+/* Fill / stroke section, graphic-editor style */
+.paint-grid {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.paint-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.paint-cell input[type='color'] {
+  flex: none;
+  width: 30px;
+  height: 24px;
+  padding: 1px;
+}
+
+.paint-cell .paint-label {
+  width: auto;
+}
+
+.paint-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.paint-row input[type='color'] {
+  flex: none;
+  width: 30px;
+  height: 24px;
+  padding: 1px;
+}
+
+.paint-label {
+  flex: none;
+  width: 52px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.paint-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.paint-num {
+  width: 48px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.paint-select {
+  flex: 1;
+  width: auto;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.seg-group {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-input);
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.seg-btn:last-child {
+  border-right: none;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn.active {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
 }
 
 .fx-inline {

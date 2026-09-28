@@ -38,6 +38,7 @@ export interface BarStyle {
   bg?: string
   border?: number
   border_color?: string
+  border_align?: 'center' | 'inside' | 'outside'
   radius?: number
   orientation?: Orientation
 }
@@ -227,6 +228,7 @@ const STYLE_KEYS = new Set([
   'bg',
   'border',
   'border_color',
+  'border_align',
   'radius',
   'orientation',
   'width',

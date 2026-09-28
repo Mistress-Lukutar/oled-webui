@@ -542,9 +542,22 @@ class SceneRenderer:
                 logger.warning("scene_image_unavailable", path=widget.path, error=str(exc))
             return
 
-        scratch = Image.new("RGBA", (max(1, width), max(1, height)), (0, 0, 0, 0))
+        # A bar border aligned center/outside extends past the widget box,
+        # so the scratch gets symmetric padding to avoid clipping it.
+        pad = 0
+        if (
+            isinstance(widget, BarWidget)
+            and widget.style.border
+            and widget.style.border_align != "inside"
+        ):
+            pad = widget.style.border
+        scratch = Image.new(
+            "RGBA",
+            (max(1, width + 2 * pad), max(1, height + 2 * pad)),
+            (0, 0, 0, 0),
+        )
         draw = ImageDraw.Draw(scratch)
-        local = (0, 0, width, height)
+        local = (pad, pad, width, height)
         if isinstance(widget, BarWidget):
             render_bar(draw, local, item.value01, widget)
         elif isinstance(widget, RingWidget):
@@ -567,7 +580,7 @@ class SceneRenderer:
             dest_x = px + (width - scratch.width) // 2
             dest_y = py + (height - scratch.height) // 2
         else:
-            dest_x, dest_y = px, py
+            dest_x, dest_y = px - pad, py - pad
 
         opacity = max(0.0, min(1.0, item.opacity))
         if opacity < 1.0:

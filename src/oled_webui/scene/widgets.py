@@ -204,16 +204,25 @@ def render_bar(
     radius = min(style.radius, w // 2, h // 2)
     fill01 = max(0.0, min(1.0, value01))
 
+    # Track first: the border must stay visible on top of an opaque bg.
+    draw.rounded_rectangle(
+        (x, y, x + w - 1, y + h - 1), radius=radius, fill=parse_color(style.bg)
+    )
+
     if style.border:
+        # PIL outlines grow inward from the bbox; shift the bbox outward so
+        # the stroke sits inside, across, or outside the widget edge.
+        out = 0
+        if style.border_align == "center":
+            out = style.border // 2
+        elif style.border_align == "outside":
+            out = style.border
         draw.rounded_rectangle(
-            (x, y, x + w - 1, y + h - 1),
+            (x - out, y - out, x + w - 1 + out, y + h - 1 + out),
             radius=radius,
             outline=parse_color(style.border_color),
             width=style.border,
         )
-    draw.rounded_rectangle(
-        (x, y, x + w - 1, y + h - 1), radius=radius, fill=parse_color(style.bg)
-    )
 
     inset = style.border + 1 if style.border else 0
     if style.orientation == "horizontal":
