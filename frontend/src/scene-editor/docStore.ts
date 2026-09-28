@@ -354,23 +354,23 @@ const WIDGET_DEFAULTS: Record<string, Record<string, unknown>> = {
     type: 'text',
     value: 'Text',
     align: 'center',
-    style: { size: 24, color: '#FFFFFF' },
+    style: { size: 24, fill_color: '#FFFFFF' },
   },
   bar: {
     type: 'bar',
     source: 'cpu.percent',
-    style: { fg: '#7CFC00', bg: '#222222', radius: 4 },
+    style: { progress_color: '#7CFC00', fill_color: '#222222', radius: 4 },
   },
   ring: {
     type: 'ring',
     source: 'cpu.percent',
-    style: { fg: '#7CFC00', bg: '#222222', width: 8 },
+    style: { stroke_color: '#7CFC00', stroke_width: 8, fill_color: '#222222' },
   },
   graph: {
     type: 'graph',
     source: 'cpu.percent',
     history: 60,
-    style: { fg: '#7CFC00', fill: true, line_width: 2 },
+    style: { fill_color: '#7CFC00', stroke_width: 2 },
   },
   image: {
     type: 'image',
