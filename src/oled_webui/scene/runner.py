@@ -2,8 +2,8 @@
 File:   runner.py
 Brief:  Scene rendering state machine: evaluation, compositing, scheduling.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-28
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from oled_webui.scene.schema import (
 )
 from oled_webui.scene.widgets import (
     WidgetRuntime,
+    composite_clipped,
     eval_number,
     get_sprite,
     render_bar,
@@ -553,12 +554,23 @@ class SceneRenderer:
                 raise SceneError("Graph widget has no runtime state")
             render_graph(draw, local, item.runtime.history, widget)
         elif isinstance(widget, TextWidget):
-            render_text(draw, local, item.text, widget)
+            render_text(scratch, local, item.text, widget)
         else:  # pragma: no cover - schema limits widget types
             raise SceneError(f"Unsupported widget type: {type(widget).__name__}")
+
+        # Rotation applies to every widget type: the rendered box is
+        # rotated around the rect center with expansion, like images.
+        if item.rotation % 360 != 0:
+            scratch = scratch.rotate(
+                item.rotation, expand=True, resample=Image.Resampling.BICUBIC
+            )
+            dest_x = px + (width - scratch.width) // 2
+            dest_y = py + (height - scratch.height) // 2
+        else:
+            dest_x, dest_y = px, py
 
         opacity = max(0.0, min(1.0, item.opacity))
         if opacity < 1.0:
             alpha = scratch.getchannel("A").point(lambda a, o=opacity: int(a * o))
             scratch.putalpha(alpha)
-        layer.alpha_composite(scratch, dest=(px, py))
+        composite_clipped(layer, scratch, dest_x, dest_y)

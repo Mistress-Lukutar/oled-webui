@@ -7,6 +7,16 @@
 
 export type Align = 'left' | 'center' | 'right'
 export type Orientation = 'horizontal' | 'vertical'
+/** Writing direction: rtl mirrors ltr, btt mirrors ttb (stacked). */
+export type TextDirection = 'ltr' | 'rtl' | 'ttb' | 'btt'
+
+export const TEXT_DIRECTIONS: Array<{ value: TextDirection; label: string }> = [
+  { value: 'ltr', label: 'Left → right' },
+  { value: 'rtl', label: 'Right ← left (mirror)' },
+  { value: 'ttb', label: 'Top ↓ bottom (stacked)' },
+  { value: 'btt', label: 'Bottom ↑ top (mirror)' },
+]
+
 /** Plain number or an expression string evaluated per frame. */
 export type ExprValue = number | string
 
@@ -14,6 +24,13 @@ export interface TextStyle {
   family?: string | null
   size?: number
   color?: string
+  /** Line spacing as a multiplier of font size (schema default 1.2). */
+  leading?: number
+  /** Letter spacing in pixels. */
+  tracking?: number
+  direction?: TextDirection
+  stroke_width?: number
+  stroke_color?: string
 }
 
 export interface BarStyle {
@@ -201,6 +218,11 @@ const STYLE_KEYS = new Set([
   'family',
   'size',
   'color',
+  'leading',
+  'tracking',
+  'direction',
+  'stroke_width',
+  'stroke_color',
   'fg',
   'bg',
   'border',

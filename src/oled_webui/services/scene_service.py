@@ -87,6 +87,7 @@ class SceneService:
     """
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._scenes_dir = settings.scenes_dir
         self._scenes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,6 +95,11 @@ class SceneService:
     def scenes_dir(self) -> Path:
         """Directory holding all scene folders."""
         return self._scenes_dir
+
+    @property
+    def font_library_dir(self) -> Path:
+        """Directory of the shared font library used by ``fonts/`` paths."""
+        return self._settings.fonts_dir
 
     def list_scenes(self) -> list[SceneMeta]:
         """Return all scenes sorted by update time, newest first."""
@@ -184,7 +190,10 @@ class SceneService:
         """
         meta = self.get_meta(scene_id)
         document = load_scene_from_text(
-            yaml_text, self._scene_dir(scene_id), source_name="scene.yaml"
+            yaml_text,
+            self._scene_dir(scene_id),
+            source_name="scene.yaml",
+            fonts_dir=self._settings.fonts_dir,
         )
         self._write_yaml(scene_id, yaml_text)
         meta.updated_at = time.time()
@@ -209,7 +218,9 @@ class SceneService:
             SceneError: If the YAML does not validate.
         """
         self.get_meta(scene_id)
-        return load_scene(self._yaml_path(scene_id))
+        return load_scene(
+            self._yaml_path(scene_id), fonts_dir=self._settings.fonts_dir
+        )
 
     def add_assets(self, scene_id: str, files: list[tuple[str, BinaryIO]]) -> list[str]:
         """Store uploaded asset files for a scene.

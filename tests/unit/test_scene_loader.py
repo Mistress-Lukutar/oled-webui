@@ -42,6 +42,50 @@ def test_load_plain_scene(tmp_path: Path) -> None:
     assert document.widgets[0].rect == (10, 20, 100, 30)
 
 
+def test_font_library_prefix_resolution(tmp_path: Path) -> None:
+    """'fonts/' family paths resolve against the shared font library."""
+    library = tmp_path / "library"
+    library.mkdir()
+    scene_path = _write(
+        tmp_path,
+        "scenes/demo/scene.yaml",
+        """
+        widgets:
+          - type: text
+            source: time.hms
+            rect: [0, 0, 100, 30]
+            style:
+              family: "fonts/Demo.ttf"
+        """,
+    )
+    document = load_scene(scene_path, fonts_dir=library)
+    widget = document.widgets[0]
+    assert isinstance(widget, TextWidget)
+    assert widget.style.family == str((library / "Demo.ttf").resolve())
+
+
+def test_font_asset_stays_scene_relative(tmp_path: Path) -> None:
+    """Non-library family paths still resolve against the scene directory."""
+    scene_path = _write(
+        tmp_path,
+        "scenes/demo/scene.yaml",
+        """
+        widgets:
+          - type: text
+            source: time.hms
+            rect: [0, 0, 100, 30]
+            style:
+              family: "assets/Local.ttf"
+        """,
+    )
+    document = load_scene(scene_path, fonts_dir=tmp_path / "library")
+    widget = document.widgets[0]
+    assert isinstance(widget, TextWidget)
+    assert widget.style.family == str(
+        (tmp_path / "scenes" / "demo" / "assets" / "Local.ttf").resolve()
+    )
+
+
 def test_component_expansion_with_params(tmp_path: Path) -> None:
     _write(
         tmp_path,

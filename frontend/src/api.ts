@@ -152,6 +152,11 @@ function sceneAssetUrl(sceneId: string, name: string): string {
   return `/api/scenes/${sceneId}/assets/${encodeURIComponent(name)}`
 }
 
+/** URL of a shared library font file, for canvas rendering. */
+function libraryFontUrl(name: string): string {
+  return `/api/frame/fonts/${encodeURIComponent(name)}`
+}
+
 export const API = {
   getStatus: () => api<StatusData>('/api/device/status'),
   connect: () =>
@@ -190,6 +195,18 @@ export const API = {
       body: JSON.stringify({ delay }),
     }),
   listFonts: () => api<{ fonts: string[] }>('/api/frame/fonts'),
+  uploadFonts: (files: File[]) => {
+    const data = new FormData()
+    for (const file of files) data.append('files', file)
+    return api<{ fonts: string[] }>('/api/frame/fonts', {
+      method: 'POST',
+      body: data,
+    })
+  },
+  deleteFont: (name: string) =>
+    api<{ fonts: string[] }>(`/api/frame/fonts/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
 
   startVideo: (
     file: File,
@@ -233,6 +250,7 @@ export const API = {
   applyScene: (id: string) =>
     api<SceneState>(`/api/scenes/${id}/apply`, { method: 'POST' }),
   sceneAssetUrl,
+  libraryFontUrl,
   stopScene: () => api<SceneState>('/api/scenes/stop', { method: 'POST' }),
   seedExampleScene: () =>
     api<SceneDetail>('/api/scenes/seed-example', { method: 'POST' }),

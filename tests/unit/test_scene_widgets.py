@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import deque
 
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.schema import (
@@ -108,15 +108,89 @@ def test_render_graph_draws_line() -> None:
 
 
 def test_render_text_draws_glyphs() -> None:
-    image, draw = _scratch(120, 40)
+    image, _draw = _scratch(120, 40)
     widget = TextWidget(
         type="text",
         rect=(0, 0, 120, 40),
         align="center",
         style=TextStyle(color="#FFFFFF"),
     )
-    render_text(draw, (0, 0, 120, 40), "42%", widget)
+    render_text(image, (0, 0, 120, 40), "42%", widget)
     assert any(pixel[3] > 0 for pixel in image.getdata())
+
+
+def _text_widget(**style_kwargs: object) -> TextWidget:
+    return TextWidget(
+        type="text",
+        rect=(0, 0, 80, 40),
+        align="center",
+        style=TextStyle(color="#FFFFFF", **style_kwargs),  # type: ignore[arg-type]
+    )
+
+
+def test_render_text_rtl_is_mirror_of_ltr() -> None:
+    ltr = Image.new("RGBA", (80, 40), (0, 0, 0, 0))
+    rtl = Image.new("RGBA", (80, 40), (0, 0, 0, 0))
+    render_text(ltr, (0, 0, 80, 40), "OK", _text_widget())
+    render_text(rtl, (0, 0, 80, 40), "OK", _text_widget(direction="rtl"))
+    assert list(rtl.getdata()) == list(ImageOps.mirror(ltr).getdata())
+
+
+def test_render_text_ttb_stacks_vertically() -> None:
+    image = Image.new("RGBA", (60, 140), (0, 0, 0, 0))
+    render_text(image, (0, 0, 60, 140), "AB", _text_widget(direction="ttb"))
+    bounds = image.getchannel("A").getbbox()
+    assert bounds is not None
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    assert height > width * 2
+
+
+def test_render_text_btt_is_flip_of_ttb() -> None:
+    ttb = Image.new("RGBA", (60, 140), (0, 0, 0, 0))
+    btt = Image.new("RGBA", (60, 140), (0, 0, 0, 0))
+    render_text(ttb, (0, 0, 60, 140), "AB", _text_widget(direction="ttb"))
+    render_text(btt, (0, 0, 60, 140), "AB", _text_widget(direction="btt"))
+    assert list(btt.getdata()) == list(ImageOps.flip(ttb).getdata())
+
+
+def test_render_text_leading_spreads_lines() -> None:
+    def ink_height(leading: float) -> int:
+        image = Image.new("RGBA", (60, 140), (0, 0, 0, 0))
+        render_text(image, (0, 0, 60, 140), "A\nB", _text_widget(leading=leading))
+        bounds = image.getchannel("A").getbbox()
+        assert bounds is not None
+        return bounds[3] - bounds[1]
+
+    assert ink_height(3.0) > ink_height(1.0) + 20
+
+
+def test_render_text_tracking_widens_text() -> None:
+    def ink_width(tracking: int) -> int:
+        image = Image.new("RGBA", (160, 40), (0, 0, 0, 0))
+        render_text(image, (0, 0, 160, 40), "WW", _text_widget(tracking=tracking))
+        bounds = image.getchannel("A").getbbox()
+        assert bounds is not None
+        return bounds[2] - bounds[0]
+
+    assert ink_width(8) >= ink_width(0) + 8
+
+
+def test_render_text_stroke_expands_ink() -> None:
+    plain = Image.new("RGBA", (120, 40), (0, 0, 0, 0))
+    stroked = Image.new("RGBA", (120, 40), (0, 0, 0, 0))
+    render_text(plain, (0, 0, 120, 40), "OK", _text_widget())
+    render_text(
+        stroked,
+        (0, 0, 120, 40),
+        "OK",
+        _text_widget(stroke_width=2, stroke_color="#FF0000"),
+    )
+    plain_bounds = plain.getchannel("A").getbbox()
+    stroked_bounds = stroked.getchannel("A").getbbox()
+    assert plain_bounds is not None and stroked_bounds is not None
+    assert stroked_bounds[2] - stroked_bounds[0] > plain_bounds[2] - plain_bounds[0]
+    assert any(pixel[:3] == (255, 0, 0) for pixel in stroked.getdata())
 
 
 def test_animated_value_transitions() -> None:

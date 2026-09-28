@@ -95,7 +95,9 @@ async def preview_yaml(
     """
     yaml_text = (await file.read()).decode("utf-8")
     base_dir = scenes._scene_dir(scene_id) if scene_id else scenes.scenes_dir
-    document = load_scene_from_text(yaml_text, base_dir)
+    document = load_scene_from_text(
+        yaml_text, base_dir, fonts_dir=scenes.font_library_dir
+    )
     payload = await _render_preview(document, display)
     return Response(content=payload, media_type="image/jpeg")
 

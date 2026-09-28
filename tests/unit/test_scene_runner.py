@@ -197,3 +197,42 @@ def test_preview_fills_graph_history(tmp_path: Path) -> None:
     payload = renderer.render_frame()
     assert payload[:2] == b"\xff\xd8"
     assert len(runtime.history) >= 2
+
+
+def test_render_rotates_non_image_widget(tmp_path: Path) -> None:
+    """Rotation applies to every widget type, not only images."""
+    import io
+
+    from PIL import Image
+
+    scene_path = tmp_path / "scene.yaml"
+    scene_path.write_text(
+        """
+        widgets:
+          - type: text
+            value: "####"
+            rect: [240, 220, 200, 40]
+            rotation: 90
+            align: center
+            style:
+              size: 28
+              color: "#FFFFFF"
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_path)
+    renderer = SceneRenderer(document, Resolution(width=480, height=480))
+    frame = Image.open(io.BytesIO(renderer.render_frame())).convert("RGB")
+    points = [
+        (x, y)
+        for y in range(frame.height)
+        for x in range(frame.width)
+        if all(channel > 120 for channel in frame.getpixel((x, y)))
+    ]
+    assert points, "rotated text left no visible ink"
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    ink_w = max(xs) - min(xs)
+    ink_h = max(ys) - min(ys)
+    # A wide horizontal label rotated 90° becomes a tall narrow one.
+    assert ink_h > ink_w * 2

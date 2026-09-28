@@ -16,6 +16,9 @@ function familyName(basename: string): string {
 /**
  * Ensure a font asset is registered for canvas use.
  *
+ * `fonts/<name>` families resolve against the shared font library
+ * endpoint; everything else is fetched as a scene asset.
+ *
  * @param sceneId Scene id for the asset endpoint.
  * @param family  Font path as written in the YAML (relative to scene dir).
  * @returns CSS font-family to use in canvas, or null when unavailable.
@@ -29,7 +32,10 @@ export function ensureFont(sceneId: string, family: string): Promise<string | nu
   if (cached) return cached
   const promise = (async () => {
     try {
-      const response = await fetch(API.sceneAssetUrl(sceneId, basename))
+      const url = family.startsWith('fonts/')
+        ? API.libraryFontUrl(basename)
+        : API.sceneAssetUrl(sceneId, basename)
+      const response = await fetch(url)
       if (!response.ok) return null
       const buffer = await response.arrayBuffer()
       const face = new FontFace(familyName(basename), buffer)

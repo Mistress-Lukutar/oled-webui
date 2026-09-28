@@ -68,6 +68,20 @@ function roundedRect(
   ctx.roundRect(x, y, w, h, radius)
 }
 
+/** Reusable scratch canvases keyed by tag (widget rotation, text blocks). */
+const scratchCanvases = new Map<string, HTMLCanvasElement>()
+
+function getScratchCanvas(tag: string, w: number, h: number): HTMLCanvasElement {
+  let canvas = scratchCanvases.get(tag)
+  if (canvas === undefined) {
+    canvas = document.createElement('canvas')
+    scratchCanvases.set(tag, canvas)
+  }
+  if (canvas.width !== w) canvas.width = w
+  if (canvas.height !== h) canvas.height = h
+  return canvas
+}
+
 function drawBar(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -225,23 +239,180 @@ function drawText(
   const size = typeof style['size'] === 'number' ? Math.trunc(style['size']) : 24
   const color = cssColor(style['color'] as string, '#FFFFFF')
   const align = (widget['align'] ?? 'left') as 'left' | 'center' | 'right'
+  const leading =
+    typeof style['leading'] === 'number' && style['leading'] > 0
+      ? style['leading']
+      : 1.2
+  const tracking =
+    typeof style['tracking'] === 'number' ? Math.trunc(style['tracking']) : 0
+  const direction = (style['direction'] ?? 'ltr') as 'ltr' | 'rtl' | 'ttb' | 'btt'
+  const strokeW =
+    typeof style['stroke_width'] === 'number' ? Math.trunc(style['stroke_width']) : 0
+  const strokeColor = cssColor(style['stroke_color'] as string, '#000000')
+  if (text.trim() === '') return
+
   const familyValue = style['family']
   const custom =
     typeof familyValue === 'string' ? loadedFontFamily(sceneId, familyValue) : null
-  ctx.font = `${size}px ${custom ?? "'Segoe UI', system-ui, sans-serif"}`
-  ctx.fillStyle = color
+  const fontSpec = `${size}px ${custom ?? "'Segoe UI', system-ui, sans-serif"}`
+  ctx.save()
+  ctx.font = fontSpec
   ctx.textBaseline = 'alphabetic'
 
-  const metrics = ctx.measureText(text)
-  const textW = metrics.width
-  const ascent = metrics.actualBoundingBoxAscent
-  const descent = metrics.actualBoundingBoxDescent
-  const textH = ascent + descent
+  // Font-level ascent/descent (PIL font.getmetrics parity).
+  const probe = ctx.measureText('Hg') as TextMetrics & {
+    fontBoundingBoxAscent?: number
+    fontBoundingBoxDescent?: number
+  }
+  const ascent = probe.fontBoundingBoxAscent ?? size * 0.8
+  const descent = probe.fontBoundingBoxDescent ?? size * 0.2
+  const lines = text.split('\n')
+  const lineAdv = Math.max(1, Math.round(size * leading))
+  const pad = strokeW + 1
+  const gap = tracking > 0 ? tracking : Math.round(size * 0.1)
+  const spaceAdv = Math.max(2, Math.round(size * 0.4))
+  const colGap = Math.max(tracking, 2)
+
+  const paintGlyph = (
+    c: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    ch: string,
+  ): void => {
+    if (strokeW > 0) {
+      c.lineWidth = strokeW * 2
+      c.lineJoin = 'round'
+      c.strokeStyle = strokeColor
+      c.strokeText(ch, x, y)
+    }
+    c.fillStyle = color
+    c.fillText(ch, x, y)
+  }
+
+  const paintLine = (
+    c: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    line: string,
+  ): void => {
+    if (line === '') return
+    if (tracking !== 0) {
+      let cursor = x
+      for (const ch of [...line]) {
+        paintGlyph(c, cursor, y, ch)
+        cursor += c.measureText(ch).width + tracking
+      }
+      return
+    }
+    if (strokeW > 0) {
+      c.lineWidth = strokeW * 2
+      c.lineJoin = 'round'
+      c.strokeStyle = strokeColor
+      c.strokeText(line, x, y)
+    }
+    c.fillStyle = color
+    c.fillText(line, x, y)
+  }
+
+  // Measure the base-orientation block, mirroring widgets.py.
+  let innerW: number
+  let innerH: number
+  const horizontal = direction === 'ltr' || direction === 'rtl'
+  const colWidths: number[] = []
+  if (horizontal) {
+    innerH = ascent + descent + lineAdv * (lines.length - 1)
+    innerW = 0
+    for (const line of lines) {
+      let width = 0
+      if (line !== '') {
+        if (tracking !== 0) {
+          for (const ch of [...line]) width += ctx.measureText(ch).width
+          width += tracking * ([...line].length - 1)
+        } else {
+          width = ctx.measureText(line).width
+        }
+      }
+      innerW = Math.max(innerW, width)
+    }
+  } else {
+    innerH = 0
+    for (const line of lines) {
+      let width = 0
+      let height = 0
+      for (const ch of line) {
+        if (ch === ' ') {
+          height += spaceAdv
+          continue
+        }
+        const m = ctx.measureText(ch)
+        width = Math.max(width, m.width)
+        height += m.actualBoundingBoxAscent + m.actualBoundingBoxDescent + gap
+      }
+      colWidths.push(width)
+      innerH = Math.max(innerH, Math.max(0, height - gap))
+    }
+    innerW = colWidths.reduce((sum, cw) => sum + cw, 0) + colGap * (lines.length - 1)
+  }
+
+  const blockW = Math.max(1, Math.ceil(innerW) + 2 * pad)
+  const blockH = Math.max(1, Math.ceil(innerH) + 2 * pad)
+  const block = getScratchCanvas('text-block', blockW, blockH)
+  const bctx = block.getContext('2d')
+  if (bctx === null) {
+    ctx.restore()
+    return
+  }
+  // Resizing a canvas resets its state, so set the font after sizing.
+  bctx.clearRect(0, 0, blockW, blockH)
+  bctx.font = fontSpec
+  bctx.textBaseline = 'alphabetic'
+
+  if (horizontal) {
+    lines.forEach((line, index) => {
+      if (line === '') return
+      let width = 0
+      if (tracking !== 0) {
+        for (const ch of [...line]) width += bctx.measureText(ch).width
+        width += tracking * ([...line].length - 1)
+      } else {
+        width = bctx.measureText(line).width
+      }
+      let x = pad
+      if (align === 'center') x = pad + (innerW - width) / 2
+      else if (align === 'right') x = pad + innerW - width
+      paintLine(bctx, x, pad + ascent + index * lineAdv, line)
+    })
+  } else {
+    let offsetX = 0
+    lines.forEach((line, index) => {
+      let y = pad
+      for (const ch of line) {
+        if (ch === ' ') {
+          y += spaceAdv
+          continue
+        }
+        const m = bctx.measureText(ch)
+        paintGlyph(bctx, pad + offsetX, y + m.actualBoundingBoxAscent, ch)
+        y += m.actualBoundingBoxAscent + m.actualBoundingBoxDescent + gap
+      }
+      offsetX += colWidths[index]! + colGap
+    })
+  }
+
+  // Paste honoring alignment; rtl/btt mirror the finished block.
+  const ty = Math.max(0, (h - blockH) / 2)
   let tx = 0
-  if (align === 'center') tx = (w - textW) / 2
-  else if (align === 'right') tx = w - textW
-  const ty = Math.max(0, (h - textH) / 2) + ascent
-  ctx.fillText(text, tx, ty)
+  if (align === 'center') tx = (w - blockW) / 2
+  else if (align === 'right') tx = w - blockW
+  if (direction === 'rtl' || direction === 'btt') {
+    ctx.translate(tx + blockW / 2, ty + blockH / 2)
+    if (direction === 'rtl') ctx.scale(-1, 1)
+    else ctx.scale(1, -1)
+    ctx.drawImage(block, -blockW / 2, -blockH / 2)
+  } else {
+    ctx.drawImage(block, tx, ty)
+  }
+  ctx.restore()
 }
 
 function drawImage(
@@ -364,6 +535,38 @@ export function drawScene(opts: DrawSceneOptions): void {
     )
     if (drawn) continue
 
+    const widgetRecord = widget as Record<string, unknown>
+    const paint = (c: CanvasRenderingContext2D): void => {
+      if (type === 'bar') drawBar(c, w, h, entry.value01, widgetRecord)
+      else if (type === 'ring') drawRing(c, w, h, entry.value01, widgetRecord)
+      else if (type === 'graph') drawGraph(c, w, h, entry.history, widgetRecord)
+      else if (type === 'text') drawText(c, w, h, entry.text, widgetRecord, sceneId)
+    }
+
+    const rotation = entry.rotation
+    if (rotation % 360 !== 0) {
+      // Like the Pillow scratch layer: paint into a clipped box, then
+      // rotate that box around the rect center with expansion.
+      const scratch = getScratchCanvas('widget', w, h)
+      const sctx = scratch.getContext('2d')
+      if (sctx === null) continue
+      sctx.clearRect(0, 0, w, h)
+      sctx.save()
+      sctx.beginPath()
+      sctx.rect(0, 0, w, h)
+      sctx.clip()
+      paint(sctx)
+      sctx.restore()
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, Math.min(1, entry.opacity))
+      // Pillow rotates counter-clockwise; canvas is clockwise.
+      ctx.translate(x + w / 2, y + h / 2)
+      ctx.rotate((-rotation * Math.PI) / 180)
+      ctx.drawImage(scratch, -w / 2, -h / 2)
+      ctx.restore()
+      continue
+    }
+
     // Non-image widgets render into their clipped box, like the Pillow
     // scratch layer.
     ctx.save()
@@ -372,11 +575,7 @@ export function drawScene(opts: DrawSceneOptions): void {
     ctx.clip()
     ctx.globalAlpha = Math.max(0, Math.min(1, entry.opacity))
     ctx.translate(x, y)
-    const widgetRecord = widget as Record<string, unknown>
-    if (type === 'bar') drawBar(ctx, w, h, entry.value01, widgetRecord)
-    else if (type === 'ring') drawRing(ctx, w, h, entry.value01, widgetRecord)
-    else if (type === 'graph') drawGraph(ctx, w, h, entry.history, widgetRecord)
-    else if (type === 'text') drawText(ctx, w, h, entry.text, widgetRecord, sceneId)
+    paint(ctx)
     ctx.restore()
   }
 

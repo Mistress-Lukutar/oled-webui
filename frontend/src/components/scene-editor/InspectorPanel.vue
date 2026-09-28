@@ -6,14 +6,20 @@
  * asset management.
  */
 import { computed, ref } from 'vue'
+import { API } from '../../api'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
-import { DATA_SOURCES, EASINGS, isComponentInstance } from '../../scene-editor/types'
+import {
+  DATA_SOURCES,
+  EASINGS,
+  TEXT_DIRECTIONS,
+  isComponentInstance,
+} from '../../scene-editor/types'
 import type { EntryRaw } from '../../scene-editor/types'
 import { viewCenter } from '../../scene-editor/viewState'
 import ExprField from './ExprField.vue'
 
-const { state: appState, showError } = useDisplayStore()
+const { state: appState, actions: appActions, showError } = useDisplayStore()
 const { state } = editor
 
 const assetInput = ref<HTMLInputElement | null>(null)
@@ -157,6 +163,53 @@ async function remove(name: string): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------
+// Text typography: font picker over the shared library + scene assets
+// ---------------------------------------------------------------------
+
+const fontInput = ref<HTMLInputElement | null>(null)
+const uploadingFonts = ref(false)
+
+const familyValue = computed<string>(() => String(style.value['family'] ?? ''))
+
+const isCustomFamily = computed<boolean>(() => {
+  const value = familyValue.value
+  if (value === '') return false
+  return (
+    !appState.fonts.some((font) => `fonts/${font}` === value) &&
+    !fontAssets.value.some((asset) => `assets/${asset}` === value)
+  )
+})
+
+async function addLibraryFonts(files: FileList | null): Promise<void> {
+  if (files === null || files.length === 0) return
+  uploadingFonts.value = true
+  try {
+    await API.uploadFonts([...files])
+    await appActions.loadFonts()
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err))
+  } finally {
+    uploadingFonts.value = false
+    if (fontInput.value !== null) fontInput.value.value = ''
+  }
+}
+
+/** Write a numeric style field, dropping the key at the schema default. */
+function numOrDrop(key: string, raw: string, def: number, int = false): void {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value === def) {
+    setStyle(key, undefined)
+    return
+  }
+  setStyle(key, int ? Math.trunc(value) : value)
+}
+
+/** Write a string style field, dropping the key at the schema default. */
+function strOrDrop(key: string, value: string, def: string): void {
+  setStyle(key, value === def ? undefined : value)
+}
+
 function insertImageAsset(name: string): void {
   const panel = state.resolutionOverride ?? appState.resolution
   editor.addWidget('image', viewCenter(panel.width, panel.height))
@@ -283,8 +336,9 @@ const dataSourceList = [...DATA_SOURCES]
         <ExprField label="offset y" :model-value="entry['offset_y'] as number | string | undefined" @update:model-value="(v) => setField('offset_y', v)" />
         <ExprField label="opacity" :model-value="entry['opacity'] as number | string | undefined" :default-number="1" :step="0.05" @update:model-value="(v) => setField('opacity', v)" />
         <ExprField label="rotation" :model-value="entry['rotation'] as number | string | undefined" @update:model-value="(v) => setField('rotation', v)" />
-        <div v-if="widgetType !== 'image'" class="hint">
-          Rotation is rendered for image widgets only.
+        <div class="hint">
+          Rotation: degrees counter-clockwise around the box center; applies
+          to every widget type.
         </div>
       </div>
 
@@ -374,20 +428,72 @@ const dataSourceList = [...DATA_SOURCES]
       <div class="section">
         <div class="section-title">Style</div>
         <template v-if="widgetType === 'text'">
-          <div class="field"><label>size (4..200)</label>
-            <input type="number" min="4" max="200" :value="num(style['size'], 24)" @input="setStyle('size', Number(($event.target as HTMLInputElement).value))" />
+          <div class="field">
+            <label>font</label>
+            <select
+              :value="familyValue"
+              @change="setStyle('family', ($event.target as HTMLSelectElement).value || undefined)"
+            >
+              <option value="">Default (built-in)</option>
+              <option v-if="isCustomFamily" :value="familyValue">
+                {{ familyValue }} (custom path)
+              </option>
+              <optgroup v-if="appState.fonts.length > 0" label="Font library">
+                <option v-for="font in appState.fonts" :key="`lib-${font}`" :value="`fonts/${font}`">
+                  {{ font }}
+                </option>
+              </optgroup>
+              <optgroup v-if="fontAssets.length > 0" label="Scene assets">
+                <option v-for="asset in fontAssets" :key="`scene-${asset}`" :value="`assets/${asset}`">
+                  {{ asset }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <input
+            ref="fontInput"
+            type="file"
+            multiple
+            accept=".ttf,.otf"
+            class="visually-hidden"
+            @change="addLibraryFonts(($event.target as HTMLInputElement).files)"
+          />
+          <div class="field">
+            <button class="mini-btn" :disabled="uploadingFonts" @click="fontInput?.click()">
+              {{ uploadingFonts ? 'Uploading…' : 'Upload font to library…' }}
+            </button>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>size (4..200)</label>
+              <input type="number" min="4" max="200" :value="num(style['size'], 24)" @input="numOrDrop('size', ($event.target as HTMLInputElement).value, 24, true)" />
+            </div>
+            <div class="field"><label>line height ×</label>
+              <input type="number" min="0.1" max="4" step="0.05" :value="num(style['leading'], 1.2)" @input="numOrDrop('leading', ($event.target as HTMLInputElement).value, 1.2)" />
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>tracking (px)</label>
+              <input type="number" min="-32" max="128" :value="num(style['tracking'], 0)" @input="numOrDrop('tracking', ($event.target as HTMLInputElement).value, 0, true)" />
+            </div>
+            <div class="field"><label>direction</label>
+              <select
+                :value="(style['direction'] as string | undefined) ?? 'ltr'"
+                @change="strOrDrop('direction', ($event.target as HTMLSelectElement).value, 'ltr')"
+              >
+                <option v-for="d in TEXT_DIRECTIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>stroke (px)</label>
+              <input type="number" min="0" max="32" :value="num(style['stroke_width'], 0)" @input="numOrDrop('stroke_width', ($event.target as HTMLInputElement).value, 0, true)" />
+            </div>
+            <div class="field"><label>stroke color</label>
+              <input type="color" :value="String(style['stroke_color'] ?? '#000000')" @input="strOrDrop('stroke_color', ($event.target as HTMLInputElement).value, '#000000')" />
+            </div>
           </div>
           <div class="field"><label>color</label>
             <input type="color" :value="String(style['color'] ?? '#FFFFFF')" @input="setStyle('color', ($event.target as HTMLInputElement).value)" />
-          </div>
-          <div class="field"><label>font family (asset path)</label>
-            <input
-              type="text"
-              list="font-assets"
-              :value="(style['family'] as string | undefined) ?? ''"
-              placeholder="default"
-              @input="setStyle('family', ($event.target as HTMLInputElement).value || undefined)"
-            />
           </div>
         </template>
         <template v-else-if="widgetType === 'bar'">
@@ -604,9 +710,6 @@ const dataSourceList = [...DATA_SOURCES]
     </datalist>
     <datalist id="image-assets">
       <option v-for="asset in imageAssets" :key="asset" :value="`assets/${asset}`" />
-    </datalist>
-    <datalist id="font-assets">
-      <option v-for="asset in fontAssets" :key="asset" :value="`assets/${asset}`" />
     </datalist>
   </div>
 </template>

@@ -2,8 +2,8 @@
 File:   schema.py
 Brief:  Pydantic schema for scene documents: background, widgets, animation.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-28
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -31,11 +31,35 @@ class ImageLayer(_Strict):
 
 
 class TextStyle(_Strict):
-    """Text rendering style."""
+    """Text rendering style (typography options follow design-suite terms).
 
-    family: str | None = Field(None, description="Font file path; None uses default")
+    ``leading`` is the line spacing as a multiplier of the font size,
+    ``tracking`` adds letter spacing in pixels, and ``direction`` selects
+    the writing direction: ``ltr`` (default), ``rtl`` (mirror of ``ltr``),
+    ``ttb`` (characters stacked top-to-bottom) or ``btt`` (mirror of
+    ``ttb``).
+    """
+
+    family: str | None = Field(
+        None,
+        description=(
+            "Font file path; 'fonts/<name>.ttf' resolves against the shared "
+            "font library, other relative paths against the scene directory"
+        ),
+    )
     size: int = Field(24, ge=4, le=200, description="Font size in pixels")
     color: str = Field("#FFFFFF", description="Text color as #RRGGBB")
+    leading: float = Field(
+        1.2, gt=0, le=4.0, description="Line spacing as a multiplier of font size"
+    )
+    tracking: int = Field(
+        0, ge=-32, le=128, description="Letter spacing in pixels"
+    )
+    direction: Literal["ltr", "rtl", "ttb", "btt"] = Field(
+        "ltr", description="Writing direction: ltr, rtl (mirror), ttb, btt (mirror)"
+    )
+    stroke_width: int = Field(0, ge=0, le=32, description="Outline thickness in pixels")
+    stroke_color: str = Field("#000000", description="Outline color as #RRGGBB")
 
 
 class BarStyle(_Strict):
@@ -94,7 +118,7 @@ class WidgetBase(_Strict):
     offset_y: str | int | float = Field(0, description="Y offset or expression")
     opacity: str | int | float = Field(1.0, description="Opacity or expression 0..1")
     rotation: str | int | float = Field(
-        0.0, description="Rotation degrees or expression (image widgets)"
+        0.0, description="Rotation degrees or expression (all widget types)"
     )
     animate: dict[str, AnimateSpec] = Field(
         default_factory=dict, description="Named animations; 'value' eases the source"

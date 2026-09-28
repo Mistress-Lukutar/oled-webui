@@ -2,8 +2,8 @@
 File:   loader.py
 Brief:  YAML scene loading, component instantiation and path resolution.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-28
+Version: v0.3.0
 """
 
 from __future__ import annotations
@@ -53,14 +53,17 @@ _PLACEHOLDER: re.Pattern[str] = re.compile(r"\{\{\s*([A-Za-z_]\w*(?:\.\w+)*)\s*\
 _MAX_COMPONENT_DEPTH: int = 8
 
 
-def load_scene(path: Path) -> SceneDocument:
+def load_scene(path: Path, fonts_dir: Path | None = None) -> SceneDocument:
     """Load, resolve and validate a scene document.
 
     Components (``use:`` blocks) are expanded, relative asset paths are
-    resolved against the scene file directory.
+    resolved against the scene file directory and ``fonts/`` prefixed
+    font paths against the shared font library.
 
     Args:
         path: Path to the scene YAML file.
+        fonts_dir: Shared font library directory; ``None`` keeps legacy
+            scene-relative resolution for ``fonts/`` paths.
 
     Returns:
         Validated scene document.
@@ -73,11 +76,16 @@ def load_scene(path: Path) -> SceneDocument:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise SceneError(f"Cannot read scene file {path}: {exc}") from exc
-    return load_scene_from_text(text, path.parent, source_name=path.name)
+    return load_scene_from_text(
+        text, path.parent, source_name=path.name, fonts_dir=fonts_dir
+    )
 
 
 def load_scene_from_text(
-    text: str, base_dir: Path, source_name: str = "scene.yaml"
+    text: str,
+    base_dir: Path,
+    source_name: str = "scene.yaml",
+    fonts_dir: Path | None = None,
 ) -> SceneDocument:
     """Parse, resolve and validate a scene document from YAML text.
 
@@ -86,6 +94,8 @@ def load_scene_from_text(
         base_dir: Directory used to resolve relative asset, font and
             component paths.
         source_name: Scene file name used in error messages.
+        fonts_dir: Shared font library directory for ``fonts/`` prefixed
+            ``style.family`` values; ``None`` keeps scene-relative.
 
     Returns:
         Validated scene document.
@@ -117,10 +127,28 @@ def load_scene_from_text(
         style = getattr(widget, "style", None)
         if style is not None:
             family = getattr(style, "family", None)
-            if isinstance(family, str) and not Path(family).is_absolute():
-                style.family = str((base_dir / family).resolve())
+            if isinstance(family, str) and family != "":
+                style.family = _resolve_family(family, base_dir, fonts_dir)
 
     return document
+
+
+def _resolve_family(family: str, base_dir: Path, fonts_dir: Path | None) -> str:
+    """Resolve a text widget font path.
+
+    Args:
+        family: Font path as written in the YAML.
+        base_dir: Scene directory for relative paths.
+        fonts_dir: Shared font library for ``fonts/`` prefixed paths.
+
+    Returns:
+        Absolute font file path.
+    """
+    if family.startswith("fonts/") and fonts_dir is not None:
+        return str((fonts_dir / family[len("fonts/") :]).resolve())
+    if not Path(family).is_absolute():
+        return str((base_dir / family).resolve())
+    return family
 
 
 def _expand_background(layers: list[Any], base_dir: Path) -> list[Any]:

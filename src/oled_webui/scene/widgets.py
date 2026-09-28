@@ -2,16 +2,18 @@
 File:   widgets.py
 Brief:  Pillow renderers for scene widgets: bar, text, ring, graph, image.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-28
+Version: v0.3.0
 """
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from collections.abc import Callable
+from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.expressions import EASINGS, Expression
@@ -316,34 +318,226 @@ def render_graph(
         draw.polygon(polygon, fill=(line_color[0], line_color[1], line_color[2], 96))
     draw.line(points, fill=line_color, width=style.line_width, joint="curve")
 
+def composite_clipped(
+    layer: Image.Image, sprite: Image.Image, dest_x: int, dest_y: int
+) -> None:
+    """Alpha-composite a sprite onto a layer, cropping to the layer bounds.
+
+    PIL rejects negative or overflowing destinations in alpha_composite;
+    content extending past the layer is cropped instead.
+
+    Args:
+        layer: Target RGBA layer.
+        sprite: RGBA sprite to composite.
+        dest_x: Destination X; may be negative.
+        dest_y: Destination Y; may be negative.
+    """
+    layer_w, layer_h = layer.size
+    crop_left = max(0, -dest_x)
+    crop_top = max(0, -dest_y)
+    crop_right = max(0, dest_x + sprite.width - layer_w)
+    crop_bottom = max(0, dest_y + sprite.height - layer_h)
+    if (crop_left, crop_top, crop_right, crop_bottom) != (0, 0, 0, 0):
+        sprite = sprite.crop(
+            (
+                crop_left,
+                crop_top,
+                sprite.width - crop_right,
+                sprite.height - crop_bottom,
+            )
+        )
+        dest_x += crop_left
+        dest_y += crop_top
+    if sprite.width <= 0 or sprite.height <= 0:
+        return
+    layer.alpha_composite(sprite, dest=(dest_x, dest_y))
+
+
+def _stroke_kwargs(style: Any) -> dict[str, Any]:
+    """Build draw.text keyword arguments for the text outline.
+
+    Args:
+        style: TextStyle-like object with ``stroke_width``/``stroke_color``.
+
+    Returns:
+        Empty dict for zero-width outlines, otherwise width and fill.
+    """
+    if style.stroke_width <= 0:
+        return {}
+    return {
+        "stroke_width": style.stroke_width,
+        "stroke_fill": parse_color(style.stroke_color),
+    }
+
+
+def _horizontal_block(text: str, widget: Any) -> Image.Image:
+    """Render horizontal text (``ltr``/``rtl`` base) into a block image.
+
+    Lines are laid out on a ``leading``-spaced grid and aligned per line
+    within the block, mirroring paragraph alignment in design suites.
+
+    Args:
+        text: Rendered text; newlines split lines.
+        widget: Text widget carrying the style and alignment.
+
+    Returns:
+        Transparent RGBA block sized to the text (padding included).
+    """
+    style = widget.style
+    font = get_font(style.family, style.size)
+    color = parse_color(style.color)
+    stroke = _stroke_kwargs(style)
+    tracking = style.tracking
+    pad = style.stroke_width + 1
+    line_adv = max(1, round(style.size * style.leading))
+    ascent, descent = font.getmetrics()  # type: ignore[union-attr]
+
+    lines = text.split("\n")
+    widths: list[float] = []
+    for line in lines:
+        if tracking and line:
+            widths.append(
+                sum(font.getlength(ch) for ch in line)
+                + tracking * (len(line) - 1)
+            )
+        else:
+            widths.append(font.getlength(line) if line else 0.0)
+    inner_w = math.ceil(max(widths, default=0.0))
+    inner_h = ascent + descent + line_adv * (len(lines) - 1)
+    block = Image.new(
+        "RGBA", (inner_w + 2 * pad, inner_h + 2 * pad), (0, 0, 0, 0)
+    )
+    draw = ImageDraw.Draw(block)
+
+    for index, line in enumerate(lines):
+        if not line:
+            continue
+        if widget.align == "center":
+            x = pad + (inner_w - widths[index]) / 2
+        elif widget.align == "right":
+            x = pad + inner_w - widths[index]
+        else:
+            x = float(pad)
+        baseline = pad + ascent + index * line_adv
+        if tracking:
+            cursor = x
+            for ch in line:
+                draw.text(
+                    (cursor, baseline), ch, font=font, fill=color, anchor="ls", **stroke
+                )
+                cursor += font.getlength(ch) + tracking
+        else:
+            draw.text((x, baseline), line, font=font, fill=color, anchor="ls", **stroke)
+    return block
+
+
+def _vertical_block(text: str, widget: Any) -> Image.Image:
+    """Render stacked vertical text (``ttb``/``btt`` base) into a block.
+
+    Characters are stacked upright, one below the other; multi-line text
+    becomes columns laid out left to right. Spaces add a fixed gap.
+
+    Args:
+        text: Rendered text; newlines split columns.
+        widget: Text widget carrying the style and alignment.
+
+    Returns:
+        Transparent RGBA block sized to the text (padding included).
+    """
+    style = widget.style
+    font = get_font(style.family, style.size)
+    color = parse_color(style.color)
+    stroke = _stroke_kwargs(style)
+    tracking = style.tracking
+    pad = style.stroke_width + 1
+    char_gap = tracking if tracking > 0 else round(style.size * 0.1)
+    space_adv = max(2, round(style.size * 0.4))
+    col_gap = max(tracking, 2)
+
+    lines = text.split("\n")
+    widths: list[float] = []
+    heights: list[int] = []
+    boxes: list[list[tuple[float, float, float]]] = []
+    for line in lines:
+        y = 0
+        width = 0.0
+        boxes.append([])
+        for ch in line:
+            if ch == " ":
+                y += space_adv
+                continue
+            bbox = font.getbbox(ch)
+            boxes[-1].append((bbox[3] - bbox[1], bbox[1], font.getlength(ch)))
+            y += (bbox[3] - bbox[1]) + char_gap
+            width = max(width, font.getlength(ch))
+        heights.append(max(0, y - char_gap))
+        widths.append(width)
+
+    inner_w = int(sum(widths) + col_gap * (len(lines) - 1))
+    inner_h = max(heights, default=0)
+    block = Image.new(
+        "RGBA", (inner_w + 2 * pad, inner_h + 2 * pad), (0, 0, 0, 0)
+    )
+    draw = ImageDraw.Draw(block)
+
+    offset_x = 0.0
+    for index, line in enumerate(lines):
+        x = pad + offset_x
+        y = pad
+        metrics = iter(boxes[index])
+        for ch in line:
+            if ch == " ":
+                y += space_adv
+                continue
+            ink_h, ink_top, _width = next(metrics)
+            draw.text((x, y - ink_top), ch, font=font, fill=color, **stroke)
+            y += ink_h + char_gap
+        offset_x += widths[index] + col_gap
+    return block
+
+
 def render_text(
-    draw: ImageDraw.ImageDraw,
+    image: Image.Image,
     rect: tuple[int, int, int, int],
     text: str,
     widget: TextWidget,
 ) -> None:
     """Draw a text label into the local widget box.
 
+    The text is rendered into a transparent block at its base orientation
+    (``ltr``/``ttb``), mirrored for ``rtl``/``btt``, then pasted into the
+    box honoring the horizontal alignment; vertically the block is centered.
+
     Args:
-        draw: Target draw context (local coordinates).
+        image: Target RGBA image (local widget box coordinates).
         rect: Local widget box (0-based).
         text: Rendered text.
         widget: Text widget with style.
+
+    Raises:
+        SceneError: If the font file cannot be loaded or a color is invalid.
     """
+    if text.strip() == "":
+        return
+    style = widget.style
+    if style.direction in ("ltr", "rtl"):
+        base = _horizontal_block(text, widget)
+    else:
+        base = _vertical_block(text, widget)
+    if style.direction == "rtl":
+        base = ImageOps.mirror(base)
+    elif style.direction == "btt":
+        base = ImageOps.flip(base)
+
     x, y, w, h = rect
-    font = get_font(widget.style.family, widget.style.size)
-    color = parse_color(widget.style.color)
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    text_w = right - left
-    text_h = bottom - top
     if widget.align == "center":
-        tx = x + (w - text_w) // 2
+        tx = x + (w - base.width) // 2
     elif widget.align == "right":
-        tx = x + w - text_w
+        tx = x + w - base.width
     else:
         tx = x
-    ty = y + max(0, (h - text_h) // 2) - top
-    draw.text((tx, ty), text, font=font, fill=color)
+    ty = y + max(0, (h - base.height) // 2)
+    image.paste(base, (tx, ty), base)
 
 def get_sprite(path: str) -> Image.Image:
     """Load and cache an RGBA sprite.
@@ -433,22 +627,4 @@ def render_image(
             dest_y += clip_top
     # Crop whatever extends past the layer bounds; PIL rejects negative
     # or overflowing destinations in alpha_composite.
-    layer_w, layer_h = layer.size
-    crop_left = max(0, -dest_x)
-    crop_top = max(0, -dest_y)
-    crop_right = max(0, dest_x + sprite.width - layer_w)
-    crop_bottom = max(0, dest_y + sprite.height - layer_h)
-    if (crop_left, crop_top, crop_right, crop_bottom) != (0, 0, 0, 0):
-        sprite = sprite.crop(
-            (
-                crop_left,
-                crop_top,
-                sprite.width - crop_right,
-                sprite.height - crop_bottom,
-            )
-        )
-        dest_x += crop_left
-        dest_y += crop_top
-    if sprite.width <= 0 or sprite.height <= 0:
-        return
-    layer.alpha_composite(sprite, dest=(dest_x, dest_y))
+    composite_clipped(layer, sprite, dest_x, dest_y)

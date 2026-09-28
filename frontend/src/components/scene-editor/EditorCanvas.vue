@@ -269,7 +269,7 @@ function onPointerdown(event: PointerEvent): void {
 
   // Handles first (single selection only).
   if (single !== null) {
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, single.isImage)
+    const handle = handleAt(point.x, point.y, single.box, zoom.value, !single.isInstance)
     if (handle === 'rot') {
       interaction = {
         kind: 'rotate',
@@ -470,7 +470,7 @@ function updateCursor(point: { x: number; y: number }): void {
   const selection = interactiveBoxes()
   if (selection.length === 1) {
     const single = selection[0]!
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, single.isImage)
+    const handle = handleAt(point.x, point.y, single.box, zoom.value, !single.isInstance)
     if (handle !== null) {
       hoverCursor.value = handleCursor(handle)
       return
@@ -652,7 +652,7 @@ function drawOverlay(
       ctx.stroke()
       ctx.restore()
     }
-    if (info.isImage && selection.length === 1) {
+    if (selection.length === 1) {
       const rot = positions['rot']
       ctx.save()
       ctx.strokeStyle = ACCENT

@@ -216,3 +216,45 @@ def test_settings_change_reapplies_preset_image(
     assert updated.status_code == 200
     assert len(sent_frames) == frames_after_apply + 1
     assert sent_frames[-1]["payload"] != sent_frames[-2]["payload"]
+
+
+def test_font_library_upload_serve_delete(client: TestClient) -> None:
+    """Shared font library round-trips: upload, list, serve, delete."""
+    response = client.post(
+        "/api/frame/fonts",
+        files={"files": ("Demo Font.ttf", b"font-bytes", "application/octet-stream")},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["fonts"] == ["Demo_Font.ttf"]
+
+    served = client.get("/api/frame/fonts/Demo_Font.ttf")
+    assert served.status_code == 200
+    assert served.content == b"font-bytes"
+
+    deleted = client.delete("/api/frame/fonts/Demo_Font.ttf")
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["fonts"] == []
+    assert client.get("/api/frame/fonts/Demo_Font.ttf").status_code == 404
+
+
+def test_font_upload_rejects_bad_extension(client: TestClient) -> None:
+    """Only TTF/OTF files may enter the font library."""
+    response = client.post(
+        "/api/frame/fonts",
+        files={"files": ("payload.exe", b"x", "application/octet-stream")},
+    )
+    assert response.status_code == 422
+
+
+def test_font_upload_uniquifies_collisions(client: TestClient) -> None:
+    """Re-uploading the same name stores a numbered copy, not an overwrite."""
+    for _ in range(2):
+        response = client.post(
+            "/api/frame/fonts",
+            files={"files": ("Same.ttf", b"x", "application/octet-stream")},
+        )
+        assert response.status_code == 200
+    assert client.get("/api/frame/fonts").json()["data"]["fonts"] == [
+        "Same-1.ttf",
+        "Same.ttf",
+    ]
