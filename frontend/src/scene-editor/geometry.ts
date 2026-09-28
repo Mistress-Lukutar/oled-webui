@@ -10,17 +10,38 @@ export interface WidgetBox {
   h: number
 }
 
-export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot'
+export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+export type CornerId = 'nw' | 'ne' | 'se' | 'sw'
 
 export function pointInBox(px: number, py: number, box: WidgetBox): boolean {
   return px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h
 }
 
-/** Handle anchor points in scene coordinates. */
-export function handlePositions(box: WidgetBox): Record<HandleId, { x: number; y: number }> {
+/** Rotate a point around a center, CCW positive (Pillow convention, y-down canvas). */
+function rotateAround(
+  px: number,
+  py: number,
+  cx: number,
+  cy: number,
+  rotation: number,
+): { x: number; y: number } {
+  const rad = (rotation * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const ox = px - cx
+  const oy = py - cy
+  return { x: cx + ox * cos + oy * sin, y: cy - ox * sin + oy * cos }
+}
+
+/** Handle anchor points in scene coordinates, rotated with the widget. */
+export function handlePositions(
+  box: WidgetBox,
+  rotation = 0,
+): Record<HandleId, { x: number; y: number }> {
   const { x, y, w, h } = box
   const cx = x + w / 2
-  return {
+  const cy = y + h / 2
+  const axisAligned: Record<HandleId, { x: number; y: number }> = {
     nw: { x, y },
     n: { x: cx, y },
     ne: { x: x + w, y },
@@ -29,8 +50,13 @@ export function handlePositions(box: WidgetBox): Record<HandleId, { x: number; y
     s: { x: cx, y: y + h },
     sw: { x, y: y + h },
     w: { x, y: y + h / 2 },
-    rot: { x: cx, y: y - 18 },
   }
+  if (rotation % 360 === 0) return axisAligned
+  const rotated = {} as Record<HandleId, { x: number; y: number }>
+  for (const [id, p] of Object.entries(axisAligned)) {
+    rotated[id as HandleId] = rotateAround(p.x, p.y, cx, cy, rotation)
+  }
+  return rotated
 }
 
 const HANDLES: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -41,17 +67,63 @@ export function handleAt(
   py: number,
   box: WidgetBox,
   zoom: number,
-  withRotate: boolean,
+  rotation = 0,
 ): HandleId | null {
   const threshold = 6 / zoom
-  if (withRotate) {
-    const rot = handlePositions(box)['rot']
-    if (Math.hypot(px - rot.x, py - rot.y) <= threshold) return 'rot'
-  }
-  const positions = handlePositions(box)
+  const positions = handlePositions(box, rotation)
   for (const id of HANDLES) {
     const p = positions[id]
     if (Math.hypot(px - p.x, py - p.y) <= threshold) return id
+  }
+  return null
+}
+
+/** Point-in-box test for a widget rotated around its rect center. */
+export function pointInRotatedBox(
+  px: number,
+  py: number,
+  box: WidgetBox,
+  rotation = 0,
+): boolean {
+  if (rotation % 360 === 0) return pointInBox(px, py, box)
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const rad = (rotation * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const ox = px - cx
+  const oy = py - cy
+  // Scene offset -> box-local coordinates (inverse rotation).
+  const lx = ox * cos - oy * sin
+  const ly = ox * sin + oy * cos
+  return lx >= -box.w / 2 && lx <= box.w / 2 && ly >= -box.h / 2 && ly <= box.h / 2
+}
+
+/**
+ * Corner whose "grab just outside the handle" rotate zone contains the
+ * point (Photoshop-style rotation). Returns null inside the box or away
+ * from the corners.
+ */
+export function rotateZoneAt(
+  px: number,
+  py: number,
+  box: WidgetBox,
+  zoom: number,
+  rotation = 0,
+): CornerId | null {
+  const inner = 6 / zoom
+  const outer = 22 / zoom
+  const positions = handlePositions(box, rotation)
+  for (const corner of ['nw', 'ne', 'se', 'sw'] as const) {
+    const p = positions[corner]
+    const distance = Math.hypot(px - p.x, py - p.y)
+    if (
+      distance > inner &&
+      distance <= outer &&
+      !pointInRotatedBox(px, py, box, rotation)
+    ) {
+      return corner
+    }
   }
   return null
 }
@@ -90,24 +162,56 @@ export function resizeBox(
   return { x, y, w, h }
 }
 
-/** CSS cursor for a handle id. */
-export function handleCursor(handle: HandleId): string {
-  switch (handle) {
-    case 'nw':
-    case 'se':
-      return 'nwse-resize'
-    case 'ne':
-    case 'sw':
-      return 'nesw-resize'
-    case 'n':
-    case 's':
-      return 'ns-resize'
-    case 'e':
-    case 'w':
-      return 'ew-resize'
-    case 'rot':
-      return 'grab'
+/** CSS cursor for a handle id, oriented by the widget rotation. */
+export function handleCursor(handle: HandleId, rotation = 0): string {
+  const baseAngles: Record<HandleId, number> = {
+    n: 0,
+    ne: 45,
+    e: 90,
+    se: 135,
+    s: 180,
+    sw: 225,
+    w: 270,
+    nw: 315,
   }
+  const effective = (((baseAngles[handle] + rotation) % 180) + 180) % 180
+  const step = Math.round(effective / 45) % 4
+  return (['ns-resize', 'nesw-resize', 'ew-resize', 'nwse-resize'] as const)[step]
+}
+
+/**
+ * Resize a rotated widget box: the drag delta arrives in scene
+ * coordinates, is applied along the box's rotated axes, and the result
+ * is re-anchored so the opposite edge/corner stays fixed on screen.
+ */
+export function resizeBoxRotated(
+  box: WidgetBox,
+  handle: HandleId,
+  dx: number,
+  dy: number,
+  rotation = 0,
+): WidgetBox {
+  const rad = (rotation * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  // Scene delta -> box-local delta (inverse rotation).
+  const dlx = dx * cos - dy * sin
+  const dly = dx * sin + dy * cos
+  const local = resizeBox(
+    { x: -box.w / 2, y: -box.h / 2, w: box.w, h: box.h },
+    handle,
+    dlx,
+    dly,
+  )
+  // Map the new local center back to scene space around the original
+  // center, so the anchor edge/corner stays put on screen.
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const ncxL = local.x + local.w / 2
+  const ncyL = local.y + local.h / 2
+  const ncx = cx + ncxL * cos + ncyL * sin
+  const ncy = cy - ncxL * sin + ncyL * cos
+  return { x: ncx - local.w / 2, y: ncy - local.h / 2, w: local.w, h: local.h }
 }
 
 export interface SnapGuide {
@@ -241,11 +345,15 @@ export function snapResize(
   return { box, guides }
 }
 
-/** Rotation angle (degrees) from a box center to a point. */
-export function rotationFor(box: WidgetBox, px: number, py: number): number {
-  const cx = box.x + box.w / 2
-  const cy = box.y + box.h / 2
-  // Canvas y grows downward; report counter-clockwise degrees to match PIL.
-  const deg = (-Math.atan2(py - cy, px - cx) * 180) / Math.PI
-  return (deg + 360) % 360
+/** Angle (degrees, counter-clockwise) from a center to a point. */
+export function angleTo(cx: number, cy: number, px: number, py: number): number {
+  return (-Math.atan2(py - cy, px - cx) * 180) / Math.PI
+}
+
+/** Signed shortest delta between two angles in degrees. */
+export function angleDelta(from: number, to: number): number {
+  let delta = (to - from) % 360
+  if (delta > 180) delta -= 360
+  if (delta < -180) delta += 360
+  return delta
 }

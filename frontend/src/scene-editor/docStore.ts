@@ -260,6 +260,63 @@ function duplicateEntries(indices: number[]): void {
   })
 }
 
+// ----------------------------------------------------------------------
+// Clipboard: internal widget clipboard (editor-session scope). Clones
+// are stored deep-copied; pasted copies start unlocked and shifted so
+// they do not land exactly on top of the source.
+// ----------------------------------------------------------------------
+
+let clipboard: EntryRaw[] = []
+
+/** Copy raw entries into the internal clipboard. */
+function copyEntries(indices: number[]): void {
+  const widgets = getWidgets()
+  clipboard = indices
+    .filter((i) => i >= 0 && i < widgets.length)
+    .map((i) => JSON.parse(JSON.stringify(widgets[i])) as EntryRaw)
+}
+
+/** Copy, then delete (locked entries are copied but not removed). */
+function cutEntries(indices: number[]): void {
+  copyEntries(indices)
+  deleteEntries(indices)
+}
+
+/** Paste the clipboard after the last widget; returns the new indices. */
+function pasteEntries(offset: { x: number; y: number } = { x: 12, y: 12 }): number[] {
+  if (clipboard.length === 0) return []
+  let firstIndex = -1
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    firstIndex = widgets.length
+    const clones = clipboard.map((entry) => {
+      const clone = JSON.parse(JSON.stringify(entry)) as Record<string, unknown>
+      delete clone['locked'] // pasted copies start unlocked
+      if (typeof clone['use'] === 'string') {
+        const at = clone['at']
+        if (Array.isArray(at) && at.length === 2) {
+          clone['at'] = [Number(at[0]) + offset.x, Number(at[1]) + offset.y]
+        }
+      } else {
+        const rect = clone['rect']
+        if (Array.isArray(rect) && rect.length === 4) {
+          clone['rect'] = [
+            Number(rect[0]) + offset.x,
+            Number(rect[1]) + offset.y,
+            rect[2],
+            rect[3],
+          ]
+        }
+      }
+      return clone as EntryRaw
+    })
+    widgets.push(...clones)
+    doc.widgets = widgets
+  })
+  if (firstIndex < 0) return []
+  return Array.from({ length: clipboard.length }, (_, i) => firstIndex + i)
+}
+
 /** Move an entry to a new position (layers panel reorder = z-order). */
 function moveEntry(from: number, to: number): void {
   mutate((doc) => {
@@ -402,6 +459,9 @@ export const editor = {
   canRedo,
   deleteEntries,
   duplicateEntries,
+  copyEntries,
+  cutEntries,
+  pasteEntries,
   moveEntry,
   setEntryField,
   updateWidget,

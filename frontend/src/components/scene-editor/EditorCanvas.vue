@@ -12,17 +12,20 @@ import { evaluateEntries, makePlaceholderProvider } from '../../scene-editor/run
 import { createImageCache, drawScene } from '../../scene-editor/render/draw'
 import { ensureFont } from '../../scene-editor/render/fonts'
 import {
+  angleDelta,
+  angleTo,
   handleAt,
   handleCursor,
   handlePositions,
-  pointInBox,
-  resizeBox,
-  rotationFor,
+  pointInRotatedBox,
+  resizeBoxRotated,
+  rotateZoneAt,
   snapBox,
   snapResize,
   unionBox,
 } from '../../scene-editor/geometry'
 import type { HandleId, SnapGuide, WidgetBox } from '../../scene-editor/geometry'
+import { rotateCursor } from '../../scene-editor/cursors'
 import { isComponentInstance } from '../../scene-editor/types'
 import type { EntryRaw, SceneDocumentRaw } from '../../scene-editor/types'
 import type { EvalEntry } from '../../scene-editor/runtime'
@@ -134,16 +137,29 @@ type InteractionMode =
       startX: number
       startY: number
       origins: Map<number, DragOrigin>
+      /**
+       * Index to deselect if this gesture ends as a click (Figma-style
+       * deferred toggle): Shift+pointerdown on an already-selected widget
+       * must still allow Shift+drag to move it.
+       */
+      toggleCandidate: number | null
     }
   | {
       kind: 'resize'
       handle: HandleId
       sourceIndex: number
       origin: WidgetBox
+      rotation: number
       startX: number
       startY: number
     }
-  | { kind: 'rotate'; sourceIndex: number; center: { x: number; y: number } }
+  | {
+      kind: 'rotate'
+      sourceIndex: number
+      center: { x: number; y: number }
+      startAngle: number
+      startRotation: number
+    }
   | { kind: 'marquee'; startX: number; startY: number }
 
 interface DragOrigin {
@@ -180,6 +196,12 @@ function selectedBoxes(): BoxInfo[] {
 /** Selection as seen by canvas interactions: locked entries are skipped. */
 function interactiveBoxes(): BoxInfo[] {
   return selectedBoxes().filter((info) => !info.locked)
+}
+
+/** Raw widget rotation in degrees (expressions count as 0 for interaction). */
+function widgetRotation(sourceIndex: number): number {
+  const value = rawEntry(sourceIndex)?.['rotation']
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 // ----------------------------------------------------------------------
@@ -267,28 +289,41 @@ function onPointerdown(event: PointerEvent): void {
   const selection = interactiveBoxes()
   const single = selection.length === 1 ? selection[0]! : null
 
-  // Handles first (single selection only).
-  if (single !== null) {
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, !single.isInstance)
-    if (handle === 'rot') {
-      interaction = {
-        kind: 'rotate',
-        sourceIndex: single.sourceIndex,
-        center: { x: single.box.x + single.box.w / 2, y: single.box.y + single.box.h / 2 },
-      }
-      editor.beginBatch()
-      capturePointer(panel, event)
-      return
-    }
-    if (handle !== null && !single.isInstance) {
+  // Handles first (single selection only). Component instances have no
+  // individual handles; their children move via `at`.
+  if (single !== null && !single.isInstance) {
+    const rotation = widgetRotation(single.sourceIndex)
+    const handle = handleAt(point.x, point.y, single.box, zoom.value, rotation)
+    if (handle !== null) {
       interaction = {
         kind: 'resize',
         handle,
         sourceIndex: single.sourceIndex,
         origin: { ...single.box },
+        rotation,
         startX: point.x,
         startY: point.y,
       }
+      hoverCursor.value = handleCursor(handle, rotation)
+      editor.beginBatch()
+      capturePointer(panel, event)
+      return
+    }
+    // Photoshop-style rotation: grab just outside a corner of the frame.
+    const corner = rotateZoneAt(point.x, point.y, single.box, zoom.value, rotation)
+    if (corner !== null) {
+      const center = {
+        x: single.box.x + single.box.w / 2,
+        y: single.box.y + single.box.h / 2,
+      }
+      interaction = {
+        kind: 'rotate',
+        sourceIndex: single.sourceIndex,
+        center,
+        startAngle: angleTo(center.x, center.y, point.x, point.y),
+        startRotation: rotation,
+      }
+      hoverCursor.value = rotateCursor(corner)
       editor.beginBatch()
       capturePointer(panel, event)
       return
@@ -299,14 +334,26 @@ function onPointerdown(event: PointerEvent): void {
   for (let i = boxes.value.length - 1; i >= 0; i -= 1) {
     const info = boxes.value[i]!
     if (info.locked) continue
-    if (pointInBox(point.x, point.y, info.box)) {
+    if (
+      pointInRotatedBox(
+        point.x,
+        point.y,
+        info.box,
+        info.isInstance ? 0 : widgetRotation(info.sourceIndex),
+      )
+    ) {
       let selection: number[]
+      let toggleCandidate: number | null = null
       if (event.shiftKey) {
-        selection = state.selection.includes(info.sourceIndex)
-          ? state.selection.filter((s) => s !== info.sourceIndex)
-          : [...state.selection, info.sourceIndex]
-        editor.setSelection([...selection])
-        if (!selection.includes(info.sourceIndex)) return
+        if (state.selection.includes(info.sourceIndex)) {
+          // Deferred deselect: Shift+drag must move the selection, only
+          // a click without movement toggles the widget off (pointerup).
+          selection = [...state.selection]
+          toggleCandidate = info.sourceIndex
+        } else {
+          selection = [...state.selection, info.sourceIndex]
+          editor.setSelection([...selection])
+        }
       } else if (!state.selection.includes(info.sourceIndex)) {
         selection = [info.sourceIndex]
         editor.setSelection([...selection])
@@ -339,7 +386,13 @@ function onPointerdown(event: PointerEvent): void {
           at,
         })
       }
-      interaction = { kind: 'drag', startX: point.x, startY: point.y, origins }
+      interaction = {
+        kind: 'drag',
+        startX: point.x,
+        startY: point.y,
+        origins,
+        toggleCandidate,
+      }
       editor.beginBatch()
       capturePointer(panel, event)
       return
@@ -365,22 +418,30 @@ function onPointermove(event: PointerEvent): void {
       const mode = interaction
       const rawDx = point.x - mode.startX
       const rawDy = point.y - mode.startY
+      // Shift constrains the move to 45° directions (standard editors).
+      let dx = rawDx
+      let dy = rawDy
+      if (event.shiftKey && (rawDx !== 0 || rawDy !== 0)) {
+        const angle =
+          Math.round(Math.atan2(rawDy, rawDx) / (Math.PI / 4)) * (Math.PI / 4)
+        const length = Math.hypot(rawDx, rawDy)
+        dx = Math.cos(angle) * length
+        dy = Math.sin(angle) * length
+      }
       // Snap the union of the moving (evaluated) boxes.
       const moving = selectedBoxes()
       const union = unionBox(
         moving.map((info) => {
           const origin = mode.origins.get(info.sourceIndex)
           return {
-            x: (origin?.boxX ?? info.box.x) + rawDx,
-            y: (origin?.boxY ?? info.box.y) + rawDy,
+            x: (origin?.boxX ?? info.box.x) + dx,
+            y: (origin?.boxY ?? info.box.y) + dy,
             w: info.box.w,
             h: info.box.h,
           }
         }),
       )
-      let dx = rawDx
-      let dy = rawDy
-      if (union !== null && !event.altKey) {
+      if (union !== null && !event.altKey && !event.shiftKey) {
         const others = boxes.value
           .filter((info) => !mode.origins.has(info.sourceIndex))
           .map((info) => info.box)
@@ -401,9 +462,16 @@ function onPointermove(event: PointerEvent): void {
     case 'resize': {
       const mode = interaction
       const origin = mode.origin
-      const next = resizeBox(origin, mode.handle, point.x - mode.startX, point.y - mode.startY)
+      const next = resizeBoxRotated(
+        origin,
+        mode.handle,
+        point.x - mode.startX,
+        point.y - mode.startY,
+        mode.rotation,
+      )
       let box = next
-      if (!event.altKey) {
+      // Smart guides only exist in the axis-aligned frame.
+      if (mode.rotation % 360 === 0 && !event.altKey) {
         const others = boxes.value
           .filter((info) => info.sourceIndex !== mode.sourceIndex)
           .map((info) => info.box)
@@ -417,11 +485,9 @@ function onPointermove(event: PointerEvent): void {
       return
     }
     case 'rotate': {
-      let degrees = rotationFor(
-        { x: interaction.center.x - 0, y: interaction.center.y - 0, w: 0, h: 0 },
-        point.x,
-        point.y,
-      )
+      // Delta-based: the grabbed corner stays under the cursor.
+      const angle = angleTo(interaction.center.x, interaction.center.y, point.x, point.y)
+      let degrees = interaction.startRotation + angleDelta(interaction.startAngle, angle)
       if (event.shiftKey) degrees = Math.round(degrees / 15) * 15
       rotateRawTo(interaction.sourceIndex, degrees)
       return
@@ -438,6 +504,18 @@ function onPointermove(event: PointerEvent): void {
 }
 
 function onPointerup(event: PointerEvent): void {
+  if (interaction.kind === 'drag' && interaction.toggleCandidate !== null) {
+    // A Shift+pointerdown on an already-selected widget only deselects
+    // when the gesture ends without movement (a click, not a drag).
+    const point = toScene(event)
+    const movedPx =
+      Math.hypot(point.x - interaction.startX, point.y - interaction.startY) *
+      zoom.value
+    if (movedPx < 4) {
+      const candidate = interaction.toggleCandidate
+      editor.setSelection(state.selection.filter((s) => s !== candidate))
+    }
+  }
   if (interaction.kind === 'marquee' && marquee.value !== null) {
     const m = marquee.value
     const x1 = Math.min(m.x1, m.x2)
@@ -468,16 +546,31 @@ function updateCursor(point: { x: number; y: number }): void {
     return
   }
   const selection = interactiveBoxes()
-  if (selection.length === 1) {
+  if (selection.length === 1 && !selection[0]!.isInstance) {
     const single = selection[0]!
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, !single.isInstance)
+    const rotation = widgetRotation(single.sourceIndex)
+    const handle = handleAt(point.x, point.y, single.box, zoom.value, rotation)
     if (handle !== null) {
-      hoverCursor.value = handleCursor(handle)
+      hoverCursor.value = handleCursor(handle, rotation)
+      return
+    }
+    const corner = rotateZoneAt(point.x, point.y, single.box, zoom.value, rotation)
+    if (corner !== null) {
+      hoverCursor.value = rotateCursor(corner)
       return
     }
   }
   for (let i = boxes.value.length - 1; i >= 0; i -= 1) {
-    if (pointInBox(point.x, point.y, boxes.value[i]!.box)) {
+    const info = boxes.value[i]!
+    if (info.locked) continue
+    if (
+      pointInRotatedBox(
+        point.x,
+        point.y,
+        info.box,
+        info.isInstance ? 0 : widgetRotation(info.sourceIndex),
+      )
+    ) {
       hoverCursor.value = 'move'
       return
     }
@@ -630,44 +723,41 @@ function drawOverlay(
 
   for (const info of selection) {
     const { box } = info
+    // Single plain widgets draw their frame rotated with the widget.
+    const rotateFrame =
+      selection.length === 1 && !info.isInstance && !info.locked
+    const rotation = rotateFrame ? widgetRotation(info.sourceIndex) : 0
     ctx.save()
     ctx.strokeStyle = info.locked ? '#8a8a8a' : ACCENT
     ctx.lineWidth = line
     if (info.isInstance || info.locked) ctx.setLineDash([5 / zoom.value, 3 / zoom.value])
+    if (rotation % 360 !== 0) {
+      const cx = box.x + box.w / 2
+      const cy = box.y + box.h / 2
+      ctx.translate(cx, cy)
+      ctx.rotate((-rotation * Math.PI) / 180)
+      ctx.translate(-cx, -cy)
+    }
     ctx.strokeRect(box.x, box.y, box.w, box.h)
+    if (!info.isInstance && !info.locked) {
+      // Handles: white squares with accent border, screen-constant size;
+      // drawn in the (rotated) frame so they follow the widget.
+      const positions = handlePositions(box)
+      const ids: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+      for (const id of ids) {
+        const p = positions[id]
+        ctx.save()
+        ctx.fillStyle = '#ffffff'
+        ctx.strokeStyle = ACCENT
+        ctx.lineWidth = line
+        ctx.beginPath()
+        ctx.rect(p.x - handleSize / 2, p.y - handleSize / 2, handleSize, handleSize)
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+      }
+    }
     ctx.restore()
-    if (info.isInstance || info.locked) continue
-    // Handles: white squares with accent border, screen-constant size.
-    const positions = handlePositions(box)
-    const ids: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
-    for (const id of ids) {
-      const p = positions[id]
-      ctx.save()
-      ctx.fillStyle = '#ffffff'
-      ctx.strokeStyle = ACCENT
-      ctx.lineWidth = line
-      ctx.beginPath()
-      ctx.rect(p.x - handleSize / 2, p.y - handleSize / 2, handleSize, handleSize)
-      ctx.fill()
-      ctx.stroke()
-      ctx.restore()
-    }
-    if (selection.length === 1) {
-      const rot = positions['rot']
-      ctx.save()
-      ctx.strokeStyle = ACCENT
-      ctx.lineWidth = line
-      ctx.beginPath()
-      ctx.moveTo(box.x + box.w / 2, box.y)
-      ctx.lineTo(rot.x, rot.y)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.arc(rot.x, rot.y, handleSize / 1.6, 0, Math.PI * 2)
-      ctx.fillStyle = '#ffffff'
-      ctx.fill()
-      ctx.stroke()
-      ctx.restore()
-    }
   }
 }
 

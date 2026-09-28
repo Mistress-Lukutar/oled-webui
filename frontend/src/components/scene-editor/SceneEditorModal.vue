@@ -67,8 +67,9 @@ const SHORTCUTS: Array<[string, string]> = [
   ['T / B / R / G / I', 'Add text / bar / ring / graph / image widget'],
   ['Click / Shift+click', 'Select / extend selection'],
   ['Drag on empty canvas', 'Marquee selection'],
-  ['Drag selection', 'Move (Alt disables snapping)'],
-  ['Handles', 'Resize · round handle rotates (image widgets)'],
+  ['Drag selection', 'Move (Shift = 45° axes, Alt disables snapping)'],
+  ['Handles', 'Resize · drag just outside a corner to rotate (Shift = 15°)'],
+  ['Ctrl+C / X / V', 'Copy / cut / paste widgets'],
   ['Arrows', 'Nudge 1 px (Shift = 10 px)'],
   ['Del', 'Delete selection'],
   ['Ctrl+D', 'Duplicate selection'],
@@ -152,25 +153,46 @@ async function apply(): Promise<void> {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+  const mod = event.ctrlKey || event.metaKey
+  // Modifier shortcuts match by physical key (event.code) so they work
+  // on any keyboard layout; typing targets keep native behavior.
+  if (mod && event.code === 'KeyS') {
     event.preventDefault()
     if (!saving.value && state.syntaxError === null) void save()
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+  if (mod && event.code === 'KeyZ') {
     if (isTypingTarget(event.target)) return
     event.preventDefault()
     if (event.shiftKey) editor.redo()
     else editor.undo()
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+  if (mod && event.code === 'KeyY') {
     if (isTypingTarget(event.target)) return
     event.preventDefault()
     editor.redo()
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+  if (mod && event.code === 'KeyC') {
+    if (isTypingTarget(event.target) || state.selection.length === 0) return
+    event.preventDefault()
+    editor.copyEntries([...state.selection])
+    return
+  }
+  if (mod && event.code === 'KeyX') {
+    if (isTypingTarget(event.target) || state.selection.length === 0) return
+    event.preventDefault()
+    editor.cutEntries([...state.selection])
+    return
+  }
+  if (mod && event.code === 'KeyV') {
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    editor.pasteEntries()
+    return
+  }
+  if (mod && event.code === 'KeyD') {
     if (isTypingTarget(event.target) || state.selection.length === 0) return
     event.preventDefault()
     editor.duplicateEntries([...state.selection])
