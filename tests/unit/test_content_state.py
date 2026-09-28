@@ -1,0 +1,174 @@
+"""
+File:   test_content_state.py
+Brief:  Unit tests for the persisted last-screen snapshot.
+Author: Mistress-Lukutar
+Date:   2026-09-28
+Version: v0.4.0
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from PIL import Image
+
+from oled_webui.config import Settings
+from oled_webui.services.content_state import (
+    content_state_path,
+    load_content_state,
+    restore_last_content,
+    save_content_state,
+)
+from oled_webui.services.display_service import DisplayService
+from oled_webui.services.event_bus import EventBus
+from oled_webui.services.scene_service import SceneService
+
+
+def _snapshot(content_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal content snapshot as recorded by DisplayService."""
+    return {"type": content_type, "params": {}, "payload": payload}
+
+
+async def _connected_display(settings: Settings) -> DisplayService:
+    """Create a DisplayService and connect it to the fake LCD."""
+    display = DisplayService(settings, EventBus())
+    await display.connect()
+    return display
+
+
+def test_save_and_load_roundtrip(tmp_path: Path) -> None:
+    """A saved snapshot loads back unchanged."""
+    path = tmp_path / "data" / "last_content.json"
+    content = _snapshot("color", {"color": "ff0000"})
+
+    save_content_state(path, content)
+
+    assert load_content_state(path) == content
+
+
+def test_load_missing_returns_none(tmp_path: Path) -> None:
+    """A missing file loads as None."""
+    assert load_content_state(tmp_path / "data" / "last_content.json") is None
+
+
+def test_load_corrupt_returns_none(tmp_path: Path) -> None:
+    """A corrupt file loads as None instead of raising."""
+    path = tmp_path / "data" / "last_content.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    assert load_content_state(path) is None
+
+
+def test_save_none_removes_file(tmp_path: Path) -> None:
+    """Saving None deletes the persisted snapshot."""
+    path = tmp_path / "data" / "last_content.json"
+    save_content_state(path, _snapshot("color", {"color": "ff0000"}))
+
+    save_content_state(path, None)
+
+    assert not path.exists()
+
+
+async def test_restore_color_snapshot(tmp_path: Path, fake_lcd: list) -> None:
+    """A persisted color snapshot is re-rendered after connect."""
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.ensure_dirs()
+    save_content_state(
+        content_state_path(settings), _snapshot("color", {"color": "ff0000"})
+    )
+    display = await _connected_display(settings)
+
+    restored = await restore_last_content(display, SceneService(settings), settings)
+    await display.shutdown()
+
+    assert restored is True
+    assert display.last_content == {
+        "type": "color",
+        "params": {},
+        "payload": {"color": "ff0000"},
+    }
+    assert len(fake_lcd) > 0
+
+
+async def test_restore_image_snapshot(tmp_path: Path, fake_lcd: list) -> None:
+    """A persisted image snapshot is re-rendered from its source file."""
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.ensure_dirs()
+    image_path = settings.uploads_dir / "shot.png"
+    Image.new("RGB", (64, 32), "#123456").save(image_path)
+    save_content_state(
+        content_state_path(settings),
+        {
+            "type": "image",
+            "params": {"rotation": 0, "fit": "contain"},
+            "payload": {"file": image_path.name, "path": str(image_path)},
+        },
+    )
+    display = await _connected_display(settings)
+
+    restored = await restore_last_content(display, SceneService(settings), settings)
+    await display.shutdown()
+
+    assert restored is True
+    assert display.last_content is not None
+    assert display.last_content["type"] == "image"
+    assert len(fake_lcd) > 0
+
+
+async def test_restore_scene_restarts_scene(tmp_path: Path, fake_lcd: list) -> None:
+    """A persisted scene snapshot is restarted from its YAML source."""
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.ensure_dirs()
+    scenes = SceneService(settings)
+    meta = scenes.create_scene("Dash")
+    save_content_state(
+        content_state_path(settings),
+        {
+            "type": "scene",
+            "params": {},
+            "payload": {"scene_id": meta.id, "name": meta.name},
+        },
+    )
+    display = await _connected_display(settings)
+
+    restored = await restore_last_content(display, scenes, settings)
+    state = display.status()["scene"]
+    await display.shutdown()
+
+    assert restored is True
+    assert state["running"] is True
+    assert state["scene_id"] == meta.id
+
+
+async def test_restore_missing_scene_returns_false(
+    tmp_path: Path, fake_lcd: list
+) -> None:
+    """A snapshot pointing to a deleted scene restores nothing."""
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.ensure_dirs()
+    save_content_state(
+        content_state_path(settings),
+        _snapshot("scene", {"scene_id": "nope", "name": "gone"}),
+    )
+    display = await _connected_display(settings)
+
+    restored = await restore_last_content(display, SceneService(settings), settings)
+    await display.shutdown()
+
+    assert restored is False
+
+
+async def test_restore_without_snapshot_returns_false(
+    tmp_path: Path, fake_lcd: list
+) -> None:
+    """No persisted snapshot means nothing to restore."""
+    settings = Settings(data_dir=tmp_path / "data")
+    settings.ensure_dirs()
+    display = await _connected_display(settings)
+
+    restored = await restore_last_content(display, SceneService(settings), settings)
+    await display.shutdown()
+
+    assert restored is False

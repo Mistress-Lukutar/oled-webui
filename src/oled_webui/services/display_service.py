@@ -2,8 +2,8 @@
 File:   display_service.py
 Brief:  Central display orchestrator: USB serialization, keepalive, video.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-28
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from oled_webui.exceptions import (
 from oled_webui.scene.runner import SceneRenderer
 from oled_webui.scene.schema import SceneDocument
 from oled_webui.services.bulk_device import BulkLcd
+from oled_webui.services.content_state import content_state_path, save_content_state
 from oled_webui.services.display_settings import (
     DisplaySettings,
     resolve_display_settings,
@@ -95,6 +96,7 @@ class DisplayService:
 
         self._display_settings: DisplaySettings = resolve_display_settings(settings)
         self._settings_file = settings_path(settings)
+        self._content_state_file = content_state_path(settings)
 
         self._keepalive_task: asyncio.Task[None] | None = None
         self._keepalive_stop = asyncio.Event()
@@ -238,6 +240,23 @@ class DisplayService:
         except OSError as exc:
             logger.warning("last_frame_persist_failed", error=str(exc))
 
+    async def _set_last_content(
+        self, content: dict[str, Any] | None, *, persist: bool = True
+    ) -> None:
+        """Record the last applied content snapshot and persist it.
+
+        Args:
+            content: Content snapshot, or None to clear the record.
+            persist: False for transient frames (blanked panel, test
+                pattern) that must not become the restored screen after a
+                restart.
+        """
+        self._last_content = content
+        if persist:
+            await asyncio.to_thread(
+                save_content_state, self._content_state_file, content
+            )
+
     async def send_image(
         self,
         image_path: Path,
@@ -262,13 +281,15 @@ class DisplayService:
         frame = await asyncio.to_thread(builder.build_frame, image_path)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
         await self._send_payload(payload, builder.width, builder.height)
-        self._last_content = {
-            "type": "image",
-            "params": {"rotation": rotation, "fit": fit},
-            # Absolute path kept so settings changes can re-render sources
-            # that live outside the uploads directory (preset assets).
-            "payload": {"file": image_path.name, "path": str(image_path)},
-        }
+        await self._set_last_content(
+            {
+                "type": "image",
+                "params": {"rotation": rotation, "fit": fit},
+                # Absolute path kept so settings changes can re-render sources
+                # that live outside the uploads directory (preset assets).
+                "payload": {"file": image_path.name, "path": str(image_path)},
+            }
+        )
         logger.info("image_sent", file=image_path.name, bytes=len(payload))
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
@@ -290,11 +311,13 @@ class DisplayService:
         image = builder.build_color_image(rgb)
         payload = await asyncio.to_thread(builder.encode_jpeg, image)
         await self._send_payload(payload, builder.width, builder.height)
-        self._last_content = {
-            "type": "color",
-            "params": {},
-            "payload": {"color": color.lstrip("#")},
-        }
+        await self._set_last_content(
+            {
+                "type": "color",
+                "params": {},
+                "payload": {"color": color.lstrip("#")},
+            }
+        )
         logger.info("color_sent", color=color, bytes=len(payload))
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
@@ -355,20 +378,22 @@ class DisplayService:
         frame = await asyncio.to_thread(builder.apply_brightness, frame)
         payload = await asyncio.to_thread(builder.encode_jpeg, frame)
         await self._send_payload(payload, builder.width, builder.height)
-        self._last_content = {
-            "type": "text",
-            "params": {"rotation": rotation},
-            "payload": {
-                "text": text,
-                "font_size": font_size,
-                "color": color.lstrip("#"),
-                "background": background.lstrip("#"),
-                "align": align,
-                "valign": valign,
-                "padding": padding,
-                "font_name": font_name,
-            },
-        }
+        await self._set_last_content(
+            {
+                "type": "text",
+                "params": {"rotation": rotation},
+                "payload": {
+                    "text": text,
+                    "font_size": font_size,
+                    "color": color.lstrip("#"),
+                    "background": background.lstrip("#"),
+                    "align": align,
+                    "valign": valign,
+                    "padding": padding,
+                    "font_name": font_name,
+                },
+            }
+        )
         logger.info("text_sent", chars=len(text), bytes=len(payload))
         return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
 
@@ -393,11 +418,16 @@ class DisplayService:
         await self._send_payload(
             payload, handshake.resolution.width, handshake.resolution.height
         )
-        self._last_content = {
-            "type": "color",
-            "params": {},
-            "payload": {"color": "000000"},
-        }
+        # Blanking is transient: the persisted snapshot keeps the real
+        # content so a restart restores it instead of a black panel.
+        await self._set_last_content(
+            {
+                "type": "color",
+                "params": {},
+                "payload": {"color": "000000"},
+            },
+            persist=False,
+        )
         logger.info("display_blanked")
 
     async def power_on(self) -> None:
@@ -411,7 +441,7 @@ class DisplayService:
         if self._restore_frame is not None:
             payload, size, content = self._restore_frame
             self._restore_frame = None
-            self._last_content = content
+            await self._set_last_content(content)
         else:
             payload, size = self._last_frame, self._last_frame_size
         if payload is None or size is None:
@@ -436,11 +466,16 @@ class DisplayService:
                 payload, handshake.resolution.width, handshake.resolution.height
             )
             await asyncio.sleep(delay)
-        self._last_content = {
-            "type": "color",
-            "params": {},
-            "payload": {"color": "000000"},
-        }
+        # Transient diagnostic frame: do not overwrite the persisted
+        # snapshot with the final black test frame.
+        await self._set_last_content(
+            {
+                "type": "color",
+                "params": {},
+                "payload": {"color": "000000"},
+            },
+            persist=False,
+        )
         logger.info("test_pattern_done")
 
     # ------------------------------------------------------------------
@@ -550,7 +585,7 @@ class DisplayService:
             # next playback start.
             return
         try:
-            await self._reapply_content(content)
+            await self.reapply_content(content)
         except OledWebUIError as exc:
             logger.warning("content_refresh_failed", error=str(exc))
 
@@ -578,11 +613,17 @@ class DisplayService:
         path = self._settings.uploads_dir / name
         return path if path.is_file() else None
 
-    async def _reapply_content(self, content: dict[str, Any]) -> None:
+    async def reapply_content(self, content: dict[str, Any]) -> None:
         """Re-render one-shot content with the current global settings.
 
+        Also used to restore the persisted last-screen snapshot after a
+        restart; scene snapshots are handled by the caller.
+
         Args:
-            content: The ``last_content`` snapshot to replay.
+            content: A ``last_content`` snapshot to replay.
+
+        Raises:
+            OledWebUIError: If the content cannot be located or rendered.
         """
         content_type = content.get("type")
         params = content.get("params", {})
@@ -864,11 +905,13 @@ class DisplayService:
         self._scene_task = asyncio.create_task(self._scene_loop(renderer))
         self._bg_tasks.add(self._scene_task)
         self._scene_task.add_done_callback(self._bg_tasks.discard)
-        self._last_content = {
-            "type": "scene",
-            "params": {},
-            "payload": {"scene_id": scene_id, "name": scene_name},
-        }
+        await self._set_last_content(
+            {
+                "type": "scene",
+                "params": {},
+                "payload": {"scene_id": scene_id, "name": scene_name},
+            }
+        )
         await self._bus.publish(
             "scene",
             {"running": True, "scene_id": scene_id, "name": scene_name},

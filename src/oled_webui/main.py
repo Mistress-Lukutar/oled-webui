@@ -2,8 +2,8 @@
 File:   main.py
 Brief:  FastAPI application factory, lifespan and entry point.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-28
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from oled_webui.routers import frame as frame_router
 from oled_webui.routers import presets as presets_router
 from oled_webui.routers import scenes as scenes_router
 from oled_webui.routers import video as video_router
+from oled_webui.services.content_state import restore_last_content
 from oled_webui.services.display_service import DisplayService
 from oled_webui.services.event_bus import EventBus
 from oled_webui.services.preset_service import PresetService
@@ -94,6 +95,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except OledWebUIError as exc:
             # Startup must not fail without hardware; the UI offers Connect.
             logger.warning("auto_connect_failed", error=str(exc))
+        else:
+            # Show the screen the panel had before the previous shutdown.
+            await restore_last_content(display, app.state.scenes, settings)
 
     yield
 

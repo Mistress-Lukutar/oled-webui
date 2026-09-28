@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oled-webui"
-version = "0.3.0"
+version = "0.4.0"
 description = "WebUI for controlling ChiZhu Tech USBDISPLAY panels (87AD:70DB)"
 readme = "README.md"
 requires-python = ">=3.11"
