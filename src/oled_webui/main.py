@@ -99,6 +99,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Show the screen the panel had before the previous shutdown.
             await restore_last_content(display, app.state.scenes, settings)
 
+    if watcher is not None and watcher.last_state is False:
+        # The console display was already off at startup (idle timeout or
+        # an RDP session), so no blanking notification will arrive; sync
+        # the freshly connected panel to that state.
+        try:
+            await display.power_off()
+        except OledWebUIError as exc:
+            logger.warning("display_off_sync_failed", error=str(exc))
+
     yield
 
     if watcher is not None:

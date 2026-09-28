@@ -1,9 +1,9 @@
 """
 File:   display_power_watcher.py
-Brief:  Win32 monitor power-on/off notifications via a message-only window.
+Brief:  Win32 display power-on/off notifications via a hidden window.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-28
+Version: v0.4.1
 """
 
 from __future__ import annotations
@@ -26,14 +26,33 @@ WM_POWERBROADCAST: int = 0x0218
 PBT_POWERSETTINGCHANGE: int = 0x8013
 WM_QUIT: int = 0x0012
 DEVICE_NOTIFY_WINDOW_HANDLE: int = 0
-HWND_MESSAGE: int = -3
+WS_EX_TOOLWINDOW: int = 0x00000080
 ERROR_CLASS_ALREADY_EXISTS: int = 1410
 
-# Fired when the session display powers on (data=1) or off (data=0).
-GUID_MONITOR_POWER_ON: str = "{02731015-4510-4a26-8aba-2a3954c56778}"
+# MONITOR_DISPLAY_STATE values carried in POWERBROADCAST_SETTING.Data.
+POWER_MONITOR_OFF: int = 0
+POWER_MONITOR_ON: int = 1
+POWER_MONITOR_DIM: int = 2
 
-# The watcher only reacts to the one GUID it registers for, so the
-# power-setting GUID inside POWERBROADCAST_SETTING is not re-checked.
+# Display power GUIDs from WinNT.h. GUID_CONSOLE_DISPLAY_STATE tracks the
+# physical console display, which is exactly the signal the panel needs:
+# it stays off after the idle timeout and the whole time the user works
+# over RDP, and its notifications also reach processes running inside RDP
+# sessions. GUID_SESSION_DISPLAY_STATUS is deliberately not registered (it
+# reflects the RDP session and would wake the panel on every reconnect),
+# nor is the legacy GUID_MONITOR_POWER_ON, which can report a spurious
+# "off" at registration while the display is actually on.
+GUID_CONSOLE_DISPLAY_STATE: str = "{6FE69556-704A-47A0-8F24-C28D936FDA47}"
+
+# Registered GUIDs with short names used in log lines.
+DISPLAY_POWER_GUIDS: tuple[tuple[str, str], ...] = (
+    (GUID_CONSOLE_DISPLAY_STATE, "console_display_state"),
+)
+
+# Lookup from parsed notification GUID to its short log name.
+_GUID_NAMES: dict[uuid.UUID, str] = {
+    uuid.UUID(guid_text): name for guid_text, name in DISPLAY_POWER_GUIDS
+}
 
 # LRESULT is a LONG_PTR (pointer-sized signed integer); ctypes.wintypes
 # does not define it.
@@ -90,19 +109,37 @@ class _POWERBROADCAST_SETTING(ctypes.Structure):
     ]
 
 
-def _monitor_power_guid() -> _GUID:
-    """Build the GUID_MONITOR_POWER_ON structure.
+def _guid_structure(guid_text: str) -> _GUID:
+    """Build a GUID structure from its canonical string form.
+
+    Args:
+        guid_text: GUID string with braces, e.g. ``{2B84C20E-...}``.
 
     Returns:
         GUID structure for RegisterPowerSettingNotification.
     """
-    raw = uuid.UUID(GUID_MONITOR_POWER_ON)
+    raw = uuid.UUID(guid_text)
     return _GUID(
         Data1=raw.time_low,
         Data2=raw.time_mid,
         Data3=raw.time_hi_version,
         Data4=(ctypes.c_ubyte * 8).from_buffer_copy(raw.bytes[8:]),
     )
+
+
+def _guid_uuid(guid: _GUID) -> uuid.UUID:
+    """Convert a GUID structure back to a Python UUID.
+
+    Windows GUID memory layout matches uuid's ``bytes_le`` encoding.
+
+    Args:
+        guid: GUID structure read from a notification payload.
+
+    Returns:
+        The equivalent UUID.
+    """
+    raw = ctypes.string_at(ctypes.byref(guid), ctypes.sizeof(guid))
+    return uuid.UUID(bytes_le=raw)
 
 
 # Live WNDPROC trampolines; window classes outlive the thread that
@@ -144,24 +181,29 @@ def _user32() -> Any:
 
 
 class DisplayPowerWatcher:
-    """Listens for Windows monitor power events on a background thread.
+    """Listens for the Windows console display power state in the background.
 
-    Creates a message-only window, registers for GUID_MONITOR_POWER_ON
-    notifications and invokes the callback with ``True`` when the session
-    display powers on and ``False`` when it powers off. The callback runs
-    on the watcher thread; callers must marshal it into their own context.
+    Creates a hidden top-level window and registers for the console
+    display state notification (the physical display, not the RDP
+    session), then invokes the callback with ``True`` when the console
+    display turns on and ``False`` when it turns off. Windows reports the
+    current state right after registration, so the first callback also
+    syncs a display that is already off. A dimmed display still counts as
+    on. The callback runs on the watcher thread; callers must marshal it
+    into their own context.
     """
 
     def __init__(self, on_monitor_power: Callable[[bool], None]) -> None:
         """Store the callback and reset the thread handles.
 
         Args:
-            on_monitor_power: Callback invoked with the monitor power state.
+            on_monitor_power: Callback invoked with the display power state.
         """
         self._callback = on_monitor_power
         self._thread: threading.Thread | None = None
         self._thread_id: int = 0
-        self._notify_handle: int | None = None
+        self._notify_handles: list[int] = []
+        self._last_state: bool | None = None
         self._stop = threading.Event()
 
     def start(self) -> None:
@@ -183,6 +225,11 @@ class DisplayPowerWatcher:
             self._thread.join(timeout=5)
             self._thread = None
             self._thread_id = 0
+
+    @property
+    def last_state(self) -> bool | None:
+        """Last known display state; None until the first notification."""
+        return self._last_state
 
     def _run(self) -> None:
         """Run the message loop until WM_QUIT, then clean up."""
@@ -215,10 +262,10 @@ class DisplayPowerWatcher:
             )
             return
 
-        # A message-only window receives broadcast messages without a
-        # taskbar entry or visible surface.
+        # A hidden top-level window (never shown, no taskbar button) is
+        # required: message-only windows do not receive power messages.
         hwnd = user32.CreateWindowExW(
-            0,
+            WS_EX_TOOLWINDOW,
             class_name,
             class_name,
             0,
@@ -226,7 +273,7 @@ class DisplayPowerWatcher:
             0,
             0,
             0,
-            wintypes.HWND(HWND_MESSAGE),
+            None,
             None,
             instance,
             None,
@@ -236,17 +283,29 @@ class DisplayPowerWatcher:
             user32.UnregisterClassW(class_name, instance)
             return
 
-        notify = user32.RegisterPowerSettingNotification(
-            hwnd, ctypes.byref(_monitor_power_guid()), DEVICE_NOTIFY_WINDOW_HANDLE
-        )
-        if not notify:
+        notify_handles: list[int] = []
+        for guid_text, guid_name in DISPLAY_POWER_GUIDS:
+            handle = user32.RegisterPowerSettingNotification(
+                hwnd,
+                ctypes.byref(_guid_structure(guid_text)),
+                DEVICE_NOTIFY_WINDOW_HANDLE,
+            )
+            if handle:
+                notify_handles.append(handle)
+            else:
+                logger.error(
+                    "display_power_registration_failed",
+                    guid=guid_name,
+                    error=ctypes.get_last_error(),
+                )
+        if not notify_handles:
             logger.error(
                 "monitor_power_notification_failed", error=ctypes.get_last_error()
             )
             user32.DestroyWindow(hwnd)
             user32.UnregisterClassW(class_name, instance)
             return
-        self._notify_handle = notify
+        self._notify_handles = notify_handles
 
         logger.info("monitor_power_watcher_started")
         message = wintypes.MSG()
@@ -257,8 +316,9 @@ class DisplayPowerWatcher:
             user32.TranslateMessage(ctypes.byref(message))
             user32.DispatchMessageW(ctypes.byref(message))
 
-        user32.UnregisterPowerSettingNotification(self._notify_handle)
-        self._notify_handle = None
+        for handle in self._notify_handles:
+            user32.UnregisterPowerSettingNotification(handle)
+        self._notify_handles = []
         user32.DestroyWindow(hwnd)
         # Drop the class so a future watcher instance registers its own
         # live window procedure instead of reusing this thread's trampoline.
@@ -282,14 +342,30 @@ class DisplayPowerWatcher:
             setting = ctypes.cast(
                 lparam, ctypes.POINTER(_POWERBROADCAST_SETTING)
             ).contents
-            monitor_on = (
-                ctypes.cast(setting.Data, ctypes.POINTER(ctypes.c_ulong)).contents.value
-                != 0
-            )
-            logger.info("monitor_power_changed", monitor_on=monitor_on)
-            try:
-                self._callback(monitor_on)
-            except Exception as exc:  # the window proc must never raise
-                logger.warning("monitor_power_callback_failed", error=str(exc))
+            guid_name = _GUID_NAMES.get(_guid_uuid(setting.PowerSetting))
+            if guid_name is not None and setting.DataLength >= 4:
+                value = ctypes.cast(
+                    setting.Data, ctypes.POINTER(ctypes.c_ulong)
+                ).contents.value
+                self._emit(value != POWER_MONITOR_OFF, guid_name)
             return 0
         return int(_user32().DefWindowProcW(hwnd, msg, wparam, lparam))
+
+    def _emit(self, monitor_on: bool, source: str) -> None:
+        """Forward a display state change to the callback once per flip.
+
+        Several registered GUIDs can report the same transition in a burst;
+        the callback is only invoked when the boolean state actually changes.
+
+        Args:
+            monitor_on: True when the display is on (or dimmed).
+            source: Short name of the GUID that reported the change.
+        """
+        if monitor_on == self._last_state:
+            return
+        self._last_state = monitor_on
+        logger.info("monitor_power_changed", monitor_on=monitor_on, source=source)
+        try:
+            self._callback(monitor_on)
+        except Exception as exc:  # the window proc must never raise
+            logger.warning("monitor_power_callback_failed", error=str(exc))
