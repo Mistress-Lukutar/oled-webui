@@ -14,6 +14,7 @@ from PIL import Image
 from oled_webui.exceptions import RenderError
 from oled_webui.services.frame_builder import (
     FrameBuilder,
+    brightness_lut,
     build_black_frame,
     parse_hex_color,
 )
@@ -62,15 +63,50 @@ def test_fit_width_pads_to_canvas() -> None:
 
 
 def test_brightness_scaling() -> None:
-    """Brightness 50 halves pixel values; 200 clamps at 255."""
+    """Brightness scales in linear light: 50 % -> ~0.73 of encoded levels."""
     gray = Image.new("RGB", (4, 4), (100, 100, 100))
     dark = _builder(brightness=50).apply_brightness(gray)
-    assert dark.getpixel((0, 0)) == (50, 50, 50)
+    assert dark.getpixel((0, 0)) == (73, 73, 73)
 
     bright = _builder(brightness=200).apply_brightness(
         Image.new("RGB", (4, 4), (200, 200, 200))
     )
     assert bright.getpixel((0, 0)) == (255, 255, 255)
+
+
+def test_brightness_lut_preserves_dark_levels() -> None:
+    """Low settings keep dark values distinct instead of crushing to black.
+
+    The old truncating linear LUT mapped everything below 10 to black at
+    10 % brightness; the gamma-correct rounded LUT only loses value 1.
+    """
+    lut = brightness_lut(10)
+    assert lut[0] == 0  # black stays black (OLED benefit)
+    assert lut[1] == 0
+    assert lut[2] == 1
+    assert lut[9] == 3
+    assert lut == sorted(lut)  # monotonic, so tones stay ordered
+
+    lut50 = brightness_lut(50)
+    assert lut50[255] == 186  # 255 * 0.5**(1/2.2)
+    assert lut50[128] == 93
+    assert lut50[0] == 0
+
+    over = brightness_lut(200)
+    assert over[255] == 255  # clamped
+    assert over[128] == 175
+
+
+def test_brightness_zero_and_100_passthrough() -> None:
+    """0 % yields black, 100 % returns the image unchanged."""
+    image = Image.new("RGB", (4, 4), (80, 160, 240))
+    assert _builder(brightness=0).apply_brightness(image).getpixel((0, 0)) == (
+        0,
+        0,
+        0,
+    )
+    untouched = _builder(brightness=100).apply_brightness(image)
+    assert untouched is image
 
 
 def test_apply_base_rotation_flips_without_resize() -> None:
@@ -110,11 +146,7 @@ def test_build_color_image_applies_brightness() -> None:
     result = _builder(brightness=100).build_color_image((255, 255, 255))
     assert result.getpixel((0, 0)) == (255, 255, 255)
     dark = _builder(brightness=50).build_color_image((255, 255, 255))
-    assert dark.getpixel((0, 0)) == (127, 127, 127) or dark.getpixel((0, 0)) == (
-        128,
-        128,
-        128,
-    )
+    assert dark.getpixel((0, 0)) == (186, 186, 186)
 
 
 def test_render_text_frame_draws_pixels() -> None:

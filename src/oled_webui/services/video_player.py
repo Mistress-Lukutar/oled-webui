@@ -23,6 +23,7 @@ from oled_webui.core.constants import (
     FIT_WIDTH,
 )
 from oled_webui.exceptions import VideoError
+from oled_webui.services.frame_builder import brightness_scale
 
 logger = structlog.get_logger(__name__)
 
@@ -116,7 +117,11 @@ def build_rotation_filter(rotation: int) -> str:
 
 
 def build_brightness_filter(brightness: int) -> str:
-    """Build the ffmpeg filter matching PIL's multiplicative brightness.
+    """Build the ffmpeg filter matching the PIL brightness LUT.
+
+    Uses the same gamma-correct scaling as :func:`brightness_lut`
+    (multiply sRGB-encoded values by the gamma root of the fraction and
+    round to the nearest level) so video frames match static content.
 
     Args:
         brightness: Software brightness 0-200 percent.
@@ -124,10 +129,10 @@ def build_brightness_filter(brightness: int) -> str:
     Returns:
         ffmpeg filter chain fragment (empty string at 100 percent).
     """
-    factor = brightness / 100.0
-    if factor == 1.0:
+    scale = brightness_scale(brightness)
+    if scale == 1.0:
         return ""
-    expr = f"val*{factor}"
+    expr = f"trunc(val*{scale:.6f}+0.5)"
     return f"lutrgb=r={expr}:g={expr}:b={expr}"
 
 

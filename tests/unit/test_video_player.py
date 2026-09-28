@@ -62,11 +62,19 @@ def test_build_rotation_filter_matches_pil_direction() -> None:
     assert "rotate=-45" in build_rotation_filter(45)
 
 
-def test_build_brightness_filter_multiplicative() -> None:
-    """Brightness 100 is a no-op; others scale all channels like PIL."""
+def test_build_brightness_filter_matches_pil_lut() -> None:
+    """Brightness 100 is a no-op; others use the gamma-correct scale."""
     assert build_brightness_filter(100) == ""
-    assert build_brightness_filter(200) == "lutrgb=r=val*2.0:g=val*2.0:b=val*2.0"
-    assert build_brightness_filter(50) == "lutrgb=r=val*0.5:g=val*0.5:b=val*0.5"
+    assert (
+        build_brightness_filter(200)
+        == "lutrgb=r=trunc(val*1.370351+0.5):g=trunc(val*1.370351+0.5)"
+        ":b=trunc(val*1.370351+0.5)"
+    )
+    assert (
+        build_brightness_filter(50)
+        == "lutrgb=r=trunc(val*0.729740+0.5):g=trunc(val*0.729740+0.5)"
+        ":b=trunc(val*0.729740+0.5)"
+    )
 
 
 def test_build_filter_chain_includes_base_rotation_and_420() -> None:

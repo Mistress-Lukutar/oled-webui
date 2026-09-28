@@ -40,6 +40,49 @@ _FALLBACK_FONT_NAMES: tuple[str, ...] = (
     "LiberationSans-Regular.ttf",
 )
 
+# Panels are driven with sRGB-encoded values and respond to them with a
+# power law of roughly this exponent. Multiplying encoded values by the
+# brightness fraction directly would make physical luminance follow
+# (fraction)^gamma: "50 %" would light the panel at ~22 % luminance and
+# dark levels would collapse into the first few output steps. Scaling in
+# linear light (factor**(1/gamma) in encoded space) keeps luminance
+# proportional to the setting and preserves separation of dark tones.
+DISPLAY_GAMMA: float = 2.2
+
+
+def brightness_scale(brightness: int) -> float:
+    """Return the sRGB-encoded multiplier for a brightness percent.
+
+    A setting of N percent targets N percent of the panel's maximum
+    physical luminance, so encoded values are scaled by the gamma root
+    of the fraction (50 % -> ~0.73, not 0.5).
+
+    Args:
+        brightness: Software brightness 0-200 percent.
+
+    Returns:
+        Multiplier applied to sRGB-encoded channel values.
+    """
+    factor = max(0, brightness) / 100.0
+    return float(factor ** (1.0 / DISPLAY_GAMMA))
+
+
+def brightness_lut(brightness: int) -> list[int]:
+    """Build the 256-entry lookup table for brightness scaling.
+
+    Rounding to the nearest level (instead of truncating) keeps low
+    encoded values from collapsing to black, which is what made dark
+    areas band and merge at low settings.
+
+    Args:
+        brightness: Software brightness 0-200 percent.
+
+    Returns:
+        Table mapping an input channel value to the scaled output value.
+    """
+    scale = brightness_scale(brightness)
+    return [min(255, int(i * scale + 0.5)) for i in range(256)]
+
 
 def parse_hex_color(value: str) -> tuple[int, int, int]:
     """Parse a hex color string into an RGB tuple.
@@ -182,7 +225,10 @@ class FrameBuilder:
         raise RenderError(f"Unsupported fit mode: {self._fit!r}")
 
     def apply_brightness(self, image: Image.Image) -> Image.Image:
-        """Adjust image brightness by linearly scaling pixel values.
+        """Adjust image brightness with gamma-correct pixel scaling.
+
+        The LUT scales in linear light, so the brightness percent tracks
+        perceived (physical) luminance and dark tones stay separable.
 
         Args:
             image: Source image.
@@ -192,8 +238,7 @@ class FrameBuilder:
         """
         if self._brightness == 100:
             return image
-        factor = max(0, self._brightness) / 100.0
-        table = [min(255, int(i * factor)) for i in range(256)]
+        table = brightness_lut(self._brightness)
         return image.point(table * len(image.getbands()))
 
     def apply_user_rotation(self, image: Image.Image) -> Image.Image:

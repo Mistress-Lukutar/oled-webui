@@ -35,9 +35,12 @@ from a browser. Protocol and transport are ported from the original
 - **Live preview** — the UI mirrors the last frame sent to the panel,
   updated in real time over SSE.
 
-Brightness is software-only (pixel LUT scaling, 0–200 %, global setting) —
-this panel has no hardware backlight control. "Off" sends a black frame kept
-alive by the keepalive loop; actual USB power cut is out of scope.
+Brightness is software-only (gamma-correct pixel LUT, 0–200 %, global
+setting) — this panel has no hardware backlight control. The percentage
+targets physical luminance (50 % ≈ half maximum brightness) instead of
+raw pixel values, so dark tones keep their separation at low settings
+instead of collapsing into black. "Off" sends a black frame kept alive
+by the keepalive loop; actual USB power cut is out of scope.
 
 ## Stack
 
