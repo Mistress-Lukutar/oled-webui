@@ -20,6 +20,8 @@ from oled_webui.scene.schema import (
     BarWidget,
     GraphStyle,
     GraphWidget,
+    ImageStyle,
+    ImageWidget,
     RingStyle,
     RingWidget,
     TextStyle,
@@ -65,7 +67,7 @@ def _bar_widget(**style_kwargs: object) -> BarWidget:
 
 def test_render_bar_fills_track() -> None:
     image, draw = _scratch()
-    widget = _bar_widget(fg="#FF0000", bg="#000000")
+    widget = _bar_widget(progress_color="#FF0000", fill_color="#000000")
     render_bar(draw, (0, 0, 60, 30), 0.5, widget)
     pixels = image.load()
     assert pixels[29, 15][:3] == (255, 0, 0)  # filled half
@@ -76,7 +78,7 @@ def test_render_bar_empty_and_full() -> None:
     for value01, expected in ((0.0, (0, 0, 0)), (1.0, (255, 0, 0))):
         image, draw = _scratch()
         render_bar(
-            draw, (0, 0, 60, 30), value01, _bar_widget(fg="#FF0000", bg="#000000")
+            draw, (0, 0, 60, 30), value01, _bar_widget(progress_color="#FF0000", fill_color="#000000")
         )
         assert image.load()[2, 15][:3] == expected
 
@@ -88,10 +90,10 @@ def test_render_bar_empty_and_full() -> None:
 def test_render_bar_border_align(
     align: str, border_rows: tuple[int, int]
 ) -> None:
-    """A 2 px border shifts per border_align around the edge at y=2."""
+    """A 2 px stroke shifts per stroke_align around the edge at y=2."""
     image, draw = _scratch(14, 14)
     widget = _bar_widget(
-        border=2, border_color="#00FF00", bg="#0000FF", border_align=align
+        stroke_width=2, stroke_color="#00FF00", fill_color="#0000FF", stroke_align=align
     )
     render_bar(draw, (2, 2, 10, 10), 0.0, widget)
     pixels = image.load()
@@ -103,7 +105,7 @@ def test_render_bar_border_align(
 def test_render_bar_border_visible_over_opaque_bg() -> None:
     """The track fill must not paint over the border."""
     image, draw = _scratch()
-    widget = _bar_widget(border=2, border_color="#00FF00", bg="#0000FF")
+    widget = _bar_widget(stroke_width=2, stroke_color="#00FF00", fill_color="#0000FF")
     render_bar(draw, (0, 0, 60, 30), 0.0, widget)
     assert image.load()[30, 0][:3] == (0, 255, 0)
 
@@ -114,7 +116,7 @@ def test_render_ring_draws_arc() -> None:
         type="ring",
         source="cpu",
         rect=(0, 0, 60, 60),
-        style=RingStyle(fg="#00FF00", bg="#111111", width=6),
+        style=RingStyle(stroke_color="#00FF00", fill_color="#111111", stroke_width=6),
     )
     render_ring(draw, (0, 0, 60, 60), 1.0, widget)
     center = image.load()[30, 4]
@@ -127,7 +129,7 @@ def test_render_graph_draws_line() -> None:
         type="graph",
         source="cpu",
         rect=(0, 0, 100, 40),
-        style=GraphStyle(fg="#00FF00", fill=False),
+        style=GraphStyle(stroke_color="#00FF00", fill=False),
     )
     render_graph(draw, (0, 0, 100, 40), deque([10, 50, 90, 30]), widget)
     colors = {pixel[:3] for pixel in image.getdata()}
@@ -140,7 +142,7 @@ def test_render_text_draws_glyphs() -> None:
         type="text",
         rect=(0, 0, 120, 40),
         align="center",
-        style=TextStyle(color="#FFFFFF"),
+        style=TextStyle(fill_color="#FFFFFF"),
     )
     render_text(image, (0, 0, 120, 40), "42%", widget)
     assert any(pixel[3] > 0 for pixel in image.getdata())
@@ -151,7 +153,7 @@ def _text_widget(**style_kwargs: object) -> TextWidget:
         type="text",
         rect=(0, 0, 80, 40),
         align="center",
-        style=TextStyle(color="#FFFFFF", **style_kwargs),  # type: ignore[arg-type]
+        style=TextStyle(fill_color="#FFFFFF", **style_kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -269,3 +271,113 @@ def test_render_image_covers_layer_bounds(tmp_path) -> None:
     )
     render_image(layer, (0, 0, 200, 200), widget, opacity=1.0, rotation=0.0)
     assert _opaque_bounds(layer) == (0, 0, 60, 60)
+
+
+def test_render_bar_fill_disabled_hides_track() -> None:
+    image, draw = _scratch()
+    widget = _bar_widget(progress_color="#FF0000", fill_color="#0000FF", fill=False)
+    render_bar(draw, (0, 0, 60, 30), 0.5, widget)
+    pixels = image.load()
+    assert pixels[29, 15][:3] == (255, 0, 0)  # progress still drawn
+    assert pixels[59, 15] == (0, 0, 0, 0)  # track area stays transparent
+
+
+def test_render_ring_fill_toggle() -> None:
+    def render(fill: bool) -> Image.Image:
+        image, draw = _scratch(60, 60)
+        widget = RingWidget(
+            type="ring",
+            source="cpu",
+            rect=(0, 0, 60, 60),
+            style=RingStyle(
+                stroke_color="#00FF00", fill_color="#0000FF", fill=fill
+            ),
+        )
+        render_ring(draw, (0, 0, 60, 60), 0.25, widget)
+        return image
+
+    # The 6 o'clock track arc is drawn only when fill is on.
+    assert render(True).load()[30, 55][:3] == (0, 0, 255)
+    assert render(False).load()[30, 55] == (0, 0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("align", "top_row"), (("inside", 10), ("center", 7), ("outside", 4))
+)
+def test_render_ring_stroke_align(align: str, top_row: int) -> None:
+    """A 6 px arc shifts per stroke_align around the circle top."""
+    image, draw = _scratch(80, 80)
+    widget = RingWidget(
+        type="ring",
+        source="cpu",
+        rect=(10, 10, 60, 60),
+        style=RingStyle(
+            stroke_color="#00FF00",
+            stroke_width=6,
+            stroke_align=align,
+            fill=False,
+        ),
+    )
+    render_ring(draw, (10, 10, 60, 60), 0.25, widget)  # top-right quadrant
+    assert image.load()[40, top_row][:3] == (0, 255, 0)
+
+
+def test_render_text_fill_disabled_draws_outline_only() -> None:
+    def render(fill: bool) -> Image.Image:
+        image, _draw = _scratch(120, 60)
+        widget = TextWidget(
+            type="text",
+            rect=(0, 0, 120, 60),
+            align="center",
+            style=TextStyle(
+                size=48,
+                fill=fill,
+                fill_color="#FF0000",
+                stroke_width=2,
+                stroke_color="#00FF00",
+            ),
+        )
+        render_text(image, (0, 0, 120, 60), "H", widget)
+        return image
+
+    def has_color(image: Image.Image, color: tuple[int, int, int]) -> bool:
+        return any(pixel[:3] == color for pixel in image.getdata())
+
+    assert has_color(render(True), (255, 0, 0))  # glyphs painted
+    assert not has_color(render(False), (255, 0, 0))  # fill suppressed
+    assert has_color(render(False), (0, 255, 0))  # outline still drawn
+
+
+def test_render_image_draws_frame(tmp_path) -> None:
+    sprite_path = _sprite(tmp_path / "framed.png")
+    rect = (10, 10, 40, 20)
+    layer = Image.new("RGBA", (60, 40), (0, 0, 0, 0))
+    widget = ImageWidget(
+        type="image",
+        path=str(sprite_path),
+        rect=rect,
+        style=ImageStyle(
+            stroke_width=2, stroke_color="#00FF00", stroke_align="outside"
+        ),
+    )
+    render_image(layer, rect, widget, opacity=1.0, rotation=0.0)
+    pixels = layer.load()
+    # An outside frame sits just above the widget box top edge...
+    assert pixels[30, 8][:3] == (0, 255, 0)
+    # ...while the sprite stays untouched inside.
+    assert pixels[30, 12][:3] == (200, 60, 60)
+
+
+def test_render_image_rounds_corners(tmp_path) -> None:
+    sprite_path = _sprite(tmp_path / "rounded.png")
+    rect = (10, 10, 40, 20)
+    layer = Image.new("RGBA", (60, 40), (0, 0, 0, 0))
+    widget = ImageWidget(
+        type="image",
+        path=str(sprite_path),
+        rect=rect,
+        style=ImageStyle(radius=8),
+    )
+    render_image(layer, rect, widget, opacity=1.0, rotation=0.0)
+    assert layer.load()[10, 10][3] == 0  # corner masked away
+    assert layer.load()[30, 20][3] == 255  # center stays opaque

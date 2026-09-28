@@ -47,14 +47,6 @@ function cssColor(spec: string | null | undefined, fallback = '#ffffff'): string
   return fallback
 }
 
-function rgba(spec: string, alpha: number): string {
-  const text = cssColor(spec).slice(1)
-  const r = parseInt(text.slice(0, 2), 16)
-  const g = parseInt(text.slice(2, 4), 16)
-  const b = parseInt(text.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 function roundedRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -82,12 +74,12 @@ function getScratchCanvas(tag: string, w: number, h: number): HTMLCanvasElement 
   return canvas
 }
 
-/** Extra scratch padding for a bar whose border leaves the widget box. */
-function barScratchPad(widget: Record<string, unknown>): number {
+/** Extra scratch padding for a stroke that leaves the widget box. */
+function widgetScratchPad(widget: Record<string, unknown>): number {
   const style = (widget['style'] ?? {}) as Record<string, unknown>
-  const border = typeof style['border'] === 'number' ? style['border'] : 0
-  const align = style['border_align']
-  return border > 0 && (align === 'center' || align === 'outside') ? border : 0
+  const width = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 0
+  const align = style['stroke_align']
+  return width > 0 && (align === 'center' || align === 'outside') ? width : 0
 }
 
 function drawBar(
@@ -98,18 +90,21 @@ function drawBar(
   widget: Record<string, unknown>,
 ): void {
   const style = (widget['style'] ?? {}) as Record<string, unknown>
-  const fg = cssColor(style['fg'] as string, '#7CFC00')
-  const bg = cssColor(style['bg'] as string, '#222222')
-  const border = typeof style['border'] === 'number' ? style['border'] : 0
-  const borderColor = cssColor(style['border_color'] as string, '#888888')
+  const fg = cssColor(style['progress_color'] as string, '#7CFC00')
+  const bg = cssColor(style['fill_color'] as string, '#222222')
+  const fillOn = style['fill'] !== false
+  const border = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 0
+  const borderColor = cssColor(style['stroke_color'] as string, '#888888')
+  const align = (style['stroke_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
   const radius = typeof style['radius'] === 'number' ? style['radius'] : 0
-  const align = (style['border_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
   const horizontal = (style['orientation'] ?? 'horizontal') !== 'vertical'
   const fill01 = Math.max(0, Math.min(1, value01))
 
-  ctx.fillStyle = bg
-  roundedRect(ctx, 0, 0, w, h, radius)
-  ctx.fill()
+  if (fillOn) {
+    ctx.fillStyle = bg
+    roundedRect(ctx, 0, 0, w, h, radius)
+    ctx.fill()
+  }
 
   if (border > 0) {
     // Mirror the PIL bbox shift in render_bar: the path is inset so the
@@ -157,26 +152,31 @@ function drawRing(
   widget: Record<string, unknown>,
 ): void {
   const style = (widget['style'] ?? {}) as Record<string, unknown>
-  const fg = cssColor(style['fg'] as string, '#7CFC00')
-  const bg = cssColor(style['bg'] as string, '#222222')
-  const width = typeof style['width'] === 'number' ? style['width'] : 8
+  const fg = cssColor(style['stroke_color'] as string, '#7CFC00')
+  const bg = cssColor(style['fill_color'] as string, '#222222')
+  const width = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 8
+  const align = (style['stroke_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
   const startAngle = typeof style['start_angle'] === 'number' ? style['start_angle'] : -90
   const sweep = typeof style['sweep'] === 'number' ? style['sweep'] : 360
-  const size = Math.min(w, h) - 1
+  // PIL draws arc strokes inward from the ellipse; mirror its bbox shift
+  // for stroke_align by growing the nominal circle.
+  const out =
+    align === 'center' ? Math.floor(width / 2) : align === 'outside' ? width : 0
+  const size = Math.min(w, h) - 1 + 2 * out
   const cx = w / 2
   const cy = h / 2
-  // PIL draws arc strokes inward from the ellipse; match by centering the
-  // canvas stroke inside that boundary.
   const radius = size / 2 - width / 2
   if (radius <= 0) return
   const fill01 = Math.max(0, Math.min(1, value01))
 
   ctx.lineCap = 'butt'
   ctx.lineWidth = width
-  ctx.strokeStyle = bg
-  ctx.beginPath()
-  ctx.arc(cx, cy, radius, (startAngle * Math.PI) / 180, ((startAngle + sweep) * Math.PI) / 180)
-  ctx.stroke()
+  if (style['fill'] !== false) {
+    ctx.strokeStyle = bg
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, (startAngle * Math.PI) / 180, ((startAngle + sweep) * Math.PI) / 180)
+    ctx.stroke()
+  }
   if (fill01 > 0) {
     ctx.strokeStyle = fg
     ctx.beginPath()
@@ -199,16 +199,12 @@ function drawGraph(
   widget: Record<string, unknown>,
 ): void {
   const style = (widget['style'] ?? {}) as Record<string, unknown>
-  const fg = cssColor(style['fg'] as string, '#7CFC00')
-  const bg = style['bg'] === undefined || style['bg'] === null ? null : String(style['bg'])
-  const fill = style['fill'] !== false
-  const lineWidth = typeof style['line_width'] === 'number' ? style['line_width'] : 2
+  const fg = cssColor(style['stroke_color'] as string, '#7CFC00')
+  const fillColor = cssColor(style['fill_color'] as string, '#1a1a1a')
+  const fill = style['fill'] === true
+  const lineWidth = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 2
   const scaleMax = typeof style['scale_max'] === 'number' ? style['scale_max'] : null
 
-  if (bg !== null) {
-    ctx.fillStyle = bg
-    ctx.fillRect(0, 0, w, h)
-  }
   if (history.length < 2) return
 
   const peak = Math.max(scaleMax ?? Math.max(...history), 1e-6)
@@ -221,7 +217,7 @@ function drawGraph(
   })
 
   if (fill) {
-    ctx.fillStyle = rgba(fg, 96 / 255)
+    ctx.fillStyle = fillColor
     ctx.beginPath()
     ctx.moveTo(0, h - 1)
     for (const [px, py] of points) ctx.lineTo(px, py)
@@ -251,7 +247,8 @@ function drawText(
 ): void {
   const style = (widget['style'] ?? {}) as Record<string, unknown>
   const size = typeof style['size'] === 'number' ? Math.trunc(style['size']) : 24
-  const color = cssColor(style['color'] as string, '#FFFFFF')
+  const color = cssColor(style['fill_color'] as string, '#FFFFFF')
+  const fillOn = style['fill'] !== false
   const align = (widget['align'] ?? 'left') as 'left' | 'center' | 'right'
   const leading =
     typeof style['leading'] === 'number' && style['leading'] > 0
@@ -299,8 +296,10 @@ function drawText(
       c.strokeStyle = strokeColor
       c.strokeText(ch, x, y)
     }
-    c.fillStyle = color
-    c.fillText(ch, x, y)
+    if (fillOn) {
+      c.fillStyle = color
+      c.fillText(ch, x, y)
+    }
   }
 
   const paintLine = (
@@ -324,8 +323,10 @@ function drawText(
       c.strokeStyle = strokeColor
       c.strokeText(line, x, y)
     }
-    c.fillStyle = color
-    c.fillText(line, x, y)
+    if (fillOn) {
+      c.fillStyle = color
+      c.fillText(line, x, y)
+    }
   }
 
   // Measure the base-orientation block, mirroring widgets.py.
@@ -445,6 +446,11 @@ function drawImage(
   if (typeof path !== 'string') return false
   const sprite = images.get(sceneId, path)
   if (sprite === null || !sprite.complete || sprite.naturalWidth === 0) return false
+  const style = (widget['style'] ?? {}) as Record<string, unknown>
+  const radius = typeof style['radius'] === 'number' ? style['radius'] : 0
+  const strokeW = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 0
+  const strokeColor = cssColor(style['stroke_color'] as string, '#888888')
+  const align = (style['stroke_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
   const fit = typeof widget['fit'] === 'string' ? widget['fit'] : 'scale'
   let sizeW: number
   let sizeH: number
@@ -466,6 +472,11 @@ function drawImage(
 
   ctx.save()
   ctx.globalAlpha = Math.max(0, Math.min(1, opacity))
+  if (radius > 0) {
+    // Mirror the Pillow corner mask: clip the sprite to a rounded rect.
+    roundedRect(ctx, 0, 0, sizeW, sizeH, radius)
+    ctx.clip()
+  }
   // Pillow rotates counter-clockwise; canvas is clockwise.
   if (rotation % 360 !== 0) {
     ctx.translate(x + w / 2, y + h / 2)
@@ -476,6 +487,25 @@ function drawImage(
   }
   ctx.drawImage(sprite, 0, 0, sizeW, sizeH)
   ctx.restore()
+
+  if (strokeW > 0) {
+    // Frame stroke in scene coordinates, mirroring the Pillow bbox shift.
+    const out =
+      align === 'center' ? Math.floor(strokeW / 2) : align === 'outside' ? strokeW : 0
+    ctx.save()
+    ctx.lineWidth = strokeW
+    ctx.strokeStyle = strokeColor
+    roundedRect(
+      ctx,
+      x + strokeW / 2 - out,
+      y + strokeW / 2 - out,
+      w - strokeW + 2 * out,
+      h - strokeW + 2 * out,
+      radius,
+    )
+    ctx.stroke()
+    ctx.restore()
+  }
   return true
 }
 
@@ -552,7 +582,7 @@ export function drawScene(opts: DrawSceneOptions): void {
     const widgetRecord = widget as Record<string, unknown>
     // A bar border aligned center/outside extends past the widget box; pad
     // the clipped scratch like the runner does for the Pillow render.
-    const pad = barScratchPad(widgetRecord)
+    const pad = widgetScratchPad(widgetRecord)
     const paint = (c: CanvasRenderingContext2D): void => {
       if (type === 'bar') drawBar(c, w, h, entry.value01, widgetRecord)
       else if (type === 'ring') drawRing(c, w, h, entry.value01, widgetRecord)

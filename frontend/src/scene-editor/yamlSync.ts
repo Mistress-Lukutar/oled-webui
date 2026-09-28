@@ -88,21 +88,36 @@ function checkStyle(
   for (const key of unknownStyleKeys(style)) {
     errors.push(`${where}.style: unknown key "${key}"`)
   }
+  const aligns = ['center', 'inside', 'outside']
   if (type === 'text') {
     checkIntRange(errors, `${where}.style.size`, style['size'], 4, 200)
-    checkColor(errors, `${where}.style.color`, style['color'])
+    checkColor(errors, `${where}.style.fill_color`, style['fill_color'])
+    checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
+    checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 0, 32)
   } else if (type === 'bar') {
-    checkIntRange(errors, `${where}.style.border`, style['border'], 0, 16)
+    checkColor(errors, `${where}.style.fill_color`, style['fill_color'])
+    checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
+    checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 0, 64)
+    checkEnum(errors, `${where}.style.stroke_align`, style['stroke_align'], aligns)
     checkEnum(errors, `${where}.style.orientation`, style['orientation'], [
       'horizontal',
       'vertical',
     ])
   } else if (type === 'ring') {
-    checkIntRange(errors, `${where}.style.width`, style['width'], 1, 64)
+    checkColor(errors, `${where}.style.fill_color`, style['fill_color'])
+    checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
+    checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 1, 64)
+    checkEnum(errors, `${where}.style.stroke_align`, style['stroke_align'], aligns)
     checkIntRange(errors, `${where}.style.start_angle`, style['start_angle'], -360, 360)
     checkIntRange(errors, `${where}.style.sweep`, style['sweep'], 30, 360)
   } else if (type === 'graph') {
-    checkIntRange(errors, `${where}.style.line_width`, style['line_width'], 1, 16)
+    checkColor(errors, `${where}.style.fill_color`, style['fill_color'])
+    checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
+    checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 1, 16)
+  } else if (type === 'image') {
+    checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
+    checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 0, 64)
+    checkEnum(errors, `${where}.style.stroke_align`, style['stroke_align'], aligns)
   }
 }
 

@@ -35,8 +35,8 @@ def scene_file_fixture(tmp_path: Path) -> Path:
             rect: [0, 0, 120, 120]
             source: "{{ source }}"
             style:
-              fg: "{{ palette.fg }}"
-              bg: "{{ palette.bg }}"
+              stroke_color: "{{ palette.fg }}"
+              fill_color: "{{ palette.bg }}"
           - type: text
             rect: [0, 40, 120, 60]
             align: center
@@ -235,7 +235,7 @@ def test_render_rotates_non_image_widget(tmp_path: Path) -> None:
             align: center
             style:
               size: 28
-              color: "#FFFFFF"
+              fill_color: "#FFFFFF"
         """,
         encoding="utf-8",
     )
@@ -258,7 +258,7 @@ def test_render_rotates_non_image_widget(tmp_path: Path) -> None:
 
 
 def test_render_bar_border_align_extends_outside(tmp_path: Path) -> None:
-    """A border aligned outside must survive scratch padding and overflow the box."""
+    """A stroke aligned outside must survive scratch padding and overflow the box."""
     import io
 
     from PIL import Image
@@ -272,10 +272,10 @@ def test_render_bar_border_align_extends_outside(tmp_path: Path) -> None:
                 source: cpu
                 rect: [20, 20, 100, 40]
                 style:
-                  bg: "#000000"
-                  border: 2
-                  border_color: "#FFFFFF"
-                  border_align: {align}
+                  fill_color: "#000000"
+                  stroke_width: 2
+                  stroke_color: "#FFFFFF"
+                  stroke_align: {align}
             """,
             encoding="utf-8",
         )

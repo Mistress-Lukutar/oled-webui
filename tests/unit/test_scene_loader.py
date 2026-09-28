@@ -101,7 +101,7 @@ def test_component_expansion_with_params(tmp_path: Path) -> None:
             rect: [0, 0, 160, 160]
             source: "{{ source }}"
             style:
-              fg: "{{ palette.fg }}"
+              stroke_color: "{{ palette.fg }}"
           - type: text
             rect: [0, 0, 160, 160]
             align: center
@@ -123,7 +123,7 @@ def test_component_expansion_with_params(tmp_path: Path) -> None:
     assert isinstance(ring, RingWidget)
     assert ring.rect == (40, 50, 160, 160)
     assert ring.source == "ram"
-    assert ring.style.fg == "#00FF00"
+    assert ring.style.stroke_color == "#00FF00"
     assert isinstance(text, TextWidget)
     assert text.value == "{value:.0f}%"
 

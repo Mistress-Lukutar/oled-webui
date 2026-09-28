@@ -1,8 +1,8 @@
 # Example scene: system dashboard with reusable components.
 # Apply from the WebUI: Scenes tab → "Dashboard Example" → Apply
 #
-# Data sources: cpu.percent, cpu.freq_ghz, ram.percent, ram.used_gb,
-# disk.percent, net.kbps, temp.cpu, gpu.percent, time.hms, time.date
+# Data sources: cpu.percent, cpu.freq_ghz, ram.used_gb, disk.percent,
+# net.kbps, temp.cpu, gpu.percent, time.hms, time.date
 
 refresh: 1.0          # data polling rate (Hz)
 max_fps: 20           # cap for animation frame rate
@@ -25,17 +25,17 @@ widgets:
     at: [280, 480]
     source: ram
     palette:
-      fg: "#4FC3F7"
-      bg: "#1a1a1a"
+      stroke_color: "#4FC3F7"
+      fill_color: "#1a1a1a"
 
   - type: bar
     source: cpu
     rect: [80, 660, 360, 22]
     style:
-      fg: "#7CFC00"
-      bg: "#1a1a1a"
+      progress_color: "#7CFC00"
+      fill_color: "#1a1a1a"
       radius: 6
-      border: 1
+      stroke_width: 1
     animate:
       value:
         easing: ease-out-cubic
@@ -46,9 +46,10 @@ widgets:
     rect: [500, 460, 420, 200]
     history: 120
     style:
-      fg: "#7CFC00"
+      stroke_color: "#7CFC00"
+      stroke_width: 2
       fill: true
-      line_width: 2
+      fill_color: "#223311"
 
   - type: text
     source: time.hms
@@ -56,7 +57,7 @@ widgets:
     align: center
     style:
       size: 64
-      color: "#FFFFFF"
+      fill_color: "#FFFFFF"
 
   - type: text
     source: time.date
@@ -64,7 +65,7 @@ widgets:
     align: center
     style:
       size: 24
-      color: "#AAAAAA"
+      fill_color: "#AAAAAA"
 
   - type: text
     source: ram.used_gb
@@ -72,11 +73,15 @@ widgets:
     rect: [80, 380, 360, 36]
     style:
       size: 28
-      color: "#4FC3F7"
+      fill_color: "#4FC3F7"
 
-  # Procedural animation: a sprite bobbing up and down.
+  # Procedural animation: a sprite with a frame and rounded corners.
   # - type: image
   #   path: mascot.png
   #   rect: [1500, 560, 64, 64]
+  #   style:
+  #     stroke_width: 2
+  #     stroke_align: outside
+  #     radius: 12
   #   offset_y: "8 * sin(2 * pi * 0.25 * t)"
   #   rotation: "10 * sin(1.5 * t)"

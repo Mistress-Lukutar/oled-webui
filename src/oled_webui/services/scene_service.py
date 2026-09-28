@@ -47,13 +47,13 @@ widgets:
     align: center
     style:
       size: 56
-      color: "#FFFFFF"
+      fill_color: "#FFFFFF"
   - type: bar
     source: cpu
     rect: [40, 160, 400, 24]
     style:
-      fg: "#7CFC00"
-      bg: "#1a1a1a"
+      progress_color: "#7CFC00"
+      fill_color: "#1a1a1a"
       radius: 6
 """
 

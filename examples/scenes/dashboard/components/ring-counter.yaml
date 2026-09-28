@@ -4,23 +4,23 @@
 #     at: [x, y]              # placement of the 160x160 box
 #     source: cpu             # data source (0..100)
 #     value: "{value:.0f}%"   # optional text template
-#     palette: { fg: "...", bg: "..." }   # optional colors
+#     palette: { stroke_color: "...", fill_color: "..." }  # optional colors
 
 params:
   source: cpu
   value: "{value:.0f}%"
   palette:
-    fg: "#7CFC00"
-    bg: "#222222"
+    stroke_color: "#7CFC00"
+    fill_color: "#222222"
 
 render:
   - type: ring
     rect: [0, 0, 160, 160]
     source: "{{ source }}"
     style:
-      fg: "{{ palette.fg }}"
-      bg: "{{ palette.bg }}"
-      width: 10
+      stroke_color: "{{ palette.stroke_color }}"
+      fill_color: "{{ palette.fill_color }}"
+      stroke_width: 10
   - type: text
     rect: [0, 0, 160, 160]
     align: center
@@ -28,4 +28,4 @@ render:
     value: "{{ value }}"
     style:
       size: 40
-      color: "{{ palette.fg }}"
+      fill_color: "{{ palette.stroke_color }}"

@@ -30,16 +30,52 @@ class ImageLayer(_Strict):
     opacity: float = Field(1.0, ge=0, le=1, description="Layer opacity 0..1")
 
 
-class TextStyle(_Strict):
-    """Text rendering style (typography options follow design-suite terms).
+class FillSpec(_Strict):
+    """Fill half of the universal paint block shared by widget styles."""
 
-    ``leading`` is the line spacing as a multiplier of the font size,
-    ``tracking`` adds letter spacing in pixels, and ``direction`` selects
-    the writing direction: ``ltr`` (default), ``rtl`` (mirror of ``ltr``),
-    ``ttb`` (characters stacked top-to-bottom) or ``btt`` (mirror of
-    ``ttb``).
+    fill: bool = Field(True, description="Draw the fill")
+    fill_color: str = Field("#222222", description="Fill color as #RRGGBB")
+
+
+class StrokeSpec(_Strict):
+    """Stroke half of the universal paint block shared by widget styles."""
+
+    stroke_color: str = Field("#888888", description="Stroke color as #RRGGBB")
+    stroke_width: int = Field(0, ge=0, le=64, description="Stroke thickness in pixels")
+    stroke_align: Literal["center", "inside", "outside"] = Field(
+        "inside",
+        description="Stroke placement relative to the shape edge: inside, "
+        "centered on the edge, or outside",
+    )
+
+
+class CornerSpec(_Strict):
+    """Corner rounding of the universal paint block."""
+
+    radius: int = Field(0, ge=0, description="Corner radius in pixels")
+
+
+class PaintSpec(FillSpec, StrokeSpec):
+    """Fill + stroke: the paint vocabulary shared by most widgets."""
+
+
+class CorneredPaint(PaintSpec, CornerSpec):
+    """Paint plus corner rounding."""
+
+
+class TextStyle(FillSpec):
+    """Text rendering style: paint plus typography.
+
+    The fill paints the glyphs, the stroke draws their outline. ``leading``
+    is the line spacing as a multiplier of the font size, ``tracking`` adds
+    letter spacing in pixels, and ``direction`` selects the writing
+    direction: ``ltr`` (default), ``rtl`` (mirror of ``ltr``), ``ttb``
+    (characters stacked top-to-bottom) or ``btt`` (mirror of ``ttb``).
     """
 
+    fill_color: str = Field("#FFFFFF", description="Glyph color as #RRGGBB")
+    stroke_color: str = Field("#000000", description="Outline color as #RRGGBB")
+    stroke_width: int = Field(0, ge=0, le=32, description="Outline thickness in pixels")
     family: str | None = Field(
         None,
         description=(
@@ -48,7 +84,6 @@ class TextStyle(_Strict):
         ),
     )
     size: int = Field(24, ge=4, le=200, description="Font size in pixels")
-    color: str = Field("#FFFFFF", description="Text color as #RRGGBB")
     leading: float = Field(
         1.2, gt=0, le=4.0, description="Line spacing as a multiplier of font size"
     )
@@ -58,44 +93,41 @@ class TextStyle(_Strict):
     direction: Literal["ltr", "rtl", "ttb", "btt"] = Field(
         "ltr", description="Writing direction: ltr, rtl (mirror), ttb, btt (mirror)"
     )
-    stroke_width: int = Field(0, ge=0, le=32, description="Outline thickness in pixels")
-    stroke_color: str = Field("#000000", description="Outline color as #RRGGBB")
 
 
-class BarStyle(_Strict):
-    """Progress bar style."""
+class BarStyle(CorneredPaint):
+    """Progress bar style: paint plus a progress-specific color."""
 
-    fg: str = Field("#7CFC00", description="Filled part color")
-    bg: str = Field("#222222", description="Track color")
-    border: int = Field(0, ge=0, le=16, description="Border thickness in pixels")
-    border_color: str = Field("#888888", description="Border color")
-    border_align: Literal["center", "inside", "outside"] = Field(
-        "inside", description="Border alignment: inside, centered on the edge, outside"
-    )
-    radius: int = Field(0, ge=0, description="Corner radius in pixels")
+    progress_color: str = Field("#7CFC00", description="Filled part color")
     orientation: Literal["horizontal", "vertical"] = "horizontal"
 
 
-class RingStyle(_Strict):
-    """Ring (circular progress) style."""
+class RingStyle(PaintSpec):
+    """Ring (circular progress) style: the value arc is the stroke."""
 
-    fg: str = Field("#7CFC00", description="Progress arc color")
-    bg: str = Field("#222222", description="Background arc color")
-    width: int = Field(8, ge=1, le=64, description="Arc thickness in pixels")
+    stroke_color: str = Field("#7CFC00", description="Value arc color")
+    stroke_width: int = Field(8, ge=1, le=64, description="Arc thickness in pixels")
     start_angle: int = Field(-90, ge=-360, le=360, description="Arc start angle")
     sweep: int = Field(360, ge=30, le=360, description="Full-track sweep in degrees")
 
 
-class GraphStyle(_Strict):
-    """Sparkline/history graph style."""
+class GraphStyle(FillSpec):
+    """Sparkline/history graph style: the line is the stroke."""
 
-    fg: str = Field("#7CFC00", description="Line color")
-    bg: str | None = Field(None, description="Background fill; None for transparent")
-    fill: bool = Field(True, description="Fill the area under the line")
-    line_width: int = Field(2, ge=1, le=16, description="Line thickness in pixels")
+    # The area fill is opt-in: a bare sparkline reads cleaner without it.
+    fill: bool = Field(False, description="Fill the area under the line")
+    fill_color: str = Field("#1a1a1a", description="Area fill color")
+    stroke_color: str = Field("#7CFC00", description="Line color")
+    stroke_width: int = Field(2, ge=1, le=16, description="Line thickness in pixels")
     scale_max: float | None = Field(
         None, gt=0, description="Fixed scale maximum; None scales to history peak"
     )
+
+
+class ImageStyle(StrokeSpec, CornerSpec):
+    """Image style: an optional frame plus corner rounding; no fill."""
+
+    stroke_color: str = Field("#888888", description="Frame color as #RRGGBB")
 
 
 class AnimateSpec(_Strict):
@@ -181,6 +213,7 @@ class ImageWidget(WidgetBase):
         ),
     )
     scale: float = Field(1.0, gt=0, description="Size multiplier (fit='scale' only)")
+    style: ImageStyle = Field(default_factory=lambda: ImageStyle())
 
 
 Widget = Annotated[

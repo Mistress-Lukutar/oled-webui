@@ -13,7 +13,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.expressions import EASINGS, Expression
@@ -204,27 +204,30 @@ def render_bar(
     radius = min(style.radius, w // 2, h // 2)
     fill01 = max(0.0, min(1.0, value01))
 
-    # Track first: the border must stay visible on top of an opaque bg.
-    draw.rounded_rectangle(
-        (x, y, x + w - 1, y + h - 1), radius=radius, fill=parse_color(style.bg)
-    )
+    # Track first: the stroke must stay visible on top of an opaque fill.
+    if style.fill:
+        draw.rounded_rectangle(
+            (x, y, x + w - 1, y + h - 1),
+            radius=radius,
+            fill=parse_color(style.fill_color),
+        )
 
-    if style.border:
+    if style.stroke_width:
         # PIL outlines grow inward from the bbox; shift the bbox outward so
         # the stroke sits inside, across, or outside the widget edge.
         out = 0
-        if style.border_align == "center":
-            out = style.border // 2
-        elif style.border_align == "outside":
-            out = style.border
+        if style.stroke_align == "center":
+            out = style.stroke_width // 2
+        elif style.stroke_align == "outside":
+            out = style.stroke_width
         draw.rounded_rectangle(
             (x - out, y - out, x + w - 1 + out, y + h - 1 + out),
             radius=radius,
-            outline=parse_color(style.border_color),
-            width=style.border,
+            outline=parse_color(style.stroke_color),
+            width=style.stroke_width,
         )
 
-    inset = style.border + 1 if style.border else 0
+    inset = style.stroke_width + 1 if style.stroke_width else 0
     if style.orientation == "horizontal":
         track_w = w - 2 * inset
         filled = int(track_w * fill01)
@@ -232,7 +235,7 @@ def render_bar(
             draw.rounded_rectangle(
                 (x + inset, y + inset, x + inset + filled - 1, y + h - inset - 1),
                 radius=min(radius, h // 2),
-                fill=parse_color(style.fg),
+                fill=parse_color(style.progress_color),
             )
     else:
         track_h = h - 2 * inset
@@ -246,7 +249,7 @@ def render_bar(
                     y + h - inset - 1,
                 ),
                 radius=min(radius, w // 2),
-                fill=parse_color(style.fg),
+                fill=parse_color(style.progress_color),
             )
 
 def render_ring(
@@ -265,7 +268,14 @@ def render_ring(
     """
     x, y, w, h = rect
     style = widget.style
-    size = min(w, h) - 1
+    # PIL arcs stroke inward from the bbox; expand it so the arc sits
+    # inside, across, or outside the nominal circle edge.
+    out = 0
+    if style.stroke_align == "center":
+        out = style.stroke_width // 2
+    elif style.stroke_align == "outside":
+        out = style.stroke_width
+    size = min(w, h) - 1 + 2 * out
     box = (
         x + (w - size) // 2,
         y + (h - size) // 2,
@@ -274,20 +284,21 @@ def render_ring(
     )
     fill01 = max(0.0, min(1.0, value01))
 
-    draw.arc(
-        box,
-        style.start_angle,
-        style.start_angle + style.sweep,
-        fill=parse_color(style.bg),
-        width=style.width,
-    )
+    if style.fill:
+        draw.arc(
+            box,
+            style.start_angle,
+            style.start_angle + style.sweep,
+            fill=parse_color(style.fill_color),
+            width=style.stroke_width,
+        )
     if fill01 > 0:
         draw.arc(
             box,
             style.start_angle,
             style.start_angle + int(style.sweep * fill01),
-            fill=parse_color(style.fg),
-            width=style.width,
+            fill=parse_color(style.stroke_color),
+            width=style.stroke_width,
         )
 
 def render_graph(
@@ -306,8 +317,6 @@ def render_graph(
     """
     x, y, w, h = rect
     style = widget.style
-    if style.bg:
-        draw.rectangle((x, y, x + w - 1, y + h - 1), fill=parse_color(style.bg))
     if len(history) < 2:
         return
 
@@ -321,11 +330,11 @@ def render_graph(
         py = y + h - 1 - (h - 1) * norm
         points.append((px, py))
 
-    line_color = parse_color(style.fg)
+    line_color = parse_color(style.stroke_color)
     if style.fill:
         polygon = [(x, y + h - 1), *points, (x + w - 1, y + h - 1)]
-        draw.polygon(polygon, fill=(line_color[0], line_color[1], line_color[2], 96))
-    draw.line(points, fill=line_color, width=style.line_width, joint="curve")
+        draw.polygon(polygon, fill=parse_color(style.fill_color))
+    draw.line(points, fill=line_color, width=style.stroke_width, joint="curve")
 
 def composite_clipped(
     layer: Image.Image, sprite: Image.Image, dest_x: int, dest_y: int
@@ -394,7 +403,7 @@ def _horizontal_block(text: str, widget: Any) -> Image.Image:
     """
     style = widget.style
     font = get_font(style.family, style.size)
-    color = parse_color(style.color)
+    color = parse_color(style.fill_color) if style.fill else (0, 0, 0, 0)
     stroke = _stroke_kwargs(style)
     tracking = style.tracking
     pad = style.stroke_width + 1
@@ -455,7 +464,7 @@ def _vertical_block(text: str, widget: Any) -> Image.Image:
     """
     style = widget.style
     font = get_font(style.family, style.size)
-    color = parse_color(style.color)
+    color = parse_color(style.fill_color) if style.fill else (0, 0, 0, 0)
     stroke = _stroke_kwargs(style)
     tracking = style.tracking
     pad = style.stroke_width + 1
@@ -578,8 +587,9 @@ def render_image(
     """Composite a (possibly rotated/faded) image widget onto the layer.
 
     The sprite is sized per the widget's ``fit`` mode inside the widget
-    box; rotation and opacity are applied before compositing. Sprites
-    extending past the layer bounds are cropped.
+    box; corner radius clips the sprite, and the style frame is drawn on
+    top with the same rotation. Sprites extending past the layer bounds
+    are cropped.
 
     Args:
         layer: Target RGBA layer.
@@ -588,6 +598,7 @@ def render_image(
         opacity: Evaluated opacity in [0, 1].
         rotation: Evaluated rotation in degrees (counter-clockwise).
     """
+    style = widget.style
     sprite = get_sprite(widget.path)
     x, y, w, h = rect
     if widget.fit == "stretch":
@@ -605,6 +616,8 @@ def render_image(
         )
     if size != sprite.size:
         sprite = sprite.resize(size, Image.Resampling.LANCZOS)
+    if style.radius > 0:
+        sprite = _round_corners(sprite, style.radius)
     if rotation % 360 != 0:
         sprite = sprite.rotate(rotation, expand=True, resample=Image.Resampling.BICUBIC)
     if opacity < 1.0:
@@ -637,3 +650,61 @@ def render_image(
     # Crop whatever extends past the layer bounds; PIL rejects negative
     # or overflowing destinations in alpha_composite.
     composite_clipped(layer, sprite, dest_x, dest_y)
+    if style.stroke_width:
+        _draw_frame(layer, rect, style, rotation)
+
+
+def _round_corners(sprite: Image.Image, radius: int) -> Image.Image:
+    """Clip the sprite to a rounded rectangle of the given radius."""
+    radius = min(radius, sprite.width // 2, sprite.height // 2)
+    if radius <= 0:
+        return sprite
+    mask = Image.new("L", sprite.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, sprite.width - 1, sprite.height - 1), radius=radius, fill=255
+    )
+    clipped = sprite.copy()
+    clipped.putalpha(ImageChops.multiply(clipped.getchannel("A"), mask))
+    return clipped
+
+
+def _draw_frame(
+    layer: Image.Image,
+    rect: tuple[int, int, int, int],
+    style: Any,
+    rotation: float,
+) -> None:
+    """Draw the image frame stroke, rotated like the sprite.
+
+    The frame is rendered into its own padded layer so a center/outside
+    aligned stroke survives, then rotated around the rect center — the
+    same pivot the sprite rotates around.
+
+    Args:
+        layer: Target RGBA layer.
+        rect: Local widget box (0-based).
+        style: ImageStyle with stroke settings and radius.
+        rotation: Evaluated rotation in degrees (counter-clockwise).
+    """
+    x, y, w, h = rect
+    width = style.stroke_width
+    out = 0
+    if style.stroke_align == "center":
+        out = width // 2
+    elif style.stroke_align == "outside":
+        out = width
+    pad = width
+    frame = Image.new("RGBA", (w + 2 * pad, h + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(frame).rounded_rectangle(
+        (pad - out, pad - out, pad + w - 1 + out, pad + h - 1 + out),
+        radius=min(style.radius, w // 2, h // 2),
+        outline=parse_color(style.stroke_color),
+        width=width,
+    )
+    if rotation % 360 != 0:
+        frame = frame.rotate(rotation, expand=True, resample=Image.Resampling.BICUBIC)
+        dest_x = x + (w - frame.width) // 2
+        dest_y = y + (h - frame.height) // 2
+    else:
+        dest_x, dest_y = x - pad, y - pad
+    composite_clipped(layer, frame, dest_x, dest_y)

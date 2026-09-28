@@ -542,15 +542,16 @@ class SceneRenderer:
                 logger.warning("scene_image_unavailable", path=widget.path, error=str(exc))
             return
 
-        # A bar border aligned center/outside extends past the widget box,
+        # A stroke aligned center/outside extends past the widget box,
         # so the scratch gets symmetric padding to avoid clipping it.
         pad = 0
+        style = getattr(widget, "style", None)
         if (
-            isinstance(widget, BarWidget)
-            and widget.style.border
-            and widget.style.border_align != "inside"
+            style is not None
+            and getattr(style, "stroke_width", 0)
+            and getattr(style, "stroke_align", "inside") != "inside"
         ):
-            pad = widget.style.border
+            pad = style.stroke_width
         scratch = Image.new(
             "RGBA",
             (max(1, width + 2 * pad), max(1, height + 2 * pad)),

@@ -9,6 +9,25 @@ export type Align = 'left' | 'center' | 'right'
 export type Orientation = 'horizontal' | 'vertical'
 /** Writing direction: rtl mirrors ltr, btt mirrors ttb (stacked). */
 export type TextDirection = 'ltr' | 'rtl' | 'ttb' | 'btt'
+export type StrokeAlign = 'center' | 'inside' | 'outside'
+
+/** Fill half of the universal paint block (mirrors schema.FillSpec). */
+export interface FillSpec {
+  fill?: boolean
+  fill_color?: string
+}
+
+/** Stroke half of the universal paint block (mirrors schema.StrokeSpec). */
+export interface StrokeSpec {
+  stroke_color?: string
+  stroke_width?: number
+  stroke_align?: StrokeAlign
+}
+
+/** Corner rounding of the universal paint block (mirrors schema.CornerSpec). */
+export interface CornerSpec {
+  radius?: number
+}
 
 export const TEXT_DIRECTIONS: Array<{ value: TextDirection; label: string }> = [
   { value: 'ltr', label: 'Left → right' },
@@ -20,44 +39,35 @@ export const TEXT_DIRECTIONS: Array<{ value: TextDirection; label: string }> = [
 /** Plain number or an expression string evaluated per frame. */
 export type ExprValue = number | string
 
-export interface TextStyle {
+export interface TextStyle extends FillSpec {
   family?: string | null
   size?: number
-  color?: string
   /** Line spacing as a multiplier of font size (schema default 1.2). */
   leading?: number
   /** Letter spacing in pixels. */
   tracking?: number
   direction?: TextDirection
-  stroke_width?: number
   stroke_color?: string
+  stroke_width?: number
 }
 
-export interface BarStyle {
-  fg?: string
-  bg?: string
-  border?: number
-  border_color?: string
-  border_align?: 'center' | 'inside' | 'outside'
-  radius?: number
+export interface BarStyle extends FillSpec, StrokeSpec, CornerSpec {
+  progress_color?: string
   orientation?: Orientation
 }
 
-export interface RingStyle {
-  fg?: string
-  bg?: string
-  width?: number
+export interface RingStyle extends FillSpec, StrokeSpec {
   start_angle?: number
   sweep?: number
 }
 
-export interface GraphStyle {
-  fg?: string
-  bg?: string | null
-  fill?: boolean
-  line_width?: number
+export interface GraphStyle extends FillSpec {
+  stroke_color?: string
+  stroke_width?: number
   scale_max?: number | null
 }
+
+export interface ImageStyle extends StrokeSpec, CornerSpec {}
 
 export interface AnimateSpec {
   easing?: string
@@ -111,6 +121,7 @@ export interface ImageWidgetRaw extends BaseFields {
   path: string
   fit?: ImageFit
   scale?: number
+  style?: ImageStyle
 }
 
 export type WidgetRaw =
@@ -218,24 +229,19 @@ const WIDGET_KEYS: Record<WidgetType, Set<string>> = {
 const STYLE_KEYS = new Set([
   'family',
   'size',
-  'color',
   'leading',
   'tracking',
   'direction',
-  'stroke_width',
+  'fill',
+  'fill_color',
   'stroke_color',
-  'fg',
-  'bg',
-  'border',
-  'border_color',
-  'border_align',
+  'stroke_width',
+  'stroke_align',
   'radius',
+  'progress_color',
   'orientation',
-  'width',
   'start_angle',
   'sweep',
-  'fill',
-  'line_width',
   'scale_max',
 ])
 
@@ -302,4 +308,42 @@ export function unknownWidgetKeys(entry: EntryRaw): string[] {
 export function unknownStyleKeys(style: unknown): string[] {
   if (!isObject(style)) return []
   return Object.keys(style).filter((key) => !STYLE_KEYS.has(key))
+}
+
+/** Which universal paint slots a widget type supports, with its key labels. */
+export interface PaintSlotConfig {
+  /** Fill slot: label for the fill row; null hides fill entirely. */
+  fill: { label: string } | null
+  /** Stroke slot: label, and whether stroke_align applies. */
+  stroke: { label: string; align: boolean } | null
+  /** Corner rounding controls. */
+  corners: boolean
+}
+
+export const PAINT_SLOTS: Record<string, PaintSlotConfig> = {
+  text: {
+    fill: { label: 'Text' },
+    stroke: { label: 'Outline', align: false },
+    corners: false,
+  },
+  bar: {
+    fill: { label: 'Track' },
+    stroke: { label: 'Border', align: true },
+    corners: true,
+  },
+  ring: {
+    fill: { label: 'Track' },
+    stroke: { label: 'Arc', align: true },
+    corners: false,
+  },
+  graph: {
+    fill: { label: 'Area' },
+    stroke: { label: 'Line', align: false },
+    corners: false,
+  },
+  image: {
+    fill: null,
+    stroke: { label: 'Frame', align: true },
+    corners: true,
+  },
 }

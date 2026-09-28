@@ -12,12 +12,14 @@ import { editor } from '../../scene-editor/docStore'
 import {
   DATA_SOURCES,
   EASINGS,
+  PAINT_SLOTS,
   TEXT_DIRECTIONS,
   isComponentInstance,
 } from '../../scene-editor/types'
-import type { EntryRaw } from '../../scene-editor/types'
+import type { EntryRaw, PaintSlotConfig } from '../../scene-editor/types'
 import { viewCenter } from '../../scene-editor/viewState'
 import ExprField from './ExprField.vue'
+import PaintStyleSection from './PaintStyleSection.vue'
 
 const { state: appState, actions: appActions, showError } = useDisplayStore()
 const { state } = editor
@@ -210,30 +212,19 @@ function strOrDrop(key: string, value: string, def: string): void {
   setStyle(key, value === def ? undefined : value)
 }
 
-const borderAlign = computed<'center' | 'inside' | 'outside'>(() => {
-  const value = style.value['border_align']
-  return value === 'center' || value === 'outside' ? value : 'inside'
+/** Paint slot layout of the selected widget type, if it has a style. */
+const paintConfig = computed<PaintSlotConfig | null>(() => {
+  if (widgetType.value === null || isInstance.value) return null
+  return PAINT_SLOTS[widgetType.value] ?? null
 })
 
-function setBorderAlign(value: 'center' | 'inside' | 'outside'): void {
-  strOrDrop('border_align', value, 'inside')
-}
-
-const cornerRounded = computed(() => num(style.value['radius']) > 0)
-
-/** Square corners drop `radius`; rounded ones default to a pill shape. */
-function setCornerRounded(rounded: boolean): void {
-  if (!rounded) {
-    setStyle('radius', undefined)
-    return
-  }
-  if (cornerRounded.value) return
+/** Radius used when switching corners from square to rounded. */
+const defaultRadius = computed<number>(() => {
   const rect = entry.value?.['rect']
   const w = Array.isArray(rect) ? num(rect[2], 8) : 8
   const h = Array.isArray(rect) ? num(rect[3], 8) : 8
-  setStyle('radius', Math.max(1, Math.round(Math.min(w, h) / 2)))
-}
-
+  return Math.max(1, Math.round(Math.min(w, h) / 2))
+})
 function insertImageAsset(name: string): void {
   const panel = state.resolutionOverride ?? appState.resolution
   editor.addWidget('image', viewCenter(panel.width, panel.height))
@@ -451,6 +442,13 @@ const dataSourceList = [...DATA_SOURCES]
 
       <div class="section">
         <div class="section-title">Style</div>
+        <PaintStyleSection
+          v-if="widgetType !== null && paintConfig !== null"
+          :style="style"
+          :config="paintConfig"
+          :default-radius="defaultRadius"
+          @set="setStyle"
+        />
         <template v-if="widgetType === 'text'">
           <div class="field">
             <label>font</label>
@@ -508,136 +506,15 @@ const dataSourceList = [...DATA_SOURCES]
               </select>
             </div>
           </div>
-          <div class="grid2">
-            <div class="field"><label>stroke (px)</label>
-              <input type="number" min="0" max="32" :value="num(style['stroke_width'], 0)" @input="numOrDrop('stroke_width', ($event.target as HTMLInputElement).value, 0, true)" />
-            </div>
-            <div class="field"><label>stroke color</label>
-              <input type="color" :value="String(style['stroke_color'] ?? '#000000')" @input="strOrDrop('stroke_color', ($event.target as HTMLInputElement).value, '#000000')" />
-            </div>
-          </div>
-          <div class="field"><label>color</label>
-            <input type="color" :value="String(style['color'] ?? '#FFFFFF')" @input="setStyle('color', ($event.target as HTMLInputElement).value)" />
-          </div>
         </template>
         <template v-else-if="widgetType === 'bar'">
-          <div class="paint-grid">
-            <div class="paint-cell">
-              <span class="paint-label">Fill</span>
-              <input
-                type="color"
-                :value="String(style['bg'] ?? '#222222')"
-                title="Track fill"
-                @input="setStyle('bg', ($event.target as HTMLInputElement).value)"
-              />
-            </div>
-            <div class="paint-cell">
-              <span class="paint-label">Stroke</span>
-              <input
-                type="color"
-                :value="String(style['border_color'] ?? '#888888')"
-                title="Border color"
-                @input="setStyle('border_color', ($event.target as HTMLInputElement).value)"
-              />
-            </div>
-          </div>
-          <div class="paint-row">
-            <span class="paint-label">Weight</span>
-            <input
-              class="paint-num"
-              type="number"
-              min="0"
-              max="16"
-              :value="num(style['border'])"
-              title="Border width"
-              @input="numOrDrop('border', ($event.target as HTMLInputElement).value, 0, true)"
-            />
-            <span class="paint-unit">px</span>
-          </div>
-          <div class="paint-row">
-            <span class="paint-label">Align</span>
-            <div class="seg-group">
-              <button
-                type="button"
-                class="seg-btn"
-                :class="{ active: borderAlign === 'center' }"
-                title="Align stroke: center"
-                @click="setBorderAlign('center')"
-              >
-                <svg viewBox="0 0 14 14" width="14" height="14">
-                  <rect x="5" y="5" width="6" height="6" fill="currentColor" opacity="0.3" />
-                  <rect x="4" y="4" width="8" height="8" fill="none" stroke="currentColor" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="seg-btn"
-                :class="{ active: borderAlign === 'inside' }"
-                title="Align stroke: inside"
-                @click="setBorderAlign('inside')"
-              >
-                <svg viewBox="0 0 14 14" width="14" height="14">
-                  <rect x="4" y="4" width="7" height="7" fill="currentColor" opacity="0.3" />
-                  <rect x="4.5" y="4.5" width="6" height="6" fill="none" stroke="currentColor" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="seg-btn"
-                :class="{ active: borderAlign === 'outside' }"
-                title="Align stroke: outside"
-                @click="setBorderAlign('outside')"
-              >
-                <svg viewBox="0 0 14 14" width="14" height="14">
-                  <rect x="5" y="5" width="6" height="6" fill="currentColor" opacity="0.3" />
-                  <rect x="3.5" y="3.5" width="9" height="9" fill="none" stroke="currentColor" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div class="paint-row">
-            <span class="paint-label">Corner</span>
-            <div class="seg-group">
-              <button
-                type="button"
-                class="seg-btn"
-                :class="{ active: !cornerRounded }"
-                title="Square corners"
-                @click="setCornerRounded(false)"
-              >
-                <svg viewBox="0 0 14 14" width="14" height="14">
-                  <path d="M4 11 V4 H11" fill="none" stroke="currentColor" stroke-width="1.5" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="seg-btn"
-                :class="{ active: cornerRounded }"
-                title="Rounded corners"
-                @click="setCornerRounded(true)"
-              >
-                <svg viewBox="0 0 14 14" width="14" height="14">
-                  <path d="M4 11 V8 Q4 4 8 4 H11" fill="none" stroke="currentColor" stroke-width="1.5" />
-                </svg>
-              </button>
-            </div>
-            <input
-              class="paint-num"
-              type="number"
-              min="0"
-              :value="num(style['radius'])"
-              title="Corner radius"
-              @input="numOrDrop('radius', ($event.target as HTMLInputElement).value, 0, true)"
-            />
-            <span class="paint-unit">px</span>
-          </div>
           <div class="paint-row">
             <span class="paint-label">Progress</span>
             <input
               type="color"
-              :value="String(style['fg'] ?? '#7CFC00')"
+              :value="String(style['progress_color'] ?? '#7CFC00')"
               title="Progress fill"
-              @input="setStyle('fg', ($event.target as HTMLInputElement).value)"
+              @input="setStyle('progress_color', ($event.target as HTMLInputElement).value)"
             />
             <select
               class="paint-select"
@@ -651,13 +528,6 @@ const dataSourceList = [...DATA_SOURCES]
         </template>
         <template v-else-if="widgetType === 'ring'">
           <div class="grid2">
-            <div class="field"><label>fg</label><input type="color" :value="String(style['fg'] ?? '#7CFC00')" @input="setStyle('fg', ($event.target as HTMLInputElement).value)" /></div>
-            <div class="field"><label>bg</label><input type="color" :value="String(style['bg'] ?? '#222222')" @input="setStyle('bg', ($event.target as HTMLInputElement).value)" /></div>
-          </div>
-          <div class="field"><label>width (1..64)</label>
-            <input type="number" min="1" max="64" :value="num(style['width'], 8)" @input="setStyle('width', Number(($event.target as HTMLInputElement).value))" />
-          </div>
-          <div class="grid2">
             <div class="field"><label>start angle</label>
               <input type="number" min="-360" max="360" :value="num(style['start_angle'], -90)" @input="setStyle('start_angle', Number(($event.target as HTMLInputElement).value))" />
             </div>
@@ -667,28 +537,6 @@ const dataSourceList = [...DATA_SOURCES]
           </div>
         </template>
         <template v-else-if="widgetType === 'graph'">
-          <div class="field"><label>fg</label>
-            <input type="color" :value="String(style['fg'] ?? '#7CFC00')" @input="setStyle('fg', ($event.target as HTMLInputElement).value)" />
-          </div>
-          <div class="field">
-            <label class="check-row">
-              <input
-                type="checkbox"
-                :checked="style['bg'] !== undefined && style['bg'] !== null"
-                @change="setStyle('bg', ($event.target as HTMLInputElement).checked ? '#1a1a1a' : undefined)"
-              />
-              <span>background fill</span>
-            </label>
-          </div>
-          <div class="field">
-            <label class="check-row">
-              <input type="checkbox" :checked="style['fill'] !== false" @change="setStyle('fill', ($event.target as HTMLInputElement).checked ? undefined : false)" />
-              <span>area fill</span>
-            </label>
-          </div>
-          <div class="field"><label>line width (1..16)</label>
-            <input type="number" min="1" max="16" :value="num(style['line_width'], 2)" @input="setStyle('line_width', Number(($event.target as HTMLInputElement).value))" />
-          </div>
           <div class="field"><label>scale max (empty = auto)</label>
             <input
               type="number"
@@ -699,7 +547,7 @@ const dataSourceList = [...DATA_SOURCES]
             />
           </div>
         </template>
-        <div v-else class="hint">No style options for this type.</div>
+        <div v-else-if="widgetType !== null" class="hint">No extra options for this type.</div>
       </div>
 
       <div class="section">
