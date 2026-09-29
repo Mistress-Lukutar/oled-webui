@@ -1,6 +1,9 @@
 /* Global dark theme for OledWebUI. */
 
 :root {
+  /* Render native controls (checkbox, select popup, number spinners,
+     scrollbars) in the dark scheme instead of the OS default. */
+  color-scheme: dark;
   --bg: #141414;
   --bg-panel: #1e1e1e;
   --bg-input: #2a2a2a;
@@ -82,8 +85,7 @@ button.danger:hover:not(:disabled) {
   border-color: var(--danger);
 }
 
-input[type='text'],
-input[type='number'],
+input,
 textarea,
 select {
   background: var(--bg-input);
@@ -94,13 +96,50 @@ select {
   font-size: 13px;
   font-family: inherit;
   width: 100%;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-input[type='text']:focus,
+input:focus,
 textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--accent-dim);
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-dim);
+  opacity: 1;
+}
+
+select {
+  cursor: pointer;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* Native controls: strip the field chrome the base rule adds. */
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'],
+input[type='color'] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 0;
+  transition: none;
 }
 
 input[type='range'] {
@@ -118,10 +157,12 @@ input[type='color'] {
   cursor: pointer;
 }
 
-input[type='checkbox'] {
+input[type='checkbox'],
+input[type='radio'] {
   accent-color: var(--accent);
   width: 15px;
   height: 15px;
+  flex-shrink: 0;
 }
 
 label {
