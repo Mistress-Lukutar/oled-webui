@@ -1,18 +1,17 @@
 <script setup lang="ts">
 /**
- * Common dashboard panel shell: header with title/subtitle, span cycler,
- * remove button, drag handle. Content comes through the default slot.
+ * Common dashboard panel shell: masonry tile sized by its content, with
+ * header (title/subtitle, remove button) and drag handle. Content comes
+ * through the default slot.
  */
 const props = defineProps<{
   title: string
   subtitle?: string | null
-  span: number
   draggable?: boolean
 }>()
 
 const emit = defineEmits<{
   remove: []
-  cycleSpan: []
   dragStart: []
   dragEnter: []
   dropOn: []
@@ -25,7 +24,7 @@ void props
 <template>
   <section
     class="card panel"
-    :class="[`span-${Math.min(3, Math.max(1, span))}`, { draggable }]"
+    :class="{ draggable }"
     :draggable="draggable ?? false"
     @dragstart="emit('dragStart')"
     @dragenter.prevent="emit('dragEnter')"
@@ -39,7 +38,6 @@ void props
         <h2>{{ title }}</h2>
         <span v-if="subtitle" class="subtitle">{{ subtitle }}</span>
       </div>
-      <button class="icon" title="Resize panel" @click="emit('cycleSpan')">⤢</button>
       <button class="icon" title="Remove panel" @click="emit('remove')">×</button>
     </header>
     <div class="body">
@@ -109,28 +107,5 @@ button.icon {
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-</style>
-
-<style>
-/* Span classes are shared with the dashboard grid, so they live globally. */
-.span-1 {
-  grid-column: span 1;
-}
-
-.span-2 {
-  grid-column: span 2;
-}
-
-.span-3 {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 1100px) {
-  .span-1,
-  .span-2,
-  .span-3 {
-    grid-column: 1 / -1;
-  }
 }
 </style>

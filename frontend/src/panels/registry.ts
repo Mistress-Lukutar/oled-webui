@@ -14,19 +14,20 @@ export type PanelType =
 export interface PanelDef {
   /** Panel title shown in the shell header. */
   title: string
-  /** Grid columns the panel occupies when first placed (1..3). */
-  defaultSpan: number
+  /** Width/height estimate used by the masonry layout until the panel's
+   * real rendered height is measured. */
+  defaultAspect: number
   /** Device registry kind the panel attaches to, or null for singletons. */
   deviceKind: 'display' | 'argb' | null
 }
 
 export const PANEL_DEFS: Record<PanelType, PanelDef> = {
-  status: { title: 'Status', defaultSpan: 3, deviceKind: null },
-  'display-preview': { title: 'Display preview', defaultSpan: 2, deviceKind: 'display' },
-  'display-settings': { title: 'Display settings', defaultSpan: 1, deviceKind: 'display' },
-  scenes: { title: 'Scenes', defaultSpan: 2, deviceKind: 'display' },
-  'argb-preview': { title: 'ARGB preview', defaultSpan: 2, deviceKind: 'argb' },
-  'argb-settings': { title: 'ARGB settings', defaultSpan: 1, deviceKind: 'argb' },
+  status: { title: 'Status', defaultAspect: 2.4, deviceKind: null },
+  'display-preview': { title: 'Display preview', defaultAspect: 1.6, deviceKind: 'display' },
+  'display-settings': { title: 'Display settings', defaultAspect: 0.75, deviceKind: 'display' },
+  scenes: { title: 'Scenes', defaultAspect: 0.85, deviceKind: 'display' },
+  'argb-preview': { title: 'ARGB preview', defaultAspect: 1.0, deviceKind: 'argb' },
+  'argb-settings': { title: 'ARGB settings', defaultAspect: 0.7, deviceKind: 'argb' },
 }
 
 export function isPanelType(value: string): value is PanelType {

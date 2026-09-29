@@ -35,12 +35,12 @@ def default_panels() -> PanelLayout:
 
 default_panels_instance: PanelLayout = PanelLayout(
     panels=[
-        PanelConfig(id="status", type="status", span=3),
-        PanelConfig(id="display-preview", type="display-preview", device="display:0", span=2),
-        PanelConfig(id="display-settings", type="display-settings", device="display:0", span=1),
-        PanelConfig(id="scenes", type="scenes", device="display:0", span=2),
-        PanelConfig(id="argb-preview", type="argb-preview", device="argb:openrgb", span=2),
-        PanelConfig(id="argb-settings", type="argb-settings", device="argb:openrgb", span=1),
+        PanelConfig(id="status", type="status", aspect=2.4),
+        PanelConfig(id="display-preview", type="display-preview", device="display:0", aspect=1.6),
+        PanelConfig(id="display-settings", type="display-settings", device="display:0", aspect=0.75),
+        PanelConfig(id="scenes", type="scenes", device="display:0", aspect=0.85),
+        PanelConfig(id="argb-preview", type="argb-preview", device="argb:openrgb", aspect=1.0),
+        PanelConfig(id="argb-settings", type="argb-settings", device="argb:openrgb", aspect=0.7),
     ]
 )
 

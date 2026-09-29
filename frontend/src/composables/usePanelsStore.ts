@@ -10,7 +10,7 @@ import type { PanelType } from '../panels/registry'
 
 interface PanelsState {
   devices: Awaited<ReturnType<typeof API.getSystemDevices>>['devices']
-  panels: Array<{ id: string; type: PanelType; device: string | null; span: number }>
+  panels: Array<{ id: string; type: PanelType; device: string | null; aspect: number }>
   loaded: boolean
 }
 
@@ -28,7 +28,7 @@ export interface AvailablePanel {
   deviceName: string | null
 }
 
-// Coalesce bursts of layout edits (drag reorder, span cycling) into
+// Coalesce bursts of layout edits (drag reorder) into
 // trailing saves instead of one request per mutation.
 let saveTimer = 0
 function persist(): void {
@@ -94,7 +94,7 @@ export function usePanelsStore() {
       id,
       type: available.type,
       device: available.device,
-      span: def.defaultSpan,
+      aspect: def.defaultAspect,
     })
     persist()
   }
@@ -118,13 +118,6 @@ export function usePanelsStore() {
     persist()
   }
 
-  function cycleSpan(id: string): void {
-    const panel = state.panels.find((p) => p.id === id)
-    if (panel === undefined) return
-    panel.span = panel.span >= 3 ? 1 : panel.span + 1
-    persist()
-  }
-
   async function resetLayout(): Promise<void> {
     const layout = await API.resetPanelLayout()
     state.panels = layout.panels
@@ -141,7 +134,6 @@ export function usePanelsStore() {
     addPanel,
     removePanel,
     reorderPanel,
-    cycleSpan,
     resetLayout,
   }
 }

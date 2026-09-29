@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * Dashboard grid: renders the persisted panel layout, wires each panel
- * to its component and implements drag-and-drop reordering.
+ * Dashboard layout: renders the persisted panel layout through the
+ * reusable MasonryLayout, wiring each panel to its component and
+ * implementing drag-and-drop reordering.
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import MasonryLayout from '../MasonryLayout.vue'
 import PanelShell from './PanelShell.vue'
 import StatusPanel from './StatusPanel.vue'
 import DisplayPreviewPanel from './DisplayPreviewPanel.vue'
@@ -14,7 +16,7 @@ import ArgbSettingsPanel from './ArgbSettingsPanel.vue'
 import { usePanelsStore } from '../../composables/usePanelsStore'
 import { PANEL_DEFS, isPanelType } from '../../panels/registry'
 
-const { state, deviceById, removePanel, reorderPanel, cycleSpan } = usePanelsStore()
+const { state, deviceById, removePanel, reorderPanel } = usePanelsStore()
 
 const COMPONENTS = {
   status: StatusPanel,
@@ -24,6 +26,8 @@ const COMPONENTS = {
   'argb-preview': ArgbPreviewPanel,
   'argb-settings': ArgbSettingsPanel,
 } as const
+
+const panels = computed(() => state.panels.filter((panel) => isPanelType(panel.type)))
 
 const dragId = ref<string | null>(null)
 const overId = ref<string | null>(null)
@@ -53,16 +57,20 @@ function onDragEnd(): void {
 
 <template>
   <main class="dashboard">
-    <template v-for="panel in state.panels" :key="panel.id">
+    <MasonryLayout
+      :items="panels"
+      :aspect-of="(panel) => panel.aspect"
+      :key-of="(panel) => panel.id"
+      :min-column-width="380"
+      :max-columns="5"
+      v-slot="{ item: panel }"
+    >
       <PanelShell
-        v-if="isPanelType(panel.type)"
         :title="PANEL_DEFS[panel.type].title"
         :subtitle="deviceById(panel.device)?.name ?? null"
-        :span="panel.span"
         draggable
         :class="{ 'drop-target': overId === panel.id && dragId !== panel.id }"
         @remove="removePanel(panel.id)"
-        @cycle-span="cycleSpan(panel.id)"
         @drag-start="onDragStart(panel.id)"
         @drag-enter="onDragEnter(panel.id)"
         @drop-on="onDrop(panel.id)"
@@ -73,24 +81,11 @@ function onDragEnd(): void {
         </div>
         <component v-else :is="COMPONENTS[panel.type]" :device-id="panel.device" />
       </PanelShell>
-    </template>
+    </MasonryLayout>
   </main>
 </template>
 
 <style scoped>
-.dashboard {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-@media (max-width: 1100px) {
-  .dashboard {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .drop-target {
   outline: 2px dashed var(--accent-dim);
   outline-offset: 2px;

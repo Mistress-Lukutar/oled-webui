@@ -51,7 +51,7 @@ class PanelConfig(BaseModel):
     device: str | None = Field(
         None, max_length=64, description="Owning device id for device panels"
     )
-    span: int = Field(1, ge=1, le=3, description="Grid columns to span")
+    aspect: float = Field(1.0, gt=0.25, le=4.0, description="Tile width/height ratio")
 
 
 class PanelLayout(BaseModel):

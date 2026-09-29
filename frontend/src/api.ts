@@ -67,7 +67,7 @@ export interface PanelConfig {
   id: string
   type: string
   device: string | null
-  span: number
+  aspect: number
 }
 
 export interface PanelLayout {
