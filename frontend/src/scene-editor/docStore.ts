@@ -382,6 +382,13 @@ const WIDGET_DEFAULTS: Record<string, Record<string, unknown>> = {
     shape: 'rect',
     style: { fill_color: '#2244CC', stroke_width: 0 },
   },
+  video: {
+    type: 'video',
+    path: '',
+    fit: 'contain',
+    fps: 15,
+    loop: true,
+  },
 }
 
 const WIDGET_SIZES: Record<string, [number, number, number, number]> = {
@@ -391,6 +398,7 @@ const WIDGET_SIZES: Record<string, [number, number, number, number]> = {
   graph: [-100, -40, 200, 80],
   image: [-32, -32, 64, 64],
   shape: [-80, -40, 160, 80],
+  video: [-80, -45, 160, 90],
 }
 
 /** Insert a new widget of the given type centered on the viewport. */
@@ -411,13 +419,13 @@ function addWidget(type: string, center: { x: number; y: number }): void {
         offset[3],
       ],
     }
-    // New image widgets default to the most recently uploaded asset so
-    // users do not hit an empty-path preview error.
-    if (type === 'image' && (entry['path'] as string) === '') {
-      const images = state.assets.filter((a) =>
-        /\.(png|jpe?g|gif|webp|bmp)$/i.test(a),
-      )
-      const last = images[images.length - 1]
+    // New image/video widgets default to the most recently uploaded asset
+    // of their kind so users do not hit an empty-path preview error.
+    const isVideo = type === 'video'
+    if ((type === 'image' || isVideo) && (entry['path'] as string) === '') {
+      const pattern = isVideo ? /\.(mp4|webm|mov|m4v|avi|mkv)$/i : /\.(png|jpe?g|gif|webp|bmp)$/i
+      const assets = state.assets.filter((a) => pattern.test(a))
+      const last = assets[assets.length - 1]
       if (last !== undefined) entry['path'] = `assets/${last}`
     }
     widgets.push(entry as EntryRaw)

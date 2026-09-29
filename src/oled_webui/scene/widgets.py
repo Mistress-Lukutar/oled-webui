@@ -25,6 +25,7 @@ from oled_webui.scene.schema import (
     RingWidget,
     ShapeWidget,
     TextWidget,
+    VideoWidget,
 )
 
 # Font cache keyed by (family, size).
@@ -647,26 +648,30 @@ def get_sprite(path: str) -> Image.Image:
 def render_image(
     layer: Image.Image,
     rect: tuple[int, int, int, int],
-    widget: ImageWidget,
+    widget: ImageWidget | VideoWidget,
     opacity: float,
     rotation: float,
+    sprite: Image.Image | None = None,
 ) -> None:
     """Composite a (possibly rotated/faded) image widget onto the layer.
 
     The sprite is sized per the widget's ``fit`` mode inside the widget
     box; corner radius clips the sprite, and the style frame is drawn on
     top with the same rotation. Sprites extending past the layer bounds
-    are cropped.
+    are cropped. Video widgets pass their current frame via ``sprite``
+    instead of loading ``path`` through the sprite cache.
 
     Args:
         layer: Target RGBA layer.
         rect: Local widget box (0-based).
-        widget: Image widget.
+        widget: Image or video widget.
         opacity: Evaluated opacity in [0, 1].
         rotation: Evaluated rotation in degrees (counter-clockwise).
+        sprite: Pre-loaded sprite; None loads ``widget.path``.
     """
     style = widget.style
-    sprite = get_sprite(widget.path)
+    if sprite is None:
+        sprite = get_sprite(widget.path)
     x, y, w, h = rect
     if widget.fit == "stretch":
         size = (max(1, w), max(1, h))

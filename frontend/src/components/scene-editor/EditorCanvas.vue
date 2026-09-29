@@ -16,7 +16,7 @@ import { editor } from '../../scene-editor/docStore'
 import { expandDocument } from '../../scene-editor/expand'
 import { evaluateEntries, makePlaceholderProvider } from '../../scene-editor/runtime'
 import type { EvalEntry } from '../../scene-editor/runtime'
-import { createImageCache, drawScene } from '../../scene-editor/render/draw'
+import { createImageCache, createVideoCache, drawScene } from '../../scene-editor/render/draw'
 import { ensureFont } from '../../scene-editor/render/fonts'
 import { isComponentInstance } from '../../scene-editor/types'
 import type { EntryRaw, SceneDocumentRaw, ShapeKind } from '../../scene-editor/types'
@@ -32,6 +32,9 @@ const redrawTick = ref(0)
 
 const provider = makePlaceholderProvider()
 const images = createImageCache(() => {
+  redrawTick.value += 1
+})
+const videos = createVideoCache(() => {
   redrawTick.value += 1
 })
 
@@ -354,6 +357,8 @@ function drawContent(
     height,
     sceneId: state.sceneId,
     images,
+    videos,
+    time: state.time,
     showGrid: true,
     gridPixelSize: 20,
   })

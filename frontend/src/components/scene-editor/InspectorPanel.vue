@@ -144,6 +144,9 @@ const imageAssets = computed(() =>
 const fontAssets = computed(() =>
   state.assets.filter((a) => /\.(ttf|otf|woff2?)$/i.test(a)),
 )
+const videoAssets = computed(() =>
+  state.assets.filter((a) => /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(a)),
+)
 
 async function addAssets(files: FileList | null): Promise<void> {
   if (files === null || files.length === 0) return
@@ -229,6 +232,14 @@ const defaultRadius = computed<number>(() => {
 function insertImageAsset(name: string): void {
   const panel = state.resolutionOverride ?? appState.resolution
   editor.addWidget('image', viewCenter(panel.width, panel.height))
+  if (singleIndex.value !== null) {
+    editor.setEntryField(singleIndex.value, 'path', `assets/${name}`)
+  }
+}
+
+function insertVideoAsset(name: string): void {
+  const panel = state.resolutionOverride ?? appState.resolution
+  editor.addWidget('video', viewCenter(panel.width, panel.height))
   if (singleIndex.value !== null) {
     editor.setEntryField(singleIndex.value, 'path', `assets/${name}`)
   }
@@ -409,6 +420,55 @@ const dataSourceList = [...DATA_SOURCES]
               @input="setField('scale', Number(($event.target as HTMLInputElement).value))"
             />
           </div>
+        </template>
+        <template v-else-if="widgetType === 'video'">
+          <div class="field">
+            <label>path</label>
+            <input
+              type="text"
+              list="video-assets"
+              :value="(entry['path'] as string | undefined) ?? ''"
+              @input="setField('path', ($event.target as HTMLInputElement).value)"
+            />
+          </div>
+          <div class="field">
+            <label>fit</label>
+            <select :value="(entry['fit'] as string | undefined) ?? 'contain'" @change="setField('fit', ($event.target as HTMLSelectElement).value)">
+              <option value="contain">Contain (fit inside rect)</option>
+              <option value="cover">Cover (fill rect, crop)</option>
+              <option value="stretch">Stretch (distort)</option>
+            </select>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label>fps (1..30)</label>
+              <input
+                type="number"
+                min="1"
+                max="30"
+                :value="num(entry['fps'], 15)"
+                @input="setField('fps', Number(($event.target as HTMLInputElement).value))"
+              />
+            </div>
+            <div class="field">
+              <label>start offset, s</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                :value="num(entry['start'], 0)"
+                @input="setField('start', Number(($event.target as HTMLInputElement).value))"
+              />
+            </div>
+          </div>
+          <label class="check-row">
+            <input
+              type="checkbox"
+              :checked="entry['loop'] !== false"
+              @change="setField('loop', ($event.target as HTMLInputElement).checked ? undefined : false)"
+            />
+            <span>loop playback</span>
+          </label>
         </template>
         <template v-else-if="widgetType === 'shape'">
           <div class="field">
@@ -677,6 +737,14 @@ const dataSourceList = [...DATA_SOURCES]
           >
             +
           </button>
+          <button
+            v-else-if="/\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(asset)"
+            class="asset-insert"
+            title="Insert as video widget"
+            @click="insertVideoAsset(asset)"
+          >
+            +
+          </button>
           <button class="asset-remove" title="Remove asset" @click="remove(asset)">×</button>
         </span>
         <span v-if="state.assets.length === 0" class="none">No assets uploaded</span>
@@ -685,12 +753,12 @@ const dataSourceList = [...DATA_SOURCES]
         ref="assetInput"
         type="file"
         multiple
-        accept="image/*,.ttf,.otf,.woff,.woff2"
+        accept="image/*,.ttf,.otf,.woff,.woff2,.mp4,.webm,.mov,.m4v,.avi,.mkv"
         class="visually-hidden"
         @change="addAssets(($event.target as HTMLInputElement).files)"
       />
       <button :disabled="uploading" @click="assetInput?.click()">
-        {{ uploading ? 'Uploading…' : 'Upload images / fonts' }}
+        {{ uploading ? 'Uploading…' : 'Upload images / fonts / videos' }}
       </button>
     </div>
 
@@ -699,6 +767,9 @@ const dataSourceList = [...DATA_SOURCES]
     </datalist>
     <datalist id="image-assets">
       <option v-for="asset in imageAssets" :key="asset" :value="`assets/${asset}`" />
+    </datalist>
+    <datalist id="video-assets">
+      <option v-for="asset in videoAssets" :key="asset" :value="`assets/${asset}`" />
     </datalist>
   </div>
 </template>

@@ -36,6 +36,41 @@ export function createImageCache(onChange?: () => void): ImageCache {
   }
 }
 
+export interface VideoCache {
+  /** Resolve a paused video element; null while/when missing. */
+  get(sceneId: string, path: string): HTMLVideoElement | null
+}
+
+/**
+ * Shared video cache keyed by scene id + path. Elements stay paused;
+ * drawing seeks them to the requested scene time and the `seeked`
+ * event triggers one redraw with the landed frame.
+ */
+export function createVideoCache(onChange?: () => void): VideoCache {
+  const cache = new Map<string, HTMLVideoElement | null>()
+  return {
+    get(sceneId: string, path: string): HTMLVideoElement | null {
+      const basename = path.replaceAll('\\', '/').split('/').pop() ?? ''
+      if (basename === '') return null
+      const key = `${sceneId}:${basename}`
+      if (cache.has(key)) return cache.get(key) ?? null
+      const video = document.createElement('video')
+      video.muted = true
+      video.loop = true
+      video.preload = 'auto'
+      cache.set(key, null)
+      video.onloadeddata = () => {
+        cache.set(key, video)
+        onChange?.()
+      }
+      video.onseeked = () => onChange?.()
+      video.onerror = () => onChange?.()
+      video.src = API.sceneAssetUrl(sceneId, basename)
+      return null
+    },
+  }
+}
+
 /** #RGB/#RRGGBB/#RRGGBBAA to canvas color; invalid specs fall back. */
 function cssColor(spec: string | null | undefined, fallback = '#ffffff'): string {
   if (spec === null || spec === undefined) return fallback
@@ -571,6 +606,90 @@ function drawImage(
   return true
 }
 
+/**
+ * Draw a video widget's frame at scene ``time``. The paused element is
+ * seeked (loop-wrapped) toward the time; the frame on canvas may lag one
+ * seek behind, which is fine for an interactive preview.
+ */
+function drawVideo(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  widget: Record<string, unknown>,
+  sceneId: string,
+  videos: VideoCache,
+  time: number,
+  opacity: number,
+  rotation: number,
+): boolean {
+  const path = widget['path']
+  if (typeof path !== 'string') return false
+  const video = videos.get(sceneId, path)
+  if (video === null || video.readyState < 2) return false
+  const duration = video.duration
+  if (Number.isFinite(duration) && duration > 0) {
+    const t = ((time % duration) + duration) % duration
+    if (Math.abs(video.currentTime - t) > 0.02) video.currentTime = t
+  }
+  const style = (widget['style'] ?? {}) as Record<string, unknown>
+  const radius = typeof style['radius'] === 'number' ? style['radius'] : 0
+  const strokeW = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 0
+  const strokeColor = cssColor(style['stroke_color'] as string, '#888888')
+  const align = (style['stroke_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
+  const fit = typeof widget['fit'] === 'string' ? widget['fit'] : 'contain'
+  let sizeW: number
+  let sizeH: number
+  if (fit === 'stretch') {
+    sizeW = Math.max(1, w)
+    sizeH = Math.max(1, h)
+  } else {
+    const ratioW = w / video.videoWidth
+    const ratioH = h / video.videoHeight
+    const factor =
+      fit === 'cover' ? Math.max(ratioW, ratioH) : Math.min(ratioW, ratioH)
+    sizeW = Math.max(1, Math.trunc(video.videoWidth * factor))
+    sizeH = Math.max(1, Math.trunc(video.videoHeight * factor))
+  }
+
+  ctx.save()
+  ctx.globalAlpha = Math.max(0, Math.min(1, opacity))
+  if (radius > 0) {
+    roundedRect(ctx, 0, 0, sizeW, sizeH, radius)
+    ctx.clip()
+  }
+  // Pillow rotates counter-clockwise; canvas is clockwise.
+  if (rotation % 360 !== 0) {
+    ctx.translate(x + w / 2, y + h / 2)
+    ctx.rotate((-rotation * Math.PI) / 180)
+    ctx.translate(-sizeW / 2, -sizeH / 2)
+  } else {
+    ctx.translate(x + (w - sizeW) / 2, y + (h - sizeH) / 2)
+  }
+  ctx.drawImage(video, 0, 0, sizeW, sizeH)
+  ctx.restore()
+
+  if (strokeW > 0) {
+    const out =
+      align === 'center' ? Math.floor(strokeW / 2) : align === 'outside' ? strokeW : 0
+    ctx.save()
+    ctx.lineWidth = strokeW
+    ctx.strokeStyle = strokeColor
+    roundedRect(
+      ctx,
+      x + strokeW / 2 - out,
+      y + strokeW / 2 - out,
+      w - strokeW + 2 * out,
+      h - strokeW + 2 * out,
+      radius,
+    )
+    ctx.stroke()
+    ctx.restore()
+  }
+  return true
+}
+
 export interface DrawSceneOptions {
   ctx: CanvasRenderingContext2D
   background: readonly Record<string, unknown>[]
@@ -579,6 +698,9 @@ export interface DrawSceneOptions {
   height: number
   sceneId: string
   images: ImageCache
+  videos: VideoCache
+  /** Scene time in seconds; drives video widget frames. */
+  time: number
   showGrid?: boolean
   /** Grid cell size in panel pixels. */
   gridPixelSize?: number
@@ -586,7 +708,7 @@ export interface DrawSceneOptions {
 
 /** Draw the full scene (background layers, widgets, optional grid). */
 export function drawScene(opts: DrawSceneOptions): void {
-  const { ctx, entries, background, width, height, sceneId, images } = opts
+  const { ctx, entries, background, width, height, sceneId, images, videos, time } = opts
   ctx.save()
   ctx.clearRect(0, 0, width, height)
   ctx.fillStyle = '#000000'
@@ -627,18 +749,33 @@ export function drawScene(opts: DrawSceneOptions): void {
     const h = Math.max(1, Math.trunc(Number(rect[3])))
     const type = widget['type']
 
-    const drawn = drawImage(
-      ctx,
-      x,
-      y,
-      w,
-      h,
-      widget as Record<string, unknown>,
-      sceneId,
-      images,
-      entry.opacity,
-      entry.rotation,
-    )
+    const drawn =
+      type === 'video'
+        ? drawVideo(
+            ctx,
+            x,
+            y,
+            w,
+            h,
+            widget as Record<string, unknown>,
+            sceneId,
+            videos,
+            time,
+            entry.opacity,
+            entry.rotation,
+          )
+        : drawImage(
+            ctx,
+            x,
+            y,
+            w,
+            h,
+            widget as Record<string, unknown>,
+            sceneId,
+            images,
+            entry.opacity,
+            entry.rotation,
+          )
     if (drawn) continue
 
     const widgetRecord = widget as Record<string, unknown>

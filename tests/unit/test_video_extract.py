@@ -94,3 +94,12 @@ def test_build_filter_chain_includes_base_rotation_and_420() -> None:
     assert bright[1] == "hflip" and bright[2] == "vflip"
     assert "lutrgb=" in ",".join(bright)
     assert bright[-1] == "format=yuvj420p"
+
+
+def test_build_filter_chain_widget_mode_skips_rotation_and_brightness() -> None:
+    """Scene video widgets omit the base rotation and brightness steps."""
+    chain = build_filter_chain("contain", 100, 80, None, None)
+    filters = chain.split(",")
+    assert filters[-1] == "format=yuvj420p"
+    assert "force_original_aspect_ratio=decrease" in chain
+    assert "hflip" not in chain and "lutrgb" not in chain

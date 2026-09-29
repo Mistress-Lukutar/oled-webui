@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -28,8 +29,10 @@ from oled_webui.scene.schema import (
     SceneDocument,
     ShapeWidget,
     TextWidget,
+    VideoWidget,
     Widget,
 )
+from oled_webui.scene.video_cache import ensure_video_frames
 from oled_webui.scene.widgets import (
     WidgetRuntime,
     composite_clipped,
@@ -72,6 +75,8 @@ class _Evaluated:
     rotation: float = 0.0
     raw: float | str | None = None
     signature: tuple[Any, ...] = field(default_factory=tuple)
+    # Video widgets: path of the frame selected for this tick.
+    frame_path: str | None = None
 
 
 class SceneRenderer:
@@ -94,6 +99,7 @@ class SceneRenderer:
         resolution: Resolution,
         brightness: int = DEFAULT_BRIGHTNESS,
         quality: int = DEFAULT_JPEG_QUALITY,
+        video_cache_dir: Path | None = None,
     ) -> None:
         """Prepare caches, providers and the static layer.
 
@@ -102,6 +108,8 @@ class SceneRenderer:
             resolution: Panel resolution.
             brightness: Global output brightness percent.
             quality: Global JPEG encoding quality.
+            video_cache_dir: Root for extracted video-widget frames;
+                None extracts into a per-process temp directory.
         """
         self._scene = scene
         self._providers = DataSources()
@@ -120,6 +128,9 @@ class SceneRenderer:
             for widget in scene.widgets
             if isinstance(widget, _DATA_BOUND)
         }
+        self._video_cache_dir = video_cache_dir
+        self._video_frames: dict[int, list[Path]] = {}
+        self._video_failed: set[int] = set()
         self._last_signature: list[tuple[Any, ...]] | None = None
         self._last_payload: bytes | None = None
         self._started: float = 0.0
@@ -363,6 +374,7 @@ class SceneRenderer:
             text = ""
             value01 = 0.0
             history: tuple[float, ...] = ()
+            frame_path: str | None = None
 
             if isinstance(widget, TextWidget):
                 text = self._format_text(widget, raw)
@@ -378,6 +390,8 @@ class SceneRenderer:
                     if poll or not runtime.history:
                         runtime.history.append(sample)
                     history = tuple(runtime.history)
+            elif isinstance(widget, VideoWidget):
+                frame_path = self._video_frame_path(index, widget, now)
 
             visible = self._eval_visible(widget.visible, variables, context)
             offset_x = round(
@@ -400,6 +414,8 @@ class SceneRenderer:
             )
             if isinstance(widget, TextWidget):
                 signature += (text,)
+            if isinstance(widget, VideoWidget):
+                signature += (frame_path,)
             results.append(
                 _Evaluated(
                     widget=widget,
@@ -413,6 +429,7 @@ class SceneRenderer:
                     rotation=rotation,
                     raw=raw if isinstance(raw, (int, float, str)) else None,
                     signature=signature,
+                    frame_path=frame_path,
                 )
             )
         return results
@@ -493,6 +510,49 @@ class SceneRenderer:
         except (KeyError, IndexError, ValueError) as exc:
             raise SceneError(f"Invalid text template {template!r}: {exc}") from exc
 
+    def _video_frame_path(
+        self, index: int, widget: VideoWidget, now: float
+    ) -> str | None:
+        """Resolve the frame file a video widget shows at scene time ``now``.
+
+        Extraction happens lazily on the first evaluation (inside the
+        caller's worker thread, so the event loop stays responsive). A
+        failed extraction hides the widget, mirroring missing images.
+
+        Args:
+            index: Widget index (cache key within this renderer).
+            widget: The video widget.
+            now: Monotonic timestamp of the current tick.
+
+        Returns:
+            Absolute frame path, or None when the widget must hide.
+        """
+        if index in self._video_failed:
+            return None
+        frames = self._video_frames.get(index)
+        if frames is None:
+            try:
+                frames = ensure_video_frames(widget, self._video_cache_dir)
+            except SceneError as exc:
+                logger.warning(
+                    "scene_video_unavailable",
+                    context=f"widgets[{index}] (video)",
+                    error=str(exc),
+                )
+                self._video_failed.add(index)
+                return None
+            self._video_frames[index] = frames
+        count = len(frames)
+        if count == 0:
+            return None
+        elapsed = (now - self._started) + widget.start
+        position = max(0, int(elapsed * widget.fps))
+        if widget.loop:
+            position %= count
+        else:
+            position = min(position, count - 1)
+        return str(frames[position])
+
     def _compose_and_encode(self, evaluated: list[_Evaluated]) -> bytes:
         """Composite the widget layer over the static background and encode.
 
@@ -528,6 +588,26 @@ class SceneRenderer:
         x, y, width, height = widget.rect
         px = x + item.offset_x
         py = y + item.offset_y
+
+        if isinstance(widget, VideoWidget):
+            if item.frame_path is None:
+                return
+            try:
+                sprite = Image.open(item.frame_path).convert("RGBA")
+            except (OSError, ValueError) as exc:
+                logger.warning(
+                    "scene_video_frame_unavailable", path=item.frame_path, error=str(exc)
+                )
+                return
+            render_image(
+                layer,
+                (px, py, width, height),
+                widget,
+                opacity=max(0.0, min(1.0, item.opacity)),
+                rotation=item.rotation,
+                sprite=sprite,
+            )
+            return
 
         if isinstance(widget, ImageWidget):
             try:

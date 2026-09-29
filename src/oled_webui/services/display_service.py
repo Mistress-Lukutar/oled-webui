@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -381,6 +382,11 @@ class DisplayService:
         return self._display_settings.brightness
 
     @property
+    def video_cache_dir(self) -> Path:
+        """Root directory for scene video-widget frame caches."""
+        return self._settings.data_dir / "cache" / "video"
+
+    @property
     def quality(self) -> int:
         """Global JPEG encoding quality applied to all content."""
         return self._display_settings.quality
@@ -550,6 +556,7 @@ class DisplayService:
             handshake.resolution,
             brightness=self._display_settings.brightness,
             quality=self._display_settings.quality,
+            video_cache_dir=self.video_cache_dir,
         )
         self._scene_renderer = renderer
         self._scene_document = document

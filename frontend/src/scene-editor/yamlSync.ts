@@ -114,7 +114,7 @@ function checkStyle(
     checkColor(errors, `${where}.style.fill_color`, style['fill_color'])
     checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
     checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 1, 16)
-  } else if (type === 'image') {
+  } else if (type === 'image' || type === 'video') {
     checkColor(errors, `${where}.style.stroke_color`, style['stroke_color'])
     checkIntRange(errors, `${where}.style.stroke_width`, style['stroke_width'], 0, 64)
     checkEnum(errors, `${where}.style.stroke_align`, style['stroke_align'], aligns)
@@ -151,7 +151,7 @@ function checkEntry(errors: string[], index: number, entry: EntryRaw): void {
   for (const key of unknownWidgetKeys(entry)) {
     errors.push(`${where} (${type}): unknown key "${key}"`)
   }
-  if (type !== 'text' && type !== 'image' && type !== 'shape' && typeof entry['source'] !== 'string') {
+  if (type !== 'text' && type !== 'image' && type !== 'shape' && type !== 'video' && typeof entry['source'] !== 'string') {
     errors.push(`${where} (${type}): "source" is required`)
   }
   if (type === 'image') {
@@ -160,6 +160,15 @@ function checkEntry(errors: string[], index: number, entry: EntryRaw): void {
       errors.push(`${where} (image): "path" is required`)
     }
     checkEnum(errors, `${where}.fit`, entry['fit'], ['scale', 'contain', 'cover', 'stretch'])
+  }
+  if (type === 'video') {
+    const path = entry['path']
+    if (typeof path !== 'string' || path.trim() === '') {
+      errors.push(`${where} (video): "path" is required`)
+    }
+    checkEnum(errors, `${where}.fit`, entry['fit'], ['contain', 'cover', 'stretch'])
+    checkIntRange(errors, `${where}.fps`, entry['fps'], 1, 30)
+    checkIntRange(errors, `${where}.start`, entry['start'], 0, 3600)
   }
   if (type === 'shape') {
     checkEnum(errors, `${where}.shape`, entry['shape'], ['rect', 'ellipse', 'line'])

@@ -140,8 +140,8 @@ def build_filter_chain(
     fit: str,
     width: int,
     height: int,
-    rotation: int,
-    brightness: int,
+    rotation: int | None,
+    brightness: int | None,
 ) -> str:
     """Build the complete ffmpeg ``-vf`` chain for frame extraction.
 
@@ -153,12 +153,16 @@ def build_filter_chain(
     the panel decoder cannot display (the browser preview can, so the bug
     only shows on hardware).
 
+    The base rotation and brightness steps apply to whole-panel playback;
+    a scene video widget omits both (``None``) because the scene renderer
+    applies rotation and brightness to the composed frame itself.
+
     Args:
         fit: Fit mode: contain, stretch, width or height.
-        width: Panel width.
-        height: Panel height.
-        rotation: User rotation in degrees.
-        brightness: Software brightness 0-200 percent.
+        width: Target width.
+        height: Target height.
+        rotation: User rotation in degrees, or None to skip.
+        brightness: Software brightness 0-200 percent, or None to skip.
 
     Returns:
         Full ffmpeg filter chain string.
@@ -169,10 +173,10 @@ def build_filter_chain(
     filters = [
         f
         for f in (
-            build_rotation_filter(rotation),
-            build_rotation_filter(DEFAULT_BASE_ROTATION),
+            build_rotation_filter(rotation) if rotation is not None else "",
+            build_rotation_filter(DEFAULT_BASE_ROTATION) if rotation is not None else "",
             build_fit_filter(fit, width, height),
-            build_brightness_filter(brightness),
+            build_brightness_filter(brightness) if brightness is not None else "",
         )
         if f
     ]
@@ -187,12 +191,13 @@ def extract_video_frames(
     width: int,
     height: int,
     fit: str,
-    rotation: int,
-    brightness: int,
+    rotation: int | None,
+    brightness: int | None,
     quality: int,
     stop_event: threading.Event | None = None,
+    start: float = 0.0,
 ) -> list[Path]:
-    """Decode a video once into panel-ready JPEG frames on disk.
+    """Decode a video once into JPEG frames on disk.
 
     Scaling, fit, rotation, brightness and JPEG encoding all happen inside
     a single ffmpeg pass; playback then only reads the finished files, so
@@ -202,13 +207,14 @@ def extract_video_frames(
         path: Video file readable by ffmpeg.
         out_dir: Directory the ``frame_NNNNNN.jpg`` files are written to.
         fps: Output frames per second (1-60).
-        width: Panel width.
-        height: Panel height.
+        width: Target width.
+        height: Target height.
         fit: Fit mode: contain, stretch, width or height.
-        rotation: User rotation in degrees.
-        brightness: Software brightness 0-200 percent.
+        rotation: User rotation in degrees, or None to skip (scene widget).
+        brightness: Software brightness 0-200 percent, or None to skip.
         quality: JPEG quality 1-100.
         stop_event: Optional object with ``is_set()`` used to abort early.
+        start: Seconds into the video to begin extraction from.
 
     Returns:
         Sorted list of extracted frame paths.
@@ -222,6 +228,10 @@ def extract_video_frames(
         "-hide_banner",
         "-loglevel",
         "error",
+    ]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += [
         "-i",
         str(path),
         "-vf",

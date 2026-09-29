@@ -296,3 +296,68 @@ def test_render_bar_border_align_extends_outside(tmp_path: Path) -> None:
     # and sits fully outside of it for border_align: outside.
     assert bright(frame_pixel("outside", 19, 40))
     assert not bright(frame_pixel("outside", 21, 40))
+
+
+def test_video_widget_cycles_frames_and_advances_signature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A video widget renders the frame for the current scene time.
+
+    The frame list is injected (no ffmpeg); loop wrapping and the
+    signature change between frames are exercised directly.
+    """
+    from PIL import Image
+
+    from oled_webui.scene import runner as runner_module
+    from oled_webui.scene.schema import VideoWidget
+
+    frames = []
+    for index, color in enumerate(("#FF0000", "#00FF00")):
+        frame = tmp_path / f"frame{index}.jpg"
+        Image.new("RGB", (40, 20), color).save(frame)
+        frames.append(frame)
+
+    monkeypatch.setattr(
+        runner_module, "ensure_video_frames", lambda widget, root: list(frames)
+    )
+    scene_yaml = tmp_path / "scene.yaml"
+    scene_yaml.write_text(
+        """
+        max_fps: 30
+        widgets:
+          - type: video
+            path: assets/clip.mp4
+            rect: [10, 10, 40, 20]
+            fps: 1
+            loop: true
+        """,
+        encoding="utf-8",
+    )
+    document = load_scene(scene_yaml)
+    renderer = SceneRenderer(document, Resolution(width=100, height=100))
+
+    def pixel_at(payload: bytes, x: int, y: int) -> tuple[int, int, int]:
+        import io
+
+        from PIL import Image as PILImage
+
+        return PILImage.open(io.BytesIO(payload)).convert("RGB").getpixel((x, y))
+
+    def is_color(pixel: tuple[int, int, int], color: tuple[int, int, int]) -> bool:
+        # JPEG re-encoding shifts channels by a few levels.
+        return all(abs(a - b) <= 8 for a, b in zip(pixel, color))
+
+    first = renderer.tick(now=100.0)
+    assert first is not None
+    # Widget rect (10,10,40,20); the 180° base panel rotation maps it to
+    # (50,70)-(90,90) in the encoded frame.
+    assert is_color(pixel_at(first, 70, 80), (255, 0, 0))  # t=0 -> frame 0
+
+    second = renderer.tick(now=101.0)
+    assert second is not None
+    assert is_color(pixel_at(second, 70, 80), (0, 255, 0))  # t=1 -> frame 1
+
+    # One more second wraps back to frame 0 (loop).
+    third = renderer.tick(now=102.0)
+    assert third is not None
+    assert is_color(pixel_at(third, 70, 80), (255, 0, 0))

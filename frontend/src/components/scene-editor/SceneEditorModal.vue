@@ -61,6 +61,7 @@ const ADD_BUTTONS = [
   { type: 'graph', label: '∿', title: 'Add graph widget (G)' },
   { type: 'image', label: '▣', title: 'Add image widget (I)' },
   { type: 'shape', label: '▭', title: 'Add shape widget (S)' },
+  { type: 'video', label: '▶', title: 'Add video widget (V)' },
 ] as const
 
 const DRAW_TOOLS = [
@@ -79,7 +80,7 @@ function toggleDrawTool(kind: 'rect' | 'ellipse' | 'line'): void {
 const helpVisible = ref(false)
 
 const SHORTCUTS: Array<[string, string]> = [
-  ['T / B / R / G / I / S', 'Add text / bar / ring / graph / image / shape widget'],
+  ['T / B / R / G / I / S / V', 'Add text / bar / ring / graph / image / shape / video widget'],
   ['▭ ◯ ╱ tool + drag', 'Draw a shape on the canvas (Shift = square, Esc = off)'],
   ['Click / Shift+click', 'Select / extend selection'],
   ['Drag on empty canvas', 'Marquee selection'],
@@ -274,6 +275,7 @@ function onKeydown(event: KeyboardEvent): void {
       g: 'graph',
       i: 'image',
       s: 'shape',
+      v: 'video',
     }
     const type = addKeys[event.key.toLowerCase()]
     if (type !== undefined) {

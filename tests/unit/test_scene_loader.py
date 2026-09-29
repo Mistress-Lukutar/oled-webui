@@ -14,7 +14,7 @@ import pytest
 
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.loader import load_scene
-from oled_webui.scene.schema import BarWidget, RingWidget, ShapeWidget, TextWidget
+from oled_webui.scene.schema import BarWidget, RingWidget, ShapeWidget, TextWidget, VideoWidget
 
 
 def _write(tmp_path: Path, relative: str, content: str) -> Path:
@@ -268,3 +268,25 @@ def test_load_shape_widget(tmp_path: Path) -> None:
     assert widget.shape == "rect"
     assert widget.style.fill_color == "#FF0000"
     assert widget.style.radius == 4
+
+
+def test_load_video_widget_resolves_path(tmp_path: Path) -> None:
+    """A video widget loads and its path resolves against the scene dir."""
+    scene_path = _write(
+        tmp_path,
+        "scenes/demo/scene.yaml",
+        """
+        widgets:
+          - type: video
+            path: assets/clip.mp4
+            rect: [0, 0, 200, 100]
+            fps: 12
+            loop: false
+            start: 1.5
+        """,
+    )
+    document = load_scene(scene_path)
+    widget = document.widgets[0]
+    assert isinstance(widget, VideoWidget)
+    assert widget.fps == 12 and widget.loop is False and widget.start == 1.5
+    assert widget.path == str((tmp_path / "scenes/demo/assets/clip.mp4").resolve())

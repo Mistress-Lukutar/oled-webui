@@ -205,5 +205,6 @@ async def _render_preview(document: Any, display: DisplayDep) -> bytes:
         Resolution(width=width, height=height),
         brightness=display.brightness,
         quality=display.quality,
+        video_cache_dir=display.video_cache_dir,
     )
     return await anyio.to_thread.run_sync(renderer.render_frame)

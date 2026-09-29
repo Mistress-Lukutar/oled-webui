@@ -231,8 +231,33 @@ class ShapeWidget(WidgetBase):
     style: CorneredPaint = Field(default_factory=lambda: CorneredPaint())
 
 
+class VideoWidget(WidgetBase):
+    """Video sprite: a scene asset pre-extracted into JPEG frames.
+
+    Frames are decoded once per scene start with ffmpeg (sized to the
+    widget box), then cycled at ``fps`` by scene time. ``loop`` restarts
+    the clip; ``start`` skips an intro offset in seconds.
+    """
+
+    type: Literal["video"]
+    path: str = Field(..., description="Video path relative to the scene file")
+    fit: Literal["contain", "cover", "stretch"] = Field(
+        "contain", description="Sizing of each frame inside the widget box"
+    )
+    fps: int = Field(15, ge=1, le=30, description="Playback frame rate")
+    loop: bool = Field(True, description="Restart the clip after the last frame")
+    start: float = Field(0.0, ge=0, description="Playback start offset in seconds")
+    style: ImageStyle = Field(default_factory=lambda: ImageStyle())
+
+
 Widget = Annotated[
-    TextWidget | BarWidget | RingWidget | GraphWidget | ImageWidget | ShapeWidget,
+    TextWidget
+    | BarWidget
+    | RingWidget
+    | GraphWidget
+    | ImageWidget
+    | ShapeWidget
+    | VideoWidget,
     Field(discriminator="type"),
 ]
 

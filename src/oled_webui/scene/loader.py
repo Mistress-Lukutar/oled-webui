@@ -16,7 +16,7 @@ import structlog
 import yaml
 
 from oled_webui.exceptions import SceneError
-from oled_webui.scene.schema import ImageWidget, SceneDocument
+from oled_webui.scene.schema import ImageWidget, SceneDocument, VideoWidget
 
 logger = structlog.get_logger(__name__)
 
@@ -122,7 +122,10 @@ def load_scene_from_text(
     for layer in document.background:
         layer.path = str((base_dir / layer.path).resolve())
     for widget in document.widgets:
-        if isinstance(widget, ImageWidget) and not Path(widget.path).is_absolute():
+        if (
+            isinstance(widget, (ImageWidget, VideoWidget))
+            and not Path(widget.path).is_absolute()
+        ):
             widget.path = str((base_dir / widget.path).resolve())
         style = getattr(widget, "style", None)
         if style is not None:

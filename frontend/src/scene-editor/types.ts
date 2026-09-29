@@ -134,6 +134,19 @@ export interface ShapeWidgetRaw extends BaseFields {
   style?: ShapeStyle
 }
 
+export type VideoFit = 'contain' | 'cover' | 'stretch'
+
+export interface VideoWidgetRaw extends BaseFields {
+  type: 'video'
+  path: string
+  fit?: VideoFit
+  fps?: number
+  loop?: boolean
+  /** Playback start offset in seconds. */
+  start?: number
+  style?: ImageStyle
+}
+
 export type WidgetRaw =
   | TextWidgetRaw
   | BarWidgetRaw
@@ -141,6 +154,7 @@ export type WidgetRaw =
   | GraphWidgetRaw
   | ImageWidgetRaw
   | ShapeWidgetRaw
+  | VideoWidgetRaw
 
 /** A `use:` entry referencing a reusable component. */
 export interface ComponentInstanceRaw extends BaseFields {
@@ -168,7 +182,7 @@ export interface SceneDocumentRaw {
   [key: string]: unknown
 }
 
-export const WIDGET_TYPES = ['text', 'bar', 'ring', 'graph', 'image', 'shape'] as const
+export const WIDGET_TYPES = ['text', 'bar', 'ring', 'graph', 'image', 'shape', 'video'] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 
 export const EASINGS = [
@@ -236,6 +250,7 @@ const WIDGET_KEYS: Record<WidgetType, Set<string>> = {
   graph: new Set(['source', 'history', 'style']),
   image: new Set(['path', 'fit', 'scale']),
   shape: new Set(['shape', 'style']),
+  video: new Set(['path', 'fit', 'fps', 'loop', 'start']),
 }
 
 const STYLE_KEYS = new Set([
@@ -297,6 +312,9 @@ export function entryLabel(entry: EntryRaw, index: number): string {
   }
   if (type === 'image' && typeof entry['path'] === 'string') {
     return `image · ${String(entry['path']).slice(0, 24)}`
+  }
+  if (type === 'video' && typeof entry['path'] === 'string') {
+    return `video · ${String(entry['path']).slice(0, 24)}`
   }
   if (type === 'shape' && typeof entry['shape'] === 'string') {
     return `shape · ${entry['shape']}`
@@ -366,6 +384,11 @@ export const PAINT_SLOTS: Record<string, PaintSlotConfig> = {
     stroke: { label: 'Outline', align: true },
     corners: true,
   },
+  video: {
+    fill: null,
+    stroke: { label: 'Frame', align: true },
+    corners: true,
+  },
 }
 
 /** Type-specific style keys editable on a multi-selection of one type. */
@@ -376,6 +399,7 @@ export const EXTRA_STYLE_KEYS: Record<string, string[]> = {
   graph: ['scale_max'],
   image: [],
   shape: [],
+  video: [],
 }
 
 /**
