@@ -11,7 +11,7 @@ import { editor } from '../../scene-editor/docStore'
 import { viewCenter } from '../../scene-editor/viewState'
 import EditorCanvas from './EditorCanvas.vue'
 import InspectorPanel from './InspectorPanel.vue'
-import LayersPanel from './LayersPanel.vue'
+import SceneLayersPanel from './SceneLayersPanel.vue'
 import TimelinePanel from './TimelinePanel.vue'
 import YamlPanel from './YamlPanel.vue'
 
@@ -347,7 +347,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
       <div v-else class="body">
         <aside class="left">
-          <LayersPanel />
+          <SceneLayersPanel />
         </aside>
 
         <div class="center">

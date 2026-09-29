@@ -10,7 +10,7 @@ import ArgbCanvas from './ArgbCanvas.vue'
 import ArgbHeaders from './ArgbHeaders.vue'
 import ArgbInspector from './ArgbInspector.vue'
 import ArgbYaml from './ArgbYaml.vue'
-import ArgbLayers from './ArgbLayers.vue'
+import ArgbLayersPanel from './ArgbLayersPanel.vue'
 import DeviceLibraryModal from './DeviceLibraryModal.vue'
 import { useArgbStore } from '../../argb/store'
 import { isTypingTarget } from '../../canvas/shortcuts'
@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
             <button :class="{ on: sideTab === 'hardware' }" @click="sideTab = 'hardware'">Hardware</button>
           </div>
           <div class="side-content">
-            <ArgbLayers v-show="sideTab === 'effects'" />
+            <ArgbLayersPanel v-show="sideTab === 'effects'" />
             <ArgbHeaders v-show="sideTab === 'hardware'" />
           </div>
         </aside>
