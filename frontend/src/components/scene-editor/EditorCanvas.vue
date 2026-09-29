@@ -1,46 +1,30 @@
 <script setup lang="ts">
 /**
- * Scene viewport: canvas mirror of the server renderer with zoom/pan,
- * widget selection, drag/resize/rotate, marquee and snap guides.
- * Component instances behave as locked groups (moved via `at`).
+ * Scene viewport on the shared CanvasStage: evaluates and renders the
+ * document (Pillow-approximating drawScene) and adapts scene widgets to
+ * stage boxes. Component instances behave as locked groups (moved via
+ * `at`); the stage owns zoom/pan, selection and all interactions.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, ref, watch, watchEffect } from 'vue'
+import CanvasStage from '../canvas/CanvasStage.vue'
+import { unionBox } from '../../canvas/geometry'
+import type { StageAdapter, StageBox } from '../../canvas/stage'
+import type { WidgetBox } from '../../canvas/geometry'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
 import { expandDocument } from '../../scene-editor/expand'
 import { evaluateEntries, makePlaceholderProvider } from '../../scene-editor/runtime'
+import type { EvalEntry } from '../../scene-editor/runtime'
 import { createImageCache, drawScene } from '../../scene-editor/render/draw'
 import { ensureFont } from '../../scene-editor/render/fonts'
-import {
-  angleDelta,
-  angleTo,
-  handleAt,
-  handleCursor,
-  handlePositions,
-  pointInRotatedBox,
-  resizeBoxRotated,
-  rotateZoneAt,
-  snapBox,
-  snapResize,
-  unionBox,
-} from '../../scene-editor/geometry'
-import type { HandleId, SnapGuide, WidgetBox } from '../../scene-editor/geometry'
-import { rotateCursor } from '../../scene-editor/cursors'
 import { isComponentInstance } from '../../scene-editor/types'
 import type { EntryRaw, SceneDocumentRaw } from '../../scene-editor/types'
-import type { EvalEntry } from '../../scene-editor/runtime'
 import { viewState } from '../../scene-editor/viewState'
 
 const { state: appState } = useDisplayStore()
 const { state } = editor
 
-const container = ref<HTMLDivElement | null>(null)
-const canvas = ref<HTMLCanvasElement | null>(null)
-
-const zoom = ref(1)
-const panX = ref(0)
-const panY = ref(0)
-const spaceHeld = ref(false)
+const stage = ref<InstanceType<typeof CanvasStage> | null>(null)
 const redrawTick = ref(0)
 
 const provider = makePlaceholderProvider()
@@ -60,9 +44,6 @@ const expansion = computed(() => {
   if (state.doc === null) return { entries: [], errors: [] as string[] }
   return expandDocument(state.doc as SceneDocumentRaw, state.components)
 })
-
-/** Evaluated entries from the last frame, reused for hit-testing. */
-let lastEvaluated: EvalEntry[] = []
 
 watchEffect(() => {
   const doc = state.doc
@@ -90,9 +71,11 @@ interface BoxInfo {
   sourceIndex: number
   box: WidgetBox
   isInstance: boolean
-  isImage: boolean
   locked: boolean
 }
+
+/** Evaluated entries from the last frame, reused for hit-testing. */
+let lastEvaluated: EvalEntry[] = []
 
 const boxes = computed<BoxInfo[]>(() => {
   const bySource = new Map<number, WidgetBox[]>()
@@ -119,90 +102,11 @@ const boxes = computed<BoxInfo[]>(() => {
       sourceIndex: index,
       box: union,
       isInstance: isComponentInstance(entry),
-      isImage: entry['type'] === 'image',
       locked: entry['locked'] === true,
     })
   })
   return result
 })
-
-const guides = ref<SnapGuide[]>([])
-const marquee = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
-
-type InteractionMode =
-  | { kind: 'idle' }
-  | { kind: 'pan'; startX: number; startY: number; panX: number; panY: number }
-  | {
-      kind: 'drag'
-      startX: number
-      startY: number
-      origins: Map<number, DragOrigin>
-      /**
-       * Index to deselect if this gesture ends as a click (Figma-style
-       * deferred toggle): Shift+pointerdown on an already-selected widget
-       * must still allow Shift+drag to move it.
-       */
-      toggleCandidate: number | null
-    }
-  | {
-      kind: 'resize'
-      handle: HandleId
-      sourceIndex: number
-      origin: WidgetBox
-      rotation: number
-      startX: number
-      startY: number
-    }
-  | {
-      kind: 'rotate'
-      sourceIndex: number
-      center: { x: number; y: number }
-      startAngle: number
-      startRotation: number
-    }
-  | { kind: 'marquee'; startX: number; startY: number }
-
-interface DragOrigin {
-  /** Raw rect top-left at drag start (plain widgets). */
-  rectX: number
-  rectY: number
-  /** Evaluated box top-left at drag start (snapping reference). */
-  boxX: number
-  boxY: number
-  /** Instance `at` at drag start, null for plain widgets. */
-  at: [number, number] | null
-}
-
-let interaction: InteractionMode = { kind: 'idle' }
-const hoverCursor = ref<string | null>(null)
-
-// ----------------------------------------------------------------------
-// Coordinate helpers
-// ----------------------------------------------------------------------
-
-function toScene(event: PointerEvent | MouseEvent): { x: number; y: number } {
-  const rect = canvas.value?.getBoundingClientRect()
-  if (!rect) return { x: 0, y: 0 }
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * panelWidth.value,
-    y: ((event.clientY - rect.top) / rect.height) * panelHeight.value,
-  }
-}
-
-function selectedBoxes(): BoxInfo[] {
-  return boxes.value.filter((info) => state.selection.includes(info.sourceIndex))
-}
-
-/** Selection as seen by canvas interactions: locked entries are skipped. */
-function interactiveBoxes(): BoxInfo[] {
-  return selectedBoxes().filter((info) => !info.locked)
-}
-
-/** Raw widget rotation in degrees (expressions count as 0 for interaction). */
-function widgetRotation(sourceIndex: number): number {
-  const value = rawEntry(sourceIndex)?.['rotation']
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
 
 // ----------------------------------------------------------------------
 // Raw document mutation helpers
@@ -213,6 +117,22 @@ function rawEntry(index: number): EntryRaw | null {
   const entry = widgets?.[index]
   return entry === undefined ? null : (entry as EntryRaw)
 }
+
+/** Raw widget rotation in degrees (expressions count as 0 for interaction). */
+function widgetRotation(sourceIndex: number): number {
+  const value = rawEntry(sourceIndex)?.['rotation']
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+interface DragOrigin {
+  /** Raw rect top-left at drag start (plain widgets). */
+  rectX: number
+  rectY: number
+  /** Instance `at` at drag start, null for plain widgets. */
+  at: [number, number] | null
+}
+
+const dragOrigins = new Map<number, DragOrigin>()
 
 function moveRawBy(index: number, dx: number, dy: number, origin: DragOrigin): void {
   editor.mutate((doc) => {
@@ -234,552 +154,120 @@ function moveRawBy(index: number, dx: number, dy: number, origin: DragOrigin): v
   })
 }
 
-function resizeRawTo(sourceIndex: number, next: WidgetBox): void {
-  editor.mutate((doc) => {
-    const entry = doc.widgets?.[sourceIndex] as Record<string, unknown> | undefined
-    if (entry === undefined || isComponentInstance(entry as EntryRaw)) return
-    entry['rect'] = [
-      Math.round(next.x),
-      Math.round(next.y),
-      Math.max(1, Math.round(next.w)),
-      Math.max(1, Math.round(next.h)),
-    ]
-  })
-}
-
-function rotateRawTo(sourceIndex: number, degrees: number): void {
-  editor.mutate((doc) => {
-    const entry = doc.widgets?.[sourceIndex] as Record<string, unknown> | undefined
-    if (entry === undefined) return
-    entry['rotation'] = Math.round(degrees * 10) / 10
-  })
-}
-
 // ----------------------------------------------------------------------
-// Pointer interactions
+// Stage adapter
 // ----------------------------------------------------------------------
 
-const SNAP_THRESHOLD = 5 / 1 // screen px; converted per event
+const adapter: StageAdapter = {
+  getBoxes(): StageBox[] {
+    return boxes.value.map((info) => ({
+      id: String(info.sourceIndex),
+      box: info.box,
+      rotation: widgetRotation(info.sourceIndex),
+      hitRotation: info.isInstance ? 0 : widgetRotation(info.sourceIndex),
+      locked: info.locked,
+      handleless: info.isInstance,
+    }))
+  },
 
-function capturePointer(panel: HTMLCanvasElement, event: PointerEvent): void {
-  try {
-    panel.setPointerCapture(event.pointerId)
-  } catch {
-    // Synthetic pointers (tests) have no active pointer to capture.
-  }
-}
+  getSelection(): string[] {
+    return state.selection.map(String)
+  },
 
-function onPointerdown(event: PointerEvent): void {
-  const panel = canvas.value
-  if (panel === null) return
-  if (spaceHeld.value || event.button === 1) {
-    interaction = {
-      kind: 'pan',
-      startX: event.clientX,
-      startY: event.clientY,
-      panX: panX.value,
-      panY: panY.value,
-    }
-    capturePointer(panel, event)
-    event.preventDefault()
-    return
-  }
-  if (event.button !== 0) return
-  const point = toScene(event)
-  const selection = interactiveBoxes()
-  const single = selection.length === 1 ? selection[0]! : null
+  setSelection(ids: string[]): void {
+    editor.setSelection(ids.map(Number))
+  },
 
-  // Handles first (single selection only). Component instances have no
-  // individual handles; their children move via `at`.
-  if (single !== null && !single.isInstance) {
-    const rotation = widgetRotation(single.sourceIndex)
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, rotation)
-    if (handle !== null) {
-      interaction = {
-        kind: 'resize',
-        handle,
-        sourceIndex: single.sourceIndex,
-        origin: { ...single.box },
-        rotation,
-        startX: point.x,
-        startY: point.y,
+  dragStart(ids: string[]): void {
+    dragOrigins.clear()
+    for (const id of ids) {
+      const sourceIndex = Number(id)
+      const raw = rawEntry(sourceIndex)
+      let at: [number, number] | null = null
+      let rectX = 0
+      let rectY = 0
+      const info = boxes.value.find((b) => b.sourceIndex === sourceIndex)
+      if (info !== undefined) {
+        rectX = info.box.x
+        rectY = info.box.y
       }
-      hoverCursor.value = handleCursor(handle, rotation)
-      editor.beginBatch()
-      capturePointer(panel, event)
-      return
-    }
-    // Photoshop-style rotation: grab just outside a corner of the frame.
-    const corner = rotateZoneAt(point.x, point.y, single.box, zoom.value, rotation)
-    if (corner !== null) {
-      const center = {
-        x: single.box.x + single.box.w / 2,
-        y: single.box.y + single.box.h / 2,
-      }
-      interaction = {
-        kind: 'rotate',
-        sourceIndex: single.sourceIndex,
-        center,
-        startAngle: angleTo(center.x, center.y, point.x, point.y),
-        startRotation: rotation,
-      }
-      hoverCursor.value = rotateCursor(corner)
-      editor.beginBatch()
-      capturePointer(panel, event)
-      return
-    }
-  }
-
-  // Widget hit-test, topmost first. Locked widgets are mouse-transparent.
-  for (let i = boxes.value.length - 1; i >= 0; i -= 1) {
-    const info = boxes.value[i]!
-    if (info.locked) continue
-    if (
-      pointInRotatedBox(
-        point.x,
-        point.y,
-        info.box,
-        info.isInstance ? 0 : widgetRotation(info.sourceIndex),
-      )
-    ) {
-      let selection: number[]
-      let toggleCandidate: number | null = null
-      if (event.shiftKey) {
-        if (state.selection.includes(info.sourceIndex)) {
-          // Deferred deselect: Shift+drag must move the selection, only
-          // a click without movement toggles the widget off (pointerup).
-          selection = [...state.selection]
-          toggleCandidate = info.sourceIndex
-        } else {
-          selection = [...state.selection, info.sourceIndex]
-          editor.setSelection([...selection])
+      if (raw !== null && isComponentInstance(raw)) {
+        const atValue = raw['at']
+        at = Array.isArray(atValue) && atValue.length === 2
+          ? [Number(atValue[0]) || 0, Number(atValue[1]) || 0]
+          : [0, 0]
+      } else if (raw !== null) {
+        const rect = raw['rect']
+        if (Array.isArray(rect) && rect.length === 4) {
+          rectX = Number(rect[0]) || 0
+          rectY = Number(rect[1]) || 0
         }
-      } else if (!state.selection.includes(info.sourceIndex)) {
-        selection = [info.sourceIndex]
-        editor.setSelection([...selection])
-      } else {
-        selection = [...state.selection]
       }
-      const origins = new Map<number, DragOrigin>()
-      for (const selected of interactiveBoxes()) {
-        const raw = rawEntry(selected.sourceIndex)
-        let at: [number, number] | null = null
-        let rectX = selected.box.x
-        let rectY = selected.box.y
-        if (raw !== null && isComponentInstance(raw)) {
-          const atValue = raw['at']
-          at = Array.isArray(atValue) && atValue.length === 2
-            ? [Number(atValue[0]) || 0, Number(atValue[1]) || 0]
-            : [0, 0]
-        } else if (raw !== null) {
-          const rect = raw['rect']
-          if (Array.isArray(rect) && rect.length === 4) {
-            rectX = Number(rect[0]) || 0
-            rectY = Number(rect[1]) || 0
-          }
-        }
-        origins.set(selected.sourceIndex, {
-          rectX,
-          rectY,
-          boxX: selected.box.x,
-          boxY: selected.box.y,
-          at,
-        })
-      }
-      interaction = {
-        kind: 'drag',
-        startX: point.x,
-        startY: point.y,
-        origins,
-        toggleCandidate,
-      }
-      editor.beginBatch()
-      capturePointer(panel, event)
-      return
+      dragOrigins.set(sourceIndex, { rectX, rectY, at })
     }
-  }
+  },
 
-  // Empty space: marquee (clears selection unless shift).
-  if (!event.shiftKey) editor.setSelection([])
-  interaction = { kind: 'marquee', startX: point.x, startY: point.y }
-  marquee.value = { x1: point.x, y1: point.y, x2: point.x, y2: point.y }
-  capturePointer(panel, event)
-}
+  moveBy(ids: string[], dx: number, dy: number): void {
+    for (const id of ids) {
+      const origin = dragOrigins.get(Number(id))
+      if (origin !== undefined) moveRawBy(Number(id), dx, dy, origin)
+    }
+  },
 
-function onPointermove(event: PointerEvent): void {
-  const point = toScene(event)
-  switch (interaction.kind) {
-    case 'pan': {
-      panX.value = interaction.panX + (event.clientX - interaction.startX)
-      panY.value = interaction.panY + (event.clientY - interaction.startY)
-      return
-    }
-    case 'drag': {
-      const mode = interaction
-      const rawDx = point.x - mode.startX
-      const rawDy = point.y - mode.startY
-      // Shift constrains the move to 45° directions (standard editors).
-      let dx = rawDx
-      let dy = rawDy
-      if (event.shiftKey && (rawDx !== 0 || rawDy !== 0)) {
-        const angle =
-          Math.round(Math.atan2(rawDy, rawDx) / (Math.PI / 4)) * (Math.PI / 4)
-        const length = Math.hypot(rawDx, rawDy)
-        dx = Math.cos(angle) * length
-        dy = Math.sin(angle) * length
-      }
-      // Snap the union of the moving (evaluated) boxes.
-      const moving = selectedBoxes()
-      const union = unionBox(
-        moving.map((info) => {
-          const origin = mode.origins.get(info.sourceIndex)
-          return {
-            x: (origin?.boxX ?? info.box.x) + dx,
-            y: (origin?.boxY ?? info.box.y) + dy,
-            w: info.box.w,
-            h: info.box.h,
-          }
-        }),
-      )
-      if (union !== null && !event.altKey && !event.shiftKey) {
-        const others = boxes.value
-          .filter((info) => !mode.origins.has(info.sourceIndex))
-          .map((info) => info.box)
-        const snapped = snapBox(union, others, panelWidth.value, panelHeight.value, SNAP_THRESHOLD / zoom.value)
-        dx += snapped.x - union.x
-        dy += snapped.y - union.y
-        guides.value = snapped.guides
-      } else {
-        guides.value = []
-      }
-      const dxR = Math.round(dx)
-      const dyR = Math.round(dy)
-      for (const [index, origin] of mode.origins) {
-        moveRawBy(index, dxR, dyR, origin)
-      }
-      return
-    }
-    case 'resize': {
-      const mode = interaction
-      const origin = mode.origin
-      const next = resizeBoxRotated(
-        origin,
-        mode.handle,
-        point.x - mode.startX,
-        point.y - mode.startY,
-        mode.rotation,
-      )
-      let box = next
-      // Smart guides only exist in the axis-aligned frame.
-      if (mode.rotation % 360 === 0 && !event.altKey) {
-        const others = boxes.value
-          .filter((info) => info.sourceIndex !== mode.sourceIndex)
-          .map((info) => info.box)
-        const snapped = snapResize(next, mode.handle, others, panelWidth.value, panelHeight.value, SNAP_THRESHOLD / zoom.value)
-        box = snapped.box
-        guides.value = snapped.guides
-      } else {
-        guides.value = []
-      }
-      resizeRawTo(mode.sourceIndex, box)
-      return
-    }
-    case 'rotate': {
-      // Delta-based: the grabbed corner stays under the cursor.
-      const angle = angleTo(interaction.center.x, interaction.center.y, point.x, point.y)
-      let degrees = interaction.startRotation + angleDelta(interaction.startAngle, angle)
-      if (event.shiftKey) degrees = Math.round(degrees / 15) * 15
-      rotateRawTo(interaction.sourceIndex, degrees)
-      return
-    }
-    case 'marquee': {
-      marquee.value = { x1: interaction.startX, y1: interaction.startY, x2: point.x, y2: point.y }
-      return
-    }
-    case 'idle': {
-      updateCursor(point)
-      return
-    }
-  }
-}
+  resizeTo(id: string, box: WidgetBox): void {
+    const sourceIndex = Number(id)
+    editor.mutate((doc) => {
+      const entry = doc.widgets?.[sourceIndex] as Record<string, unknown> | undefined
+      if (entry === undefined || isComponentInstance(entry as EntryRaw)) return
+      entry['rect'] = [
+        Math.round(box.x),
+        Math.round(box.y),
+        Math.max(1, Math.round(box.w)),
+        Math.max(1, Math.round(box.h)),
+      ]
+    })
+  },
 
-function onPointerup(event: PointerEvent): void {
-  if (interaction.kind === 'drag' && interaction.toggleCandidate !== null) {
-    // A Shift+pointerdown on an already-selected widget only deselects
-    // when the gesture ends without movement (a click, not a drag).
-    const point = toScene(event)
-    const movedPx =
-      Math.hypot(point.x - interaction.startX, point.y - interaction.startY) *
-      zoom.value
-    if (movedPx < 4) {
-      const candidate = interaction.toggleCandidate
-      editor.setSelection(state.selection.filter((s) => s !== candidate))
-    }
-  }
-  if (interaction.kind === 'marquee' && marquee.value !== null) {
-    const m = marquee.value
-    const x1 = Math.min(m.x1, m.x2)
-    const x2 = Math.max(m.x1, m.x2)
-    const y1 = Math.min(m.y1, m.y2)
-    const y2 = Math.max(m.y1, m.y2)
-    const hits = boxes.value
-      .filter((info) => !info.locked)
-      .filter((info) => {
-        const b = info.box
-        return b.x < x2 && b.x + b.w > x1 && b.y < y2 && b.y + b.h > y1
-      })
-      .map((info) => info.sourceIndex)
-    editor.setSelection([...new Set([...state.selection, ...hits])].sort((a, b) => a - b))
-    marquee.value = null
-  }
-  if (interaction.kind !== 'idle' && interaction.kind !== 'pan') {
+  rotateTo(id: string, degrees: number): void {
+    editor.mutate((doc) => {
+      const entry = doc.widgets?.[Number(id)] as Record<string, unknown> | undefined
+      if (entry === undefined) return
+      entry['rotation'] = Math.round(degrees * 10) / 10
+    })
+  },
+
+  beginBatch(): void {
+    editor.beginBatch()
+  },
+
+  endBatch(): void {
     editor.endBatch()
-  }
-  guides.value = []
-  interaction = { kind: 'idle' }
-  canvas.value?.releasePointerCapture?.(event.pointerId)
+  },
 }
-
-function updateCursor(point: { x: number; y: number }): void {
-  if (spaceHeld.value) {
-    hoverCursor.value = 'grab'
-    return
-  }
-  const selection = interactiveBoxes()
-  if (selection.length === 1 && !selection[0]!.isInstance) {
-    const single = selection[0]!
-    const rotation = widgetRotation(single.sourceIndex)
-    const handle = handleAt(point.x, point.y, single.box, zoom.value, rotation)
-    if (handle !== null) {
-      hoverCursor.value = handleCursor(handle, rotation)
-      return
-    }
-    const corner = rotateZoneAt(point.x, point.y, single.box, zoom.value, rotation)
-    if (corner !== null) {
-      hoverCursor.value = rotateCursor(corner)
-      return
-    }
-  }
-  for (let i = boxes.value.length - 1; i >= 0; i -= 1) {
-    const info = boxes.value[i]!
-    if (info.locked) continue
-    if (
-      pointInRotatedBox(
-        point.x,
-        point.y,
-        info.box,
-        info.isInstance ? 0 : widgetRotation(info.sourceIndex),
-      )
-    ) {
-      hoverCursor.value = 'move'
-      return
-    }
-  }
-  hoverCursor.value = null
-}
-
-// ----------------------------------------------------------------------
-// Zoom / pan basics
-// ----------------------------------------------------------------------
-
-function onWheel(event: WheelEvent): void {
-  event.preventDefault()
-  const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1
-  const next = Math.max(0.05, Math.min(12, zoom.value * factor))
-  const rect = canvas.value?.getBoundingClientRect()
-  if (rect) {
-    const cx = event.clientX - (rect.left + rect.width / 2)
-    const cy = event.clientY - (rect.top + rect.height / 2)
-    const scale = next / zoom.value
-    panX.value = cx - (cx - panX.value) * scale
-    panY.value = cy - (cy - panY.value) * scale
-  }
-  zoom.value = next
-}
-
-function fit(): void {
-  const box = container.value
-  if (box === null) return
-  const margin = 32
-  const zw = (box.clientWidth - margin) / panelWidth.value
-  const zh = (box.clientHeight - margin) / panelHeight.value
-  zoom.value = Math.max(0.05, Math.min(zw, zh))
-  panX.value = 0
-  panY.value = 0
-}
-
-let observer: ResizeObserver | null = null
-
-watch([panelWidth, panelHeight], () => fit())
-
-onMounted(() => {
-  fit()
-  requestAnimationFrame(() => fit())
-  void document.fonts.ready.then(() => fit())
-  observer = new ResizeObserver(() => fit())
-  if (container.value !== null) observer.observe(container.value)
-  window.addEventListener('keydown', onKeydown)
-  window.addEventListener('keyup', onKeyup)
-})
-
-onBeforeUnmount(() => {
-  observer?.disconnect()
-  window.removeEventListener('keydown', onKeydown)
-  window.removeEventListener('keyup', onKeyup)
-})
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.code === 'Space' && isCanvasTarget(event)) {
-    spaceHeld.value = true
-    event.preventDefault()
-  }
-}
-
-function onKeyup(event: KeyboardEvent): void {
-  if (event.code === 'Space') spaceHeld.value = false
-}
-
-function isCanvasTarget(event: Event): boolean {
-  return (
-    container.value !== null &&
-    container.value.contains(event.target as Node) &&
-    !isFormTarget(event.target)
-  )
-}
-
-function isFormTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  )
-}
-
-const transformStyle = computed(() => ({
-  width: `${panelWidth.value * zoom.value}px`,
-  height: `${panelHeight.value * zoom.value}px`,
-  transform: `translate(${panX.value}px, ${panY.value}px)`,
-}))
 
 // Publish the view state for other panels (widget insertion).
 watchEffect(() => {
-  viewState.zoom = zoom.value
-  viewState.panX = panX.value
-  viewState.panY = panY.value
+  const view = stage.value
+  if (view === null) return
+  viewState.zoom = view.zoom
+  viewState.panX = view.panX
+  viewState.panY = view.panY
 })
 
-// ----------------------------------------------------------------------
-// Drawing: scene + interaction overlay
-// ----------------------------------------------------------------------
+watch(
+  () => state.sceneId,
+  () => {
+    stage.value?.fit()
+  },
+)
 
-const ACCENT = '#35c98e'
-
-function drawOverlay(
+function drawContent(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
 ): void {
-  const selection = selectedBoxes()
-  const line = 1.5 / zoom.value
-  const handleSize = 8 / zoom.value
-
-  if (marquee.value !== null) {
-    const m = marquee.value
-    ctx.save()
-    ctx.fillStyle = 'rgba(53, 201, 142, 0.12)'
-    ctx.strokeStyle = ACCENT
-    ctx.lineWidth = line
-    ctx.fillRect(
-      Math.min(m.x1, m.x2),
-      Math.min(m.y1, m.y2),
-      Math.abs(m.x2 - m.x1),
-      Math.abs(m.y2 - m.y1),
-    )
-    ctx.strokeRect(
-      Math.min(m.x1, m.x2),
-      Math.min(m.y1, m.y2),
-      Math.abs(m.x2 - m.x1),
-      Math.abs(m.y2 - m.y1),
-    )
-    ctx.restore()
-  }
-
-  for (const guide of guides.value) {
-    ctx.save()
-    ctx.strokeStyle = ACCENT
-    ctx.lineWidth = line
-    ctx.setLineDash([6 / zoom.value, 4 / zoom.value])
-    ctx.beginPath()
-    if (guide.axis === 'x') {
-      ctx.moveTo(guide.at, 0)
-      ctx.lineTo(guide.at, height)
-    } else {
-      ctx.moveTo(0, guide.at)
-      ctx.lineTo(width, guide.at)
-    }
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  for (const info of selection) {
-    const { box } = info
-    // Single plain widgets draw their frame rotated with the widget.
-    const rotateFrame =
-      selection.length === 1 && !info.isInstance && !info.locked
-    const rotation = rotateFrame ? widgetRotation(info.sourceIndex) : 0
-    ctx.save()
-    ctx.strokeStyle = info.locked ? '#8a8a8a' : ACCENT
-    ctx.lineWidth = line
-    if (info.isInstance || info.locked) ctx.setLineDash([5 / zoom.value, 3 / zoom.value])
-    if (rotation % 360 !== 0) {
-      const cx = box.x + box.w / 2
-      const cy = box.y + box.h / 2
-      ctx.translate(cx, cy)
-      ctx.rotate((-rotation * Math.PI) / 180)
-      ctx.translate(-cx, -cy)
-    }
-    ctx.strokeRect(box.x, box.y, box.w, box.h)
-    if (!info.isInstance && !info.locked) {
-      // Handles: white squares with accent border, screen-constant size;
-      // drawn in the (rotated) frame so they follow the widget.
-      const positions = handlePositions(box)
-      const ids: HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
-      for (const id of ids) {
-        const p = positions[id]
-        ctx.save()
-        ctx.fillStyle = '#ffffff'
-        ctx.strokeStyle = ACCENT
-        ctx.lineWidth = line
-        ctx.beginPath()
-        ctx.rect(p.x - handleSize / 2, p.y - handleSize / 2, handleSize, handleSize)
-        ctx.fill()
-        ctx.stroke()
-        ctx.restore()
-      }
-    }
-    ctx.restore()
-  }
-}
-
-// Main draw effect: re-runs whenever the document, time or view changes.
-watchEffect(() => {
-  const panel = canvas.value
-  if (panel === null) return
-  const ctx = panel.getContext('2d')
-  if (ctx === null) return
-  void zoom.value
-  void state.time
   void redrawTick.value
-  void state.selection
-  void marquee.value
-  void guides.value
-
-  const width = panelWidth.value
-  const height = panelHeight.value
-  if (panel.width !== width || panel.height !== height) {
-    panel.width = width
-    panel.height = height
-  }
+  void state.time
   const doc = state.doc
   const background = (doc?.background ?? []) as readonly Record<string, unknown>[]
   const evaluated = evaluateEntries(expansion.value.entries, {
@@ -799,73 +287,16 @@ watchEffect(() => {
     showGrid: true,
     gridPixelSize: 20,
   })
-  drawOverlay(ctx, width, height)
-})
+}
 </script>
 
 <template>
-  <div
-    ref="container"
-    class="viewport"
-    :class="{ pan: spaceHeld }"
-    :style="{ cursor: hoverCursor ?? (spaceHeld ? 'grab' : 'default') }"
-    @wheel="onWheel"
-    @pointerdown="onPointerdown"
-    @pointermove="onPointermove"
-    @pointerup="onPointerup"
-    @pointercancel="onPointerup"
-  >
-    <div class="canvas-holder" :style="transformStyle">
-      <canvas ref="canvas" class="scene-canvas"></canvas>
-    </div>
-    <div class="zoom-label">{{ Math.round(zoom * 100) }}%</div>
-  </div>
+  <CanvasStage
+    ref="stage"
+    :width="panelWidth"
+    :height="panelHeight"
+    :adapter="adapter"
+    :draw-content="drawContent"
+    pixelated
+  />
 </template>
-
-<style scoped>
-.viewport {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background:
-    repeating-conic-gradient(#1a1a1a 0% 25%, #151515 0% 50%) 0 0 / 24px 24px;
-  touch-action: none;
-}
-
-.viewport.pan {
-  cursor: grab;
-}
-
-.viewport.pan:active {
-  cursor: grabbing;
-}
-
-.canvas-holder {
-  position: relative;
-  flex: none;
-  box-shadow: 0 0 0 1px var(--border), 0 6px 30px rgba(0, 0, 0, 0.5);
-}
-
-.scene-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-}
-
-.zoom-label {
-  position: absolute;
-  left: 10px;
-  bottom: 8px;
-  font-size: 11px;
-  color: var(--text-dim);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 8px;
-  pointer-events: none;
-}
-</style>

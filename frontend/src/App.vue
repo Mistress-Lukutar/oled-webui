@@ -8,9 +8,13 @@ import TextPanel from './components/TextPanel.vue'
 import VideoPanel from './components/VideoPanel.vue'
 import ScenePanel from './components/ScenePanel.vue'
 import PresetsPanel from './components/PresetsPanel.vue'
+import ArgbPanel from './components/argb/ArgbPanel.vue'
 import { useDisplayStore } from './composables/useDisplayStore'
 
 const { state } = useDisplayStore()
+
+type DeviceTab = 'oled' | 'argb'
+const deviceTab = ref<DeviceTab>('oled')
 
 type Tab = 'image' | 'color' | 'text' | 'video' | 'scene'
 const activeTab = ref<Tab>('image')
@@ -33,35 +37,48 @@ onMounted(() => {
       <img src="/favicon.svg" alt="" class="logo" />
       <h1>OledWebUI</h1>
     </div>
+    <nav class="device-tabs" aria-label="Devices">
+      <span class="group-label">Devices</span>
+      <button :class="{ active: deviceTab === 'oled' }" @click="deviceTab = 'oled'">
+        OLED
+      </button>
+      <button :class="{ active: deviceTab === 'argb' }" @click="deviceTab = 'argb'">
+        ARGB
+      </button>
+    </nav>
     <StatusBar />
   </header>
 
-  <main class="layout">
-    <section class="left">
-      <PreviewPane />
-    </section>
-    <section class="right">
-      <nav class="tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-      <div class="card">
-        <ImagePanel v-show="activeTab === 'image'" />
-        <ColorPanel v-show="activeTab === 'color'" />
-        <TextPanel v-show="activeTab === 'text'" />
-        <VideoPanel v-show="activeTab === 'video'" />
-        <ScenePanel v-show="activeTab === 'scene'" />
-      </div>
-    </section>
-  </main>
+  <template v-if="deviceTab === 'oled'">
+    <main class="layout">
+      <section class="left">
+        <PreviewPane />
+      </section>
+      <section class="right">
+        <nav class="tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="{ active: activeTab === tab.id }"
+            @click="activeTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+        <div class="card">
+          <ImagePanel v-show="activeTab === 'image'" />
+          <ColorPanel v-show="activeTab === 'color'" />
+          <TextPanel v-show="activeTab === 'text'" />
+          <VideoPanel v-show="activeTab === 'video'" />
+          <ScenePanel v-show="activeTab === 'scene'" />
+        </div>
+      </section>
+    </main>
 
-  <PresetsPanel />
+    <PresetsPanel />
+  </template>
+
+  <ArgbPanel v-else />
 
   <div v-if="state.error" class="error-toast">{{ state.error }}</div>
 </template>
@@ -89,6 +106,30 @@ onMounted(() => {
   margin: 0;
   font-weight: 600;
   letter-spacing: 0.03em;
+}
+
+.device-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+
+.device-tabs button {
+  padding: 5px 18px;
+}
+
+.device-tabs button.active {
+  background: var(--bg-panel);
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 .logo {

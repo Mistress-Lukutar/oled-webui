@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oled-webui"
-version = "0.5.0"
+version = "0.5.1"
 description = "WebUI for controlling ChiZhu Tech USBDISPLAY panels (87AD:70DB)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ dependencies = [
     "psutil>=5.9",
     "nvidia-ml-py>=13.0",
     "PyYAML>=6.0",
+    "openrgb-python>=0.3.7",
 ]
 
 [project.optional-dependencies]

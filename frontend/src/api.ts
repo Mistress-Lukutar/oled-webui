@@ -2,6 +2,8 @@
  * Typed fetch wrapper and API endpoint functions.
  */
 
+import type { ArgbLayout, ArgbStatus } from './argb/types'
+
 export interface Resolution {
   width: number
   height: number
@@ -274,4 +276,31 @@ export const API = {
     api<Record<string, number>>(`/api/presets/${id}/apply`, { method: 'POST' }),
   deletePreset: (id: string) =>
     api<null>(`/api/presets/${id}`, { method: 'DELETE' }),
+
+  getArgbStatus: () => api<ArgbStatus>('/api/argb/status'),
+  connectArgb: () => api<ArgbStatus>('/api/argb/connect', { method: 'POST' }),
+  disconnectArgb: () => api<ArgbStatus>('/api/argb/disconnect', { method: 'POST' }),
+  getArgbLayout: () => api<{ layout: ArgbLayout }>('/api/argb/layout'),
+  saveArgbLayout: (layout: ArgbLayout, apply = false) =>
+    api<{ layout?: ArgbLayout }>(`/api/argb/layout?apply=${apply}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(layout),
+    }),
+  applyArgb: (layout: ArgbLayout) =>
+    api<ArgbStatus>('/api/argb/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(layout),
+    }),
+  stopArgb: () => api<ArgbStatus>('/api/argb/stop', { method: 'POST' }),
+  renderArgbPreview: (layout: ArgbLayout, t?: number) =>
+    api<{ buffers: Record<string, string> }>(
+      t === undefined ? '/api/argb/render_preview' : `/api/argb/render_preview?t=${t}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layout),
+      },
+    ),
 }

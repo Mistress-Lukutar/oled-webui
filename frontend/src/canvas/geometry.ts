@@ -1,6 +1,6 @@
 /**
  * Geometry helpers for canvas interactions: hit-testing, resize handles,
- * snapping. All coordinates are scene pixels unless noted.
+ * snapping. All coordinates are logical canvas pixels unless noted.
  */
 
 export interface WidgetBox {

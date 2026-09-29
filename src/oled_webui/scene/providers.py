@@ -2,8 +2,8 @@
 File:   providers.py
 Brief:  System metric providers (psutil) feeding scene widgets.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-29
+Version: v0.2.1
 """
 
 from __future__ import annotations
@@ -191,3 +191,7 @@ class DataSources:
             True when the source is available.
         """
         return path in self._snapshot
+
+    def snapshot(self) -> dict[str, float | str]:
+        """Return a copy of the current metric snapshot."""
+        return dict(self._snapshot)

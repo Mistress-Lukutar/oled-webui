@@ -76,6 +76,63 @@ def fake_lcd(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 @pytest.fixture
+def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Patch OpenRgbClient with a fake that records zone sends.
+
+    Returns:
+        List that accumulates one dict per sent zone buffer.
+    """
+    from oled_webui.infrastructure import openrgb_transport
+
+    sent: list[dict[str, Any]] = []
+
+    def fake_connect(self: openrgb_transport.OpenRgbClient) -> list:
+        self._fake_zones = [  # type: ignore[attr-defined]
+            openrgb_transport.ZoneInfo(0, "D_LED1", 64),
+            openrgb_transport.ZoneInfo(1, "D_LED2", 64),
+        ]
+        return list(self._fake_zones)  # type: ignore[attr-defined]
+
+    def fake_list_zones(self: openrgb_transport.OpenRgbClient) -> list:
+        return list(getattr(self, "_fake_zones", []))
+
+    def fake_send_zone(
+        self: openrgb_transport.OpenRgbClient, zone_index: int, data: bytes
+    ) -> None:
+        zones = getattr(self, "_fake_zones", [])
+        if not zones or zone_index >= len(zones):
+            from oled_webui.exceptions import OpenRgbError
+
+            raise OpenRgbError("OpenRGB is not connected")
+        if len(data) != zones[zone_index].leds * 3:
+            from oled_webui.exceptions import OpenRgbError
+
+            raise OpenRgbError("Zone buffer size mismatch")
+        sent.append({"zone_index": zone_index, "data": data})
+
+    def fake_disconnect(self: openrgb_transport.OpenRgbClient) -> None:
+        self._fake_zones = []  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(openrgb_transport.OpenRgbClient, "connect", fake_connect)
+    monkeypatch.setattr(openrgb_transport.OpenRgbClient, "list_zones", fake_list_zones)
+    monkeypatch.setattr(openrgb_transport.OpenRgbClient, "send_zone", fake_send_zone)
+    monkeypatch.setattr(
+        openrgb_transport.OpenRgbClient, "disconnect", fake_disconnect
+    )
+    monkeypatch.setattr(
+        openrgb_transport.OpenRgbClient,
+        "is_connected",
+        property(lambda self: bool(getattr(self, "_fake_zones", []))),
+    )
+    monkeypatch.setattr(
+        openrgb_transport.OpenRgbClient,
+        "controller_name",
+        lambda self: "Fake Motherboard" if fake_list_zones(self) else None,
+    )
+    return sent
+
+
+@pytest.fixture
 def client(fake_lcd: list[dict[str, Any]]) -> Iterator[TestClient]:
     """TestClient with a fresh app and connected display."""
     from oled_webui.main import create_app

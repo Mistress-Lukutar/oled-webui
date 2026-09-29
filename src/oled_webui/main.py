@@ -2,8 +2,8 @@
 File:   main.py
 Brief:  FastAPI application factory, lifespan and entry point.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-29
+Version: v0.5.0
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from oled_webui.argb.service import ArgbService
 from oled_webui.config import get_settings
 from oled_webui.exceptions import OledWebUIError, setup_exception_handlers
+from oled_webui.routers import argb as argb_router
 from oled_webui.routers import device as device_router
 from oled_webui.routers import frame as frame_router
 from oled_webui.routers import presets as presets_router
@@ -46,6 +48,7 @@ SSE_TOPICS: tuple[str, ...] = (
     "display_settings",
     "video",
     "scene",
+    "argb",
     "error",
 )
 
@@ -86,6 +89,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.display = display
     app.state.presets = PresetService(settings)
     app.state.scenes = SceneService(settings)
+    argb = ArgbService(settings, bus)
+    app.state.argb = argb
 
     watcher = _start_power_watcher(display)
 
@@ -98,6 +103,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else:
             # Show the screen the panel had before the previous shutdown.
             await restore_last_content(display, app.state.scenes, settings)
+
+    if argb.layout.autostart:
+        # Restore ARGB output from the persisted layout; failures must not
+        # block the server - the UI surfaces the actual state.
+        try:
+            await argb.connect()
+        except OledWebUIError as exc:
+            logger.warning("argb_autostart_connect_failed", error=str(exc))
+        try:
+            await argb.apply(argb.layout)
+        except OledWebUIError as exc:
+            logger.warning("argb_autostart_apply_failed", error=str(exc))
 
     if watcher is not None and watcher.last_state is False:
         # The console display was already off at startup (idle timeout or
@@ -112,6 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if watcher is not None:
         watcher.stop()
+    await argb.shutdown()
     await display.shutdown()
 
 
@@ -164,6 +182,7 @@ def create_app() -> FastAPI:
     app.include_router(video_router.router)
     app.include_router(presets_router.router)
     app.include_router(scenes_router.router)
+    app.include_router(argb_router.router)
 
     @app.get("/events")
     async def events() -> Any:

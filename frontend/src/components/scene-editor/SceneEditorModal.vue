@@ -5,6 +5,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { API } from '../../api'
+import { isTypingTarget } from '../../canvas/shortcuts'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
 import { viewCenter } from '../../scene-editor/viewState'
@@ -259,15 +260,6 @@ function onKeydown(event: KeyboardEvent): void {
       addWidget(type)
     }
   }
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  )
 }
 
 window.addEventListener('keydown', onKeydown)

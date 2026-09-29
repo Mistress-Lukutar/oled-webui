@@ -4,6 +4,7 @@
 
 import { computed, reactive, readonly } from 'vue'
 import { API } from '../api'
+import { useArgbStore } from '../argb/store'
 import type {
   DisplaySettings,
   LastContent,
@@ -121,6 +122,10 @@ function handleSseEvent(event: MessageEvent): void {
     void actions.loadScenes()
     return
   }
+  if (event.type === 'argb') {
+    void useArgbStore().actions.refreshStatus()
+    return
+  }
   if (event.type === 'error') {
     try {
       const payload = JSON.parse(event.data) as { error?: string }
@@ -144,6 +149,7 @@ function startSse(): void {
     'display_settings',
     'video',
     'scene',
+    'argb',
     'error',
   ]) {
     eventSource.addEventListener(type, handleSseEvent as EventListener)

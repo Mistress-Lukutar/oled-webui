@@ -148,11 +148,37 @@ cd frontend && npm run dev   # Vite dev server with /api proxy
 
 After code changes run `python scripts/bump-version.py` to bump file headers.
 
+## ARGB lighting (Devices → ARGB tab)
+
+The second device tab drives ARGB strips and fans connected to the
+motherboard's 5V 3-pin headers through [OpenRGB](https://openrgb.org):
+
+1. Install and start OpenRGB (it detects the board's RGB controller).
+   The SDK server must listen on `127.0.0.1:6742` (default when the app
+   runs; enable *SDK* in its settings if you changed it).
+2. Close Gigabyte Control Center / RGB Fusion — they fight over the
+   controller.
+3. In the WebUI open the **ARGB** tab, press **Connect**, then add your
+   strips/fans, arrange them on the workspace to mirror the case, set
+   LED counts and the header each device hangs on (chain order matters),
+   stack effect layers (fill, gradient, rainbow, breathing, comet,
+   scanner, meter) with per-layer opacity and pixel masks, and press
+   **Apply**.
+
+The workspace preview is rendered by the same engine that feeds the
+LEDs, so it is exactly what the hardware shows. Enable *Run
+automatically on server start* in the inspector (nothing selected) to
+restore the lighting on boot. Host/port can be overridden with
+`OLED_OPENRGB_HOST` / `OLED_OPENRGB_PORT`. The layout persists in
+`data/argb/layout.json`.
+
 ## Tests
 
-32 pytest tests cover the wire header layout, resolution profile lookup,
+186 pytest tests cover the wire header layout, resolution profile lookup,
 the render pipeline (fit/rotation/brightness/text), preset storage and a
 full API smoke suite with a fake USB device. The real hardware is not
 required. Scene engine tests cover the expression sandbox, easing curves,
 widget renderers, component expansion, the rendering state machine
-(dirty-detection, keepalive re-yield) and the scenes API.
+(dirty-detection, keepalive re-yield) and the scenes API. ARGB tests
+cover the effect engine math (masks, alpha blending, chain mapping), the
+layout schema validation and the API with a fake OpenRGB transport.

@@ -2,8 +2,8 @@
 File:   config.py
 Brief:  Application settings loaded from environment variables and .env.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-29
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     auto_connect: bool = Field(
         default=True, description="Open the USB device on server startup"
     )
+    openrgb_host: str = Field(
+        default="127.0.0.1", description="OpenRGB SDK server host"
+    )
+    openrgb_port: int = Field(
+        default=6742, ge=1, le=65535, description="OpenRGB SDK server port"
+    )
+
+    @property
+    def argb_dir(self) -> Path:
+        """Directory holding the ARGB layout state."""
+        return self.data_dir / "argb"
 
     @property
     def presets_dir(self) -> Path:
@@ -105,6 +116,7 @@ class Settings(BaseSettings):
             self.uploads_dir,
             self.fonts_dir,
             self.scenes_dir,
+            self.argb_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

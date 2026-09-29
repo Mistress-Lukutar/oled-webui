@@ -58,6 +58,14 @@ class SceneError(OledWebUIError):
     """Raised when a scene document or widget rendering is invalid."""
 
 
+class ArgbError(OledWebUIError):
+    """Raised when an ARGB layout or effect operation is invalid."""
+
+
+class OpenRgbError(OledWebUIError):
+    """Raised when the OpenRGB SDK server cannot be reached or misbehaves."""
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register JSON error handlers normalizing errors to a uniform shape.
 
@@ -65,8 +73,24 @@ def setup_exception_handlers(app: FastAPI) -> None:
         app: FastAPI application instance.
     """
     from fastapi import Request, status
+    from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
     from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    @app.exception_handler(RequestValidationError)
+    async def _request_validation(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        first = exc.errors()[0] if exc.errors() else {}
+        location = ".".join(
+            str(part) for part in first.get("loc", []) if part != "body"
+        )
+        message = first.get("msg", "Invalid request")
+        text = f"{location}: {message}" if location else message
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"success": False, "error": text, "data": None},
+        )
 
     @app.exception_handler(DeviceNotConnectedError)
     async def _not_connected(
@@ -115,6 +139,20 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def _scene_error(_request: Request, exc: SceneError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"success": False, "error": str(exc), "data": None},
+        )
+
+    @app.exception_handler(ArgbError)
+    async def _argb_error(_request: Request, exc: ArgbError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"success": False, "error": str(exc), "data": None},
+        )
+
+    @app.exception_handler(OpenRgbError)
+    async def _openrgb_error(_request: Request, exc: OpenRgbError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
             content={"success": False, "error": str(exc), "data": None},
         )
 
