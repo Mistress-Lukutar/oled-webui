@@ -8,7 +8,7 @@ import TextPanel from './components/TextPanel.vue'
 import VideoPanel from './components/VideoPanel.vue'
 import ScenePanel from './components/ScenePanel.vue'
 import PresetsPanel from './components/PresetsPanel.vue'
-import ArgbPanel from './components/argb/ArgbPanel.vue'
+import ArgbTab from './components/argb/ArgbTab.vue'
 import { useDisplayStore } from './composables/useDisplayStore'
 
 const { state } = useDisplayStore()
@@ -78,7 +78,7 @@ onMounted(() => {
     <PresetsPanel />
   </template>
 
-  <ArgbPanel v-else />
+  <ArgbTab v-else />
 
   <div v-if="state.error" class="error-toast">{{ state.error }}</div>
 </template>

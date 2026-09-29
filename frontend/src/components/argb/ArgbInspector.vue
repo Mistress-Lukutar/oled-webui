@@ -5,7 +5,6 @@
  */
 import { computed } from 'vue'
 import { useArgbStore } from '../../argb/store'
-import { deviceTotalLeds } from '../../argb/types'
 import type { ArgbDevice, ArgbHeader, ArgbLayer, EffectType, GradientEffect } from '../../argb/types'
 import { DATA_SOURCES } from '../../scene-editor/types'
 
@@ -619,30 +618,9 @@ function onZoneChange(event: Event): void {
         <span>Run automatically on server start</span>
       </label>
 
-      <h4>Headers (ARGB outputs)</h4>
-      <div
-        v-for="header in state.layout.headers"
-        :key="header.id"
-        class="row"
-        @click="store.actions.select('header', header.id)"
-      >
-        <span class="name">{{ header.name }}</span>
-        <span class="hint">{{ store.headerUsage(header).used }} LEDs → zone {{ header.zone_index }}</span>
-      </div>
-      <button class="small" @click="store.actions.addHeader()">+ Add header</button>
-
-      <h4>Devices</h4>
-      <div
-        v-for="device in state.layout.devices"
-        :key="device.id"
-        class="row"
-        @click="store.actions.select('device', device.id)"
-      >
-        <span class="name">{{ device.name }}</span>
-        <span class="hint">{{ deviceTotalLeds(device) }} LEDs</span>
-      </div>
-      <p v-if="state.layout.devices.length === 0" class="hint">
-        Use the toolbar above the workspace to add strips and fans.
+      <p class="hint">
+        Click a device on the canvas to edit it, a layer in the Effects tab for
+        its effect. Header wiring lives in the Hardware tab.
       </p>
     </template>
   </div>
@@ -725,21 +703,6 @@ h4 {
 
 .mono {
   font-variant-numeric: tabular-nums;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.row .name {
-  flex: 1;
 }
 
 button.small {

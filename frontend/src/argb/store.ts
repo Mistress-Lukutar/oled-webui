@@ -68,6 +68,30 @@ const state = reactive<ArgbState>({
 
 let previewBusy = false
 
+/**
+ * Shared live-preview poller: every mounted consumer (tab preview, editor
+ * canvas) holds one reference; the 66 ms interval runs while any exist.
+ */
+let previewTimer = 0
+let previewRefCount = 0
+
+function startPreviewPolling(): void {
+  previewRefCount += 1
+  if (previewTimer !== 0) return
+  void actions.fetchPreview()
+  previewTimer = window.setInterval(() => {
+    void actions.fetchPreview()
+  }, 66)
+}
+
+function stopPreviewPolling(): void {
+  previewRefCount = Math.max(0, previewRefCount - 1)
+  if (previewRefCount === 0 && previewTimer !== 0) {
+    window.clearInterval(previewTimer)
+    previewTimer = 0
+  }
+}
+
 // ----------------------------------------------------------------------
 // Undo/redo: JSON snapshots of the whole layout. Batches (drag/paint
 // gestures) push exactly one snapshot via beginBatch()/endBatch().
@@ -521,6 +545,32 @@ const actions = {
     })
   },
 
+  /** Replace the whole draft layout (JSON view). One history snapshot. */
+  replaceLayout(doc: ArgbLayout): void {
+    mutate(() => {
+      for (const key of Object.keys(state.layout)) {
+        delete (state.layout as Record<string, unknown>)[key]
+      }
+      Object.assign(state.layout, doc)
+    })
+    pruneSelection()
+    if (
+      state.maskLayerId !== null &&
+      !state.layout.layers.some((item) => item.id === state.maskLayerId)
+    ) {
+      state.maskLayerId = null
+    }
+    if (state.selection.kind === 'layer' || state.selection.kind === 'header') {
+      const pool =
+        state.selection.kind === 'layer'
+          ? state.layout.layers
+          : state.layout.headers
+      if (!pool.some((item) => item.id === state.selection.id)) {
+        state.selection = { kind: null, id: null }
+      }
+    }
+  },
+
   select(kind: Selection['kind'], id: string | null): void {
     if (kind === 'device' && id !== null) {
       state.deviceSelection = [id]
@@ -688,6 +738,8 @@ export function useArgbStore() {
     maskCoverage,
     beginBatch,
     endBatch,
+    startPreviewPolling,
+    stopPreviewPolling,
     undo,
     redo,
     canUndo,

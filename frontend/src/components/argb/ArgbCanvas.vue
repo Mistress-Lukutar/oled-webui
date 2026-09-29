@@ -194,19 +194,8 @@ function drawContent(ctx: CanvasRenderingContext2D): void {
 
 // ----------------------------------------------------------------------
 // Keyboard: editor-wide shortcuts (layout independent, event.code).
+// Escape and Ctrl+S are owned by the designer modal.
 // ----------------------------------------------------------------------
-
-function deselectAll(): void {
-  if (state.maskLayerId !== null) {
-    store.actions.stopMaskPaint()
-    return
-  }
-  if (state.deviceSelection.length > 0) {
-    store.actions.setDeviceSelection([])
-    return
-  }
-  store.actions.select(null, null)
-}
 
 function deleteSelection(): void {
   if (state.deviceSelection.length > 0) {
@@ -224,7 +213,6 @@ function nudge(dx: number, dy: number): void {
 }
 
 const detachShortcuts = useKeydown([
-  { key: 'Escape', handler: deselectAll },
   { key: 'Delete', handler: deleteSelection },
   { key: 'Backspace', handler: deleteSelection },
   {
@@ -246,24 +234,18 @@ const detachShortcuts = useKeydown([
   { code: 'KeyZ', ctrl: true, shift: false, handler: () => store.undo() },
   { code: 'KeyZ', ctrl: true, shift: true, handler: () => store.redo() },
   { code: 'KeyY', ctrl: true, handler: () => store.redo() },
-  { code: 'KeyS', ctrl: true, handler: () => void store.actions.save() },
   { key: 'ArrowLeft', ignoreShift: true, handler: (e) => nudge(e.shiftKey ? -10 : -1, 0) },
   { key: 'ArrowRight', ignoreShift: true, handler: (e) => nudge(e.shiftKey ? 10 : 1, 0) },
   { key: 'ArrowUp', ignoreShift: true, handler: (e) => nudge(0, e.shiftKey ? -10 : -1) },
   { key: 'ArrowDown', ignoreShift: true, handler: (e) => nudge(0, e.shiftKey ? 10 : 1) },
 ])
 
-let previewTimer = 0
-
 onMounted(() => {
-  void store.actions.fetchPreview()
-  previewTimer = window.setInterval(() => {
-    void store.actions.fetchPreview()
-  }, 66)
+  store.startPreviewPolling()
 })
 
 onBeforeUnmount(() => {
-  window.clearInterval(previewTimer)
+  store.stopPreviewPolling()
   detachShortcuts()
 })
 </script>

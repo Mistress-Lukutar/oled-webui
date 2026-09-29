@@ -264,3 +264,73 @@ export function drawWorkspace(
     ctx.fillText(device.name, device.x, device.y + (device.type === 'strip' ? 26 : clampRingRadius(device.leds, device.scale) + 26))
   }
 }
+
+/**
+ * Server preview buffers carry raw effect colors; the engine applies the
+ * brightness LUT only when dispatching to hardware. Mirror that exact
+ * transform here (frame_builder.brightness_scale: gamma 2.2, round to
+ * nearest level) so the tab preview shows what the LEDs will show.
+ */
+const PREVIEW_GAMMA = 2.2
+
+function shadedColor(
+  buffer: string,
+  base: number,
+  mult: number,
+  cache: Map<string, string>,
+): string {
+  const hex = buffer.slice(base * 2, base * 2 + 6)
+  if (hex.length < 6) return '#1c1f1c'
+  const cached = cache.get(hex)
+  if (cached !== undefined) return cached
+  const channel = (slice: string): number =>
+    Math.min(255, Math.round(parseInt(slice, 16) * mult))
+  const out = `rgb(${channel(hex.slice(0, 2))},${channel(hex.slice(2, 4))},${channel(hex.slice(4, 6))})`
+  cache.set(hex, out)
+  return out
+}
+
+/**
+ * Draw a read-only output preview into a canvas of width x height: the
+ * workspace fit and centered, devices with brightness-scaled live colors,
+ * no editing chrome (grid, labels, selection).
+ */
+export function drawPreview(
+  ctx: CanvasRenderingContext2D,
+  layout: ArgbLayout,
+  preview: Record<string, string>,
+  brightness: number,
+  width: number,
+  height: number,
+): void {
+  ctx.clearRect(0, 0, width, height)
+  ctx.fillStyle = '#0b0d0b'
+  ctx.fillRect(0, 0, width, height)
+
+  const { byDevice, offsets } = layoutGeometry(layout)
+  const scale = Math.min(width / WORKSPACE_WIDTH, height / WORKSPACE_HEIGHT)
+  ctx.save()
+  ctx.translate(
+    (width - WORKSPACE_WIDTH * scale) / 2,
+    (height - WORKSPACE_HEIGHT * scale) / 2,
+  )
+  ctx.scale(scale, scale)
+
+  const mult = (Math.max(0, brightness) / 100) ** (1 / PREVIEW_GAMMA)
+  const cache = new Map<string, string>()
+
+  for (const device of layout.devices) {
+    const geo = byDevice.get(device.id)
+    if (geo === undefined) continue
+    const buffer = preview[device.header_id]
+    const offset = offsets.get(device.id) ?? 0
+    for (const cell of geo.cells) {
+      const fill =
+        buffer !== undefined
+          ? shadedColor(buffer, (offset + cell.index) * 3, mult, cache)
+          : '#1c1f1c'
+      drawCell(ctx, cell, fill)
+    }
+  }
+  ctx.restore()
+}

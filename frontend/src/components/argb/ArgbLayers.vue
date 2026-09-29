@@ -75,7 +75,7 @@ function down(id: string): void {
       >
         {{ layer.enabled ? '◉' : '○' }}
       </button>
-      <span class="name">{{ layer.name }}</span>
+      <span class="name" :title="layer.name">{{ layer.name }}</span>
       <span class="chip">{{ EFFECT_LABELS[layer.effect.type] }}</span>
       <span class="spacer" />
       <button class="icon" title="Move up" @click.stop="up(layer.id)">▲</button>
@@ -152,8 +152,8 @@ function down(id: string): void {
 }
 
 .chip {
-  font-size: 10px;
-  padding: 1px 6px;
+  font-size: 9px;
+  padding: 1px 5px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-dim);
@@ -164,9 +164,10 @@ function down(id: string): void {
 }
 
 .icon {
-  padding: 1px 5px;
+  padding: 1px 3px;
   font-size: 11px;
   line-height: 1.2;
+  min-width: 18px;
 }
 
 .icon.danger {
