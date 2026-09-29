@@ -1,97 +1,26 @@
 """
 File:   frame.py
-Brief:  Frame content endpoints: image, color, text, power, preview.
+Brief:  Frame endpoints: power, test pattern, preview and the font library.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.4.0
 """
 
 from __future__ import annotations
 
 import shutil
-import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Response, UploadFile
+from fastapi import APIRouter, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from oled_webui.dependencies import ConnectedDisplayDep, SettingsDep
 from oled_webui.exceptions import SceneNotFoundError, ValidationError
-from oled_webui.models.schemas import StatusResponse, TestRequest, TextRequest
+from oled_webui.models.schemas import StatusResponse, TestRequest
 
 router = APIRouter(prefix="/api/frame", tags=["frame"])
 
-ALLOWED_IMAGE_EXTENSIONS: frozenset[str] = frozenset(
-    {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
-)
 ALLOWED_FONT_EXTENSIONS: frozenset[str] = frozenset({".ttf", ".otf"})
-
-
-def _save_upload(upload: UploadFile, uploads_dir: Path, name_hint: str) -> Path:
-    """Persist an uploaded file into the uploads directory.
-
-    Args:
-        upload: The uploaded multipart file.
-        uploads_dir: Target directory for uploads.
-        name_hint: Prefix used when the original name is unusable.
-
-    Returns:
-        Path of the stored file.
-
-    Raises:
-        ValidationError: If the file has no usable name or a bad extension.
-    """
-    original = Path(upload.filename or "")
-    suffix = original.suffix.lower()
-    if suffix not in ALLOWED_IMAGE_EXTENSIONS:
-        raise ValidationError(f"Unsupported image extension: {suffix or '(none)'}")
-    stem = original.stem if original.stem else name_hint
-    safe_stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in stem)[:60]
-    dest = uploads_dir / f"{uuid.uuid4().hex[:8]}_{safe_stem}{suffix}"
-    with dest.open("wb") as out:
-        shutil.copyfileobj(upload.file, out)
-    return dest
-
-
-@router.post("/image", response_model=StatusResponse)
-async def send_image(
-    display: ConnectedDisplayDep,
-    settings: SettingsDep,
-    file: UploadFile,
-    rotation: int = Form(default=0),
-    fit: str = Form(default="contain"),
-) -> StatusResponse:
-    """Upload an image and show it on the display."""
-    path = _save_upload(file, settings.uploads_dir, "image")
-    result = await display.send_image(path, rotation, fit)
-    return StatusResponse(data=result)
-
-
-@router.post("/color", response_model=StatusResponse)
-async def send_color(
-    display: ConnectedDisplayDep,
-    color: str = Form(default="ffffff", pattern=r"^#?[0-9a-fA-F]{6}$"),
-) -> StatusResponse:
-    """Fill the display with a solid color."""
-    result = await display.send_color(color)
-    return StatusResponse(data=result)
-
-
-@router.post("/text", response_model=StatusResponse)
-async def send_text(display: ConnectedDisplayDep, req: TextRequest) -> StatusResponse:
-    """Render text and show it on the display."""
-    result = await display.send_text(
-        text=req.text,
-        font_size=req.font_size,
-        color=req.color,
-        background=req.background,
-        align=req.align,
-        valign=req.valign,
-        padding=req.padding,
-        rotation=req.rotation,
-        font_name=req.font_name,
-    )
-    return StatusResponse(data=result)
 
 
 @router.post("/off", response_model=StatusResponse)

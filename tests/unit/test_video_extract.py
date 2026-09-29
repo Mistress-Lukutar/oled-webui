@@ -1,5 +1,5 @@
 """
-File:   test_video_player.py
+File:   test_video_extract.py
 Brief:  Unit tests for the ffmpeg filter building and extraction pipeline.
 Author: Mistress-Lukutar
 Date:   2026-09-27
@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from oled_webui.exceptions import VideoError
-from oled_webui.services.video_player import (
+from oled_webui.services.video_extract import (
     build_brightness_filter,
     build_filter_chain,
     build_fit_filter,

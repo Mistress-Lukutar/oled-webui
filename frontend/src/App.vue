@@ -2,12 +2,7 @@
 import { onMounted, ref } from 'vue'
 import StatusBar from './components/StatusBar.vue'
 import PreviewPane from './components/PreviewPane.vue'
-import ImagePanel from './components/ImagePanel.vue'
-import ColorPanel from './components/ColorPanel.vue'
-import TextPanel from './components/TextPanel.vue'
-import VideoPanel from './components/VideoPanel.vue'
 import ScenePanel from './components/ScenePanel.vue'
-import PresetsPanel from './components/PresetsPanel.vue'
 import ArgbTab from './components/argb/ArgbTab.vue'
 import { useDisplayStore } from './composables/useDisplayStore'
 
@@ -15,16 +10,6 @@ const { state } = useDisplayStore()
 
 type DeviceTab = 'oled' | 'argb'
 const deviceTab = ref<DeviceTab>('oled')
-
-type Tab = 'image' | 'color' | 'text' | 'video' | 'scene'
-const activeTab = ref<Tab>('image')
-const tabs: { id: Tab; label: string }[] = [
-  { id: 'image', label: 'Image' },
-  { id: 'color', label: 'Color' },
-  { id: 'text', label: 'Text' },
-  { id: 'video', label: 'Video' },
-  { id: 'scene', label: 'Scene' },
-]
 
 onMounted(() => {
   void useDisplayStore().actions.init()
@@ -55,27 +40,9 @@ onMounted(() => {
         <PreviewPane />
       </section>
       <section class="right">
-        <nav class="tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :class="{ active: activeTab === tab.id }"
-            @click="activeTab = tab.id"
-          >
-            {{ tab.label }}
-          </button>
-        </nav>
-        <div class="card">
-          <ImagePanel v-show="activeTab === 'image'" />
-          <ColorPanel v-show="activeTab === 'color'" />
-          <TextPanel v-show="activeTab === 'text'" />
-          <VideoPanel v-show="activeTab === 'video'" />
-          <ScenePanel v-show="activeTab === 'scene'" />
-        </div>
+        <ScenePanel />
       </section>
     </main>
-
-    <PresetsPanel />
   </template>
 
   <ArgbTab v-else />
@@ -148,23 +115,5 @@ onMounted(() => {
   .layout {
     grid-template-columns: 1fr;
   }
-}
-
-.tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.tabs button {
-  flex: 1;
-  background: transparent;
-  border-color: var(--border);
-}
-
-.tabs button.active {
-  background: var(--bg-panel);
-  border-color: var(--accent-dim);
-  color: var(--accent);
 }
 </style>

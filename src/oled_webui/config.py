@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     Attributes:
         host: Interface the HTTP server binds to.
         port: TCP port the HTTP server listens on.
-        data_dir: Directory for presets, uploads, fonts and the last frame.
+        data_dir: Directory for scenes, fonts, ARGB state and the last frame.
         keepalive_interval: Seconds between keepalive frame resends.
         keepalive_enabled: Whether keepalive starts automatically on connect.
         brightness: Global software brightness percent for all content.
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8090, ge=1, le=65535, description="HTTP listen port")
     data_dir: Path = Field(
         default=PROJECT_ROOT / "data",
-        description="Directory for presets, uploads, fonts and last frame",
+        description="Directory for scenes, fonts, ARGB state and last frame",
     )
     keepalive_interval: float = Field(
         default=1.5, ge=0.1, description="Seconds between keepalive resends"
@@ -89,16 +89,6 @@ class Settings(BaseSettings):
         return self.argb_dir / "devices"
 
     @property
-    def presets_dir(self) -> Path:
-        """Directory holding preset JSON files and their assets."""
-        return self.data_dir / "presets"
-
-    @property
-    def uploads_dir(self) -> Path:
-        """Directory holding uploaded images and videos."""
-        return self.data_dir / "uploads"
-
-    @property
     def fonts_dir(self) -> Path:
         """Directory holding user-provided TTF/OTF fonts."""
         return self.data_dir / "fonts"
@@ -117,8 +107,6 @@ class Settings(BaseSettings):
         """Create all runtime data directories if missing."""
         for directory in (
             self.data_dir,
-            self.presets_dir,
-            self.uploads_dir,
             self.fonts_dir,
             self.scenes_dir,
             self.argb_dir,

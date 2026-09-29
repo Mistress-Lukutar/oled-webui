@@ -43,11 +43,7 @@ class ValidationError(OledWebUIError):
 
 
 class VideoError(OledWebUIError):
-    """Raised when video decoding or playback fails."""
-
-
-class PresetNotFoundError(OledWebUIError):
-    """Raised when the requested preset does not exist."""
+    """Raised when video decoding fails."""
 
 
 class SceneNotFoundError(OledWebUIError):
@@ -114,15 +110,6 @@ def setup_exception_handlers(app: FastAPI) -> None:
     async def _handshake(_request: Request, exc: HandshakeError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            content={"success": False, "error": str(exc), "data": None},
-        )
-
-    @app.exception_handler(PresetNotFoundError)
-    async def _preset_not_found(
-        _request: Request, exc: PresetNotFoundError
-    ) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
             content={"success": False, "error": str(exc), "data": None},
         )
 

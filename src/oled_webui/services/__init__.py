@@ -1,9 +1,9 @@
 """
 File:   __init__.py
-Brief:  Service layer: display control, rendering, presets, events.
+Brief:  Service layer: display control, rendering, scenes, events.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.3.0
 """
 
 from __future__ import annotations

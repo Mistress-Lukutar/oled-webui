@@ -26,8 +26,10 @@ const showSettings = ref(false)
       ⚙ Settings
     </button>
 
-    <span class="badge" :class="{ active: state.video.playing }">
-      {{ state.video.playing ? `Video: ${state.video.file}` : 'Video idle' }}
+    <span class="badge" :class="{ active: state.scene.running }">
+      {{
+        state.scene.running ? `Scene: ${state.scene.name}` : 'Scene idle'
+      }}
     </span>
 
     <button v-if="!state.connected" class="primary" @click="actions.connect()">

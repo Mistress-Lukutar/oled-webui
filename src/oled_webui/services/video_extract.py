@@ -1,6 +1,6 @@
 """
-File:   video_player.py
-Brief:  ffmpeg-backed video preparation for display streaming.
+File:   video_extract.py
+Brief:  ffmpeg-backed video frame extraction (shared by the scene video widget).
 Author: Mistress-Lukutar
 Date:   2026-09-27
 Version: v0.3.0

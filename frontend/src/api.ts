@@ -25,15 +25,6 @@ export interface DisplaySettings {
   blank_on_display_off: boolean
 }
 
-export interface VideoState {
-  playing: boolean
-  preparing: boolean
-  file: string | null
-  loop: boolean
-  fps: number
-  frames_sent: number
-}
-
 export interface SceneState {
   running: boolean
   scene_id: string | null
@@ -70,37 +61,9 @@ export interface StatusData {
   device: DeviceInfo | null
   resolution: Resolution
   settings: DisplaySettings
-  video: VideoState
   scene: SceneState
   has_frame: boolean
   last_content: LastContent | null
-}
-
-export interface Preset {
-  id: string
-  name: string
-  type: 'image' | 'color' | 'text' | 'scene'
-  params: Record<string, number | string>
-  payload: Record<string, unknown>
-  created_at: number
-  has_asset: boolean
-}
-
-export interface TextRequest {
-  text: string
-  font_size: number
-  color: string
-  background: string
-  align: 'left' | 'center' | 'right'
-  valign: 'top' | 'middle' | 'bottom'
-  padding: number
-  rotation: number
-  font_name: string | null
-}
-
-export interface RenderOptions {
-  rotation: number
-  fit: 'contain' | 'stretch' | 'width' | 'height'
 }
 
 interface Envelope<T> {
@@ -172,22 +135,6 @@ export const API = {
       body: JSON.stringify(patch),
     }),
 
-  sendColor: (color: string) =>
-    api<Record<string, number>>('/api/frame/color', {
-      method: 'POST',
-      body: form({ color }),
-    }),
-  sendText: (req: TextRequest) =>
-    api<Record<string, number>>('/api/frame/text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
-    }),
-  uploadImage: (file: File, opts: RenderOptions) =>
-    api<Record<string, number>>('/api/frame/image', {
-      method: 'POST',
-      body: form({ ...opts, file }),
-    }),
   powerOff: () => api<null>('/api/frame/off', { method: 'POST' }),
   powerOn: () => api<null>('/api/frame/on', { method: 'POST' }),
   runTest: (delay: number) =>
@@ -209,18 +156,6 @@ export const API = {
     api<{ fonts: string[] }>(`/api/frame/fonts/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
-
-  startVideo: (
-    file: File,
-    fps: number,
-    loop: boolean,
-    opts: RenderOptions,
-  ) =>
-    api<VideoState>('/api/video', {
-      method: 'POST',
-      body: form({ ...opts, fps, loop, file }),
-    }),
-  stopVideo: () => api<VideoState>('/api/video/stop', { method: 'POST' }),
 
   listScenes: () => api<{ scenes: SceneInfo[] }>('/api/scenes'),
   getScene: (id: string) => api<SceneDetail>(`/api/scenes/${id}`),
@@ -264,18 +199,6 @@ export const API = {
     if (sceneId !== null) data.append('scene_id', sceneId)
     return apiBlob('/api/scenes/preview', { method: 'POST', body: data })
   },
-
-  listPresets: () => api<{ presets: Preset[] }>('/api/presets'),
-  saveCurrentPreset: (name: string) =>
-    api<Preset>('/api/presets/save-current', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    }),
-  applyPreset: (id: string) =>
-    api<Record<string, number>>(`/api/presets/${id}/apply`, { method: 'POST' }),
-  deletePreset: (id: string) =>
-    api<null>(`/api/presets/${id}`, { method: 'DELETE' }),
 
   getArgbStatus: () => api<ArgbStatus>('/api/argb/status'),
   connectArgb: () => api<ArgbStatus>('/api/argb/connect', { method: 'POST' }),

@@ -85,10 +85,10 @@ async def restore_last_content(
 ) -> bool:
     """Reapply the persisted last-screen snapshot after a fresh connect.
 
-    A persisted scene is restarted from its YAML source; image, color and
-    text snapshots are re-rendered with the current global settings. Any
-    failure (deleted scene, missing source file, render error) is logged
-    and reported as "not restored", so callers never break startup.
+    A persisted scene is restarted from its YAML source. Snapshots of
+    removed content types (image/color/text from older versions) are
+    ignored. Any failure (deleted scene, render error) is logged and
+    reported as "not restored", so callers never break startup.
 
     Args:
         display: Connected display service receiving the content.
@@ -101,8 +101,17 @@ async def restore_last_content(
     content = load_content_state(content_state_path(settings))
     if content is None:
         return False
+    if content.get("type") != "scene":
+        logger.warning(
+            "content_state_legacy_ignored", type=str(content.get("type"))
+        )
+        return False
     try:
-        await _apply_content(display, scenes, content)
+        payload = content.get("payload") or {}
+        scene_id = str(payload.get("scene_id", ""))
+        meta = scenes.get_meta(scene_id)
+        document = scenes.load_document(scene_id)
+        await display.start_scene(document, scene_id, meta.name)
     # Best-effort restore: any storage or renderer problem must not break
     # the surrounding connect flow or server startup.
     except Exception as exc:
@@ -110,28 +119,3 @@ async def restore_last_content(
         return False
     logger.info("last_screen_restored", type=str(content.get("type")))
     return True
-
-
-async def _apply_content(
-    display: DisplayService,
-    scenes: SceneService,
-    content: dict[str, Any],
-) -> None:
-    """Apply one restored content snapshot to the display.
-
-    Args:
-        display: Connected display service receiving the content.
-        scenes: Scene service used to load a persisted scene document.
-        content: The snapshot recorded by DisplayService.
-
-    Raises:
-        OledWebUIError: If the content cannot be loaded or rendered.
-    """
-    if content.get("type") == "scene":
-        payload = content.get("payload") or {}
-        scene_id = str(payload.get("scene_id", ""))
-        meta = scenes.get_meta(scene_id)
-        document = scenes.load_document(scene_id)
-        await display.start_scene(document, scene_id, meta.name)
-        return
-    await display.reapply_content(content)

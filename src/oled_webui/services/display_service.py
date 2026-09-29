@@ -1,20 +1,16 @@
 """
 File:   display_service.py
-Brief:  Central display orchestrator: USB serialization, keepalive, video.
+Brief:  Central display orchestrator: USB serialization, keepalive, scenes.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.5.0
+Date:   2026-09-30
+Version: v0.6.0
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import shutil
-import tempfile
-import threading
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -40,9 +36,7 @@ from oled_webui.services.display_settings import (
 from oled_webui.services.frame_builder import (
     FrameBuilder,
     build_black_frame,
-    parse_hex_color,
 )
-from oled_webui.services.video_player import ensure_ffmpeg, extract_video_frames
 
 if TYPE_CHECKING:
     from oled_webui.config import Settings
@@ -101,17 +95,6 @@ class DisplayService:
         self._keepalive_task: asyncio.Task[None] | None = None
         self._keepalive_stop = asyncio.Event()
 
-        self._video_task: asyncio.Task[None] | None = None
-        self._video_stop = threading.Event()
-        self._video_state: dict[str, Any] = {
-            "playing": False,
-            "preparing": False,
-            "file": None,
-            "loop": False,
-            "fps": 0,
-            "frames_sent": 0,
-        }
-
         self._scene_task: asyncio.Task[None] | None = None
         self._scene_renderer: SceneRenderer | None = None
         self._scene_state: dict[str, Any] = {
@@ -128,10 +111,8 @@ class DisplayService:
         self._last_content: dict[str, Any] | None = None
         self._restore_frame: _RestoreFrame | None = None
         # Playback config captured at blank time so power_on can restart
-        # the scene or video instead of showing a frozen frame.
+        # the scene instead of showing a frozen frame.
         self._resume_content: dict[str, Any] | None = None
-        # Parameters of the currently playing video, kept for that restart.
-        self._video_params: dict[str, Any] | None = None
         # Document of the currently running scene, kept for that restart.
         self._scene_document: SceneDocument | None = None
         self._last_preview_emit: float = 0.0
@@ -170,7 +151,6 @@ class DisplayService:
 
     async def disconnect(self) -> None:
         """Stop background tasks and close the USB device."""
-        await self.stop_video()
         await self.stop_scene()
         await self._stop_keepalive()
         async with self._lock:
@@ -264,164 +244,19 @@ class DisplayService:
                 save_content_state, self._content_state_file, content
             )
 
-    async def send_image(
-        self,
-        image_path: Path,
-        rotation: int = 0,
-        fit: str = "contain",
-    ) -> dict[str, Any]:
-        """Render and send an image file to the display.
-
-        Brightness and JPEG quality come from the global display settings.
-
-        Args:
-            image_path: Path to the source image (already saved on disk).
-            rotation: Extra rotation in degrees on top of the panel base.
-            fit: Fit mode: contain, stretch, width or height.
-
-        Returns:
-            Summary dict with frame size and payload length.
-        """
-        await self.stop_scene()
-        self._restore_frame = None
-        self._resume_content = None
-        builder = self._builder(rotation, fit)
-        frame = await asyncio.to_thread(builder.build_frame, image_path)
-        payload = await asyncio.to_thread(builder.encode_jpeg, frame)
-        await self._send_payload(payload, builder.width, builder.height)
-        await self._set_last_content(
-            {
-                "type": "image",
-                "params": {"rotation": rotation, "fit": fit},
-                # Absolute path kept so settings changes can re-render sources
-                # that live outside the uploads directory (preset assets).
-                "payload": {"file": image_path.name, "path": str(image_path)},
-            }
-        )
-        logger.info("image_sent", file=image_path.name, bytes=len(payload))
-        return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
-
-    async def send_color(self, color: str) -> dict[str, Any]:
-        """Fill the display with a solid color.
-
-        Brightness and JPEG quality come from the global display settings.
-
-        Args:
-            color: Hex color string (``#RRGGBB`` or ``RRGGBB``).
-
-        Returns:
-            Summary dict with frame size and payload length.
-        """
-        await self.stop_scene()
-        self._restore_frame = None
-        self._resume_content = None
-        rgb = parse_hex_color(color)
-        builder = self._builder()
-        image = builder.build_color_image(rgb)
-        payload = await asyncio.to_thread(builder.encode_jpeg, image)
-        await self._send_payload(payload, builder.width, builder.height)
-        await self._set_last_content(
-            {
-                "type": "color",
-                "params": {},
-                "payload": {"color": color.lstrip("#")},
-            }
-        )
-        logger.info("color_sent", color=color, bytes=len(payload))
-        return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
-
-    async def send_text(
-        self,
-        text: str,
-        font_size: int = 48,
-        color: str = "#ffffff",
-        background: str = "#000000",
-        align: str = "center",
-        valign: str = "middle",
-        padding: int = 20,
-        rotation: int = 0,
-        font_name: str | None = None,
-    ) -> dict[str, Any]:
-        """Render text and send it to the display.
-
-        Brightness and JPEG quality come from the global display settings.
-
-        Args:
-            text: Multi-line text content.
-            font_size: Font size in pixels.
-            color: Text color hex string.
-            background: Background color hex string.
-            align: Horizontal alignment: left, center or right.
-            valign: Vertical alignment: top, middle or bottom.
-            padding: Margin around the text block in pixels.
-            rotation: Extra rotation in degrees.
-            font_name: Optional TTF/OTF file name inside the fonts directory.
-
-        Returns:
-            Summary dict with frame size and payload length.
-        """
-        await self.stop_scene()
-        self._restore_frame = None
-        self._resume_content = None
-        font_path: Path | None = None
-        if font_name:
-            font_path = self._settings.fonts_dir / font_name
-            if not font_path.is_file():
-                raise ValidationError(f"Font not found: {font_name}")
-
-        builder = self._builder(rotation=rotation)
-        fg = parse_hex_color(color)
-        bg = parse_hex_color(background)
-        frame = await asyncio.to_thread(
-            builder.render_text_frame,
-            text,
-            font_size,
-            fg,
-            bg,
-            align,
-            valign,
-            padding,
-            font_path,
-        )
-        frame = await asyncio.to_thread(builder.apply_user_rotation, frame)
-        frame = await asyncio.to_thread(builder.apply_base_rotation, frame)
-        frame = await asyncio.to_thread(builder.apply_brightness, frame)
-        payload = await asyncio.to_thread(builder.encode_jpeg, frame)
-        await self._send_payload(payload, builder.width, builder.height)
-        await self._set_last_content(
-            {
-                "type": "text",
-                "params": {"rotation": rotation},
-                "payload": {
-                    "text": text,
-                    "font_size": font_size,
-                    "color": color.lstrip("#"),
-                    "background": background.lstrip("#"),
-                    "align": align,
-                    "valign": valign,
-                    "padding": padding,
-                    "font_name": font_name,
-                },
-            }
-        )
-        logger.info("text_sent", chars=len(text), bytes=len(payload))
-        return {"width": builder.width, "height": builder.height, "bytes": len(payload)}
-
     async def power_off(self) -> None:
         """Blank the display, remembering how to resume live playback.
 
-        A running scene or video is captured (config, not the exact frame)
-        into the resume snapshot and stopped; static content is cached in
-        the restore frame. :meth:`power_on` replays the snapshot, or falls
+        A running scene is captured (config, not the exact frame) into the
+        resume snapshot and stopped; static content is cached in the
+        restore frame. :meth:`power_on` replays the snapshot, or falls
         back to the cached frame.
 
         The cached frame is restored by :meth:`power_on`, so the panel can
         be blanked for power saving without losing the current content.
         """
         handshake = self.require_connection()
-        if self._video_state["playing"] and self._video_params is not None:
-            self._resume_content = {"type": "video", **dict(self._video_params)}
-        elif self._scene_state["running"] and self._scene_document is not None:
+        if self._scene_state["running"] and self._scene_document is not None:
             self._resume_content = {
                 "type": "scene",
                 "scene_id": self._scene_state["scene_id"],
@@ -431,7 +266,6 @@ class DisplayService:
         else:
             self._resume_content = None
         # Playback must stop, or its next frames would repaint the panel.
-        await self.stop_video()
         await self.stop_scene()
         if self._restore_frame is None:
             cached = self._last_frame
@@ -493,24 +327,16 @@ class DisplayService:
         logger.info("display_restored")
 
     async def _resume_playback(self, resume: dict[str, Any]) -> None:
-        """Restart the scene or video captured by the last blank.
+        """Restart the scene captured by the last blank.
 
         Args:
-            resume: Playback snapshot with a ``type`` of scene or video
-                and the parameters needed to start it again.
+            resume: Playback snapshot with a ``type`` of scene and the
+                parameters needed to start it again.
         """
         if resume["type"] == "scene":
             document: SceneDocument = resume["document"]
             await self.start_scene(
                 document, str(resume["scene_id"]), str(resume["name"])
-            )
-        else:
-            await self.play_video(
-                Path(str(resume["path"])),
-                fps=int(resume["fps"]),
-                loop=bool(resume["loop"]),
-                rotation=int(resume["rotation"]),
-                fit=str(resume["fit"]),
             )
 
     async def run_test(self, delay: float = 1.0) -> None:
@@ -642,83 +468,6 @@ class DisplayService:
                     self._display_settings.brightness,
                     self._display_settings.quality,
                 )
-            return
-        if self._video_state["playing"]:
-            # Video frames are pre-extracted; new settings apply on the
-            # next playback start.
-            return
-        try:
-            await self.reapply_content(content)
-        except OledWebUIError as exc:
-            logger.warning("content_refresh_failed", error=str(exc))
-
-    def _resolve_image_content(self, payload: dict[str, Any]) -> Path | None:
-        """Locate the source file of an image content snapshot.
-
-        Snapshots recorded by :meth:`send_image` carry the absolute source
-        path, which also covers preset assets; the uploads directory is
-        used as a fallback for the file name alone.
-
-        Args:
-            payload: The content payload with ``path``/``file`` hints.
-
-        Returns:
-            An existing file path, or None when the source is gone.
-        """
-        stored = payload.get("path")
-        if stored:
-            path = Path(str(stored))
-            if path.is_file():
-                return path
-        name = str(payload.get("file", ""))
-        if not name:
-            return None
-        path = self._settings.uploads_dir / name
-        return path if path.is_file() else None
-
-    async def reapply_content(self, content: dict[str, Any]) -> None:
-        """Re-render one-shot content with the current global settings.
-
-        Also used to restore the persisted last-screen snapshot after a
-        restart; scene snapshots are handled by the caller.
-
-        Args:
-            content: A ``last_content`` snapshot to replay.
-
-        Raises:
-            OledWebUIError: If the content cannot be located or rendered.
-        """
-        content_type = content.get("type")
-        params = content.get("params", {})
-        payload = content.get("payload", {})
-        if content_type == "image":
-            path = self._resolve_image_content(payload)
-            if path is None:
-                logger.warning(
-                    "content_refresh_missing_file",
-                    file=str(payload.get("file", "")),
-                )
-                return
-            await self.send_image(
-                path,
-                rotation=int(params.get("rotation", 0)),
-                fit=str(params.get("fit", "contain")),
-            )
-        elif content_type == "color":
-            await self.send_color(str(payload.get("color", "000000")))
-        elif content_type == "text":
-            font_name = payload.get("font_name")
-            await self.send_text(
-                text=str(payload.get("text", "")),
-                font_size=int(payload.get("font_size", 48)),
-                color=str(payload.get("color", "ffffff")),
-                background=str(payload.get("background", "000000")),
-                align=str(payload.get("align", "center")),
-                valign=str(payload.get("valign", "middle")),
-                padding=int(payload.get("padding", 20)),
-                rotation=int(params.get("rotation", 0)),
-                font_name=str(font_name) if font_name else None,
-            )
 
     # ------------------------------------------------------------------
     # Keepalive
@@ -745,8 +494,8 @@ class DisplayService:
         """Periodically resend the last frame so the panel keeps showing it.
 
         The panel falls back to its built-in logo after ~2-3 seconds without
-        frames; video playback refreshes the panel by itself, so resends are
-        skipped while a video is playing.
+        frames; scene playback refreshes the panel by itself, so resends are
+        skipped while a scene is running.
         """
         while not self._keepalive_stop.is_set():
             try:
@@ -758,7 +507,7 @@ class DisplayService:
             except TimeoutError:
                 pass
 
-            if self._video_state["playing"] or self._scene_state["running"]:
+            if self._scene_state["running"]:
                 continue
             if self._last_frame is None or self._last_frame_size is None:
                 continue
@@ -772,168 +521,6 @@ class DisplayService:
                 logger.warning("keepalive_send_failed", error=str(exc))
 
     # ------------------------------------------------------------------
-    # Video playback
-    # ------------------------------------------------------------------
-
-    async def play_video(
-        self,
-        video_path: Path,
-        fps: int = 30,
-        loop: bool = False,
-        rotation: int = 0,
-        fit: str = "contain",
-    ) -> None:
-        """Start streaming a video file to the display in the background.
-
-        Brightness and JPEG quality are taken from the global display
-        settings at the moment playback starts (frames are pre-extracted).
-
-        Args:
-            video_path: Video file readable by ffmpeg.
-            fps: Target frames per second (1-60).
-            loop: Restart playback when the file ends.
-            rotation: Extra rotation in degrees.
-            fit: Fit mode (applied before encoding).
-
-        Raises:
-            ValidationError: If a video is already playing.
-        """
-        self.require_connection()
-        await self.stop_scene()
-        ensure_ffmpeg()
-        if self._video_task is not None and not self._video_task.done():
-            raise ValidationError("A video is already playing")
-
-        self._restore_frame = None
-        self._resume_content = None
-        self._video_params = {
-            "path": str(video_path),
-            "fps": fps,
-            "loop": loop,
-            "rotation": rotation,
-            "fit": fit,
-        }
-        self._video_stop.clear()
-        self._video_state = {
-            "playing": True,
-            "preparing": True,
-            "file": video_path.name,
-            "loop": loop,
-            "fps": fps,
-            "frames_sent": 0,
-        }
-        self._video_task = asyncio.create_task(
-            self._video_loop(video_path, fps, loop, rotation, fit)
-        )
-        self._bg_tasks.add(self._video_task)
-        self._video_task.add_done_callback(self._bg_tasks.discard)
-        await self._bus.publish(
-            "video", {"playing": True, "file": video_path.name, "loop": loop}
-        )
-        logger.info("video_started", file=video_path.name, fps=fps, loop=loop)
-
-    async def stop_video(self) -> None:
-        """Stop the running video playback, if any."""
-        task = self._video_task
-        if task is None or task.done():
-            return
-        self._video_stop.set()
-        self._video_params = None
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-        self._video_state["playing"] = False
-        await self._bus.publish("video", {"playing": False})
-        logger.info("video_stopped")
-
-    async def _video_loop(
-        self,
-        path: Path,
-        fps: int,
-        loop: bool,
-        rotation: int,
-        fit: str,
-    ) -> None:
-        """Prepare panel-ready JPEG frames once, then stream the files.
-
-        All image processing (fit, rotation, brightness, JPEG encoding)
-        happens in a single ffmpeg pass before playback starts; the
-        streaming loop only reads encoded files and pushes them over USB,
-        keeping per-frame CPU cost near zero.
-
-        Args:
-            path: Video file readable by ffmpeg.
-            fps: Target frames per second.
-            loop: Restart playback when the file ends.
-            rotation: User rotation in degrees.
-            fit: Fit mode applied during extraction.
-        """
-        handshake = self.require_connection()
-        width = handshake.resolution.width
-        height = handshake.resolution.height
-        frame_interval = 1.0 / fps
-        frames_dir = Path(tempfile.mkdtemp(prefix="oled_video_"))
-        try:
-            frames = await asyncio.to_thread(
-                extract_video_frames,
-                path,
-                frames_dir,
-                fps,
-                width,
-                height,
-                fit,
-                rotation,
-                self._display_settings.brightness,
-                self._display_settings.quality,
-                self._video_stop,
-            )
-            self._video_state["preparing"] = False
-            self._bus.publish_soon("video", dict(self._video_state))
-            last_progress = time.monotonic()
-            while not self._video_stop.is_set():
-                for frame_path in frames:
-                    if self._video_stop.is_set():
-                        break
-                    start = time.perf_counter()
-                    payload = await asyncio.to_thread(frame_path.read_bytes)
-                    await self._send_payload(
-                        payload, width, height, throttle_preview=True
-                    )
-                    self._video_state["frames_sent"] += 1
-
-                    # Periodic state push so the UI keeps the playback
-                    # status and frame counter current.
-                    now = time.monotonic()
-                    if now - last_progress >= 1.0:
-                        last_progress = now
-                        self._bus.publish_soon("video", dict(self._video_state))
-
-                    elapsed = time.perf_counter() - start
-                    sleep_time = frame_interval - elapsed
-                    if sleep_time > 0:
-                        await asyncio.sleep(sleep_time)
-                if not loop:
-                    break
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning("video_failed", error=str(exc))
-            await self._bus.publish("error", {"source": "video", "error": str(exc)})
-        finally:
-            self._video_state["playing"] = False
-            self._video_state["preparing"] = False
-            self._video_params = None
-            await self._bus.publish(
-                "video",
-                {
-                    "playing": False,
-                    "file": path.name,
-                    "frames_sent": self._video_state["frames_sent"],
-                },
-            )
-            await asyncio.to_thread(shutil.rmtree, frames_dir, True)
-
-    # ------------------------------------------------------------------
     # Scene playback
     # ------------------------------------------------------------------
 
@@ -945,19 +532,17 @@ class DisplayService:
     ) -> dict[str, Any]:
         """Start rendering a scene to the display in the background.
 
-        Starts a fresh scene, replacing any previously running one; video
-        playback is stopped first.
+        Starts a fresh scene, replacing any previously running one.
 
         Args:
             document: Validated scene document with resolved asset paths.
-            scene_id: Scene identifier for state and preset saving.
+            scene_id: Scene identifier for state tracking.
             scene_name: Human-readable scene name.
 
         Returns:
             The scene state snapshot.
         """
         handshake = self.require_connection()
-        await self.stop_video()
         await self._stop_scene_task()
 
         renderer = SceneRenderer(
@@ -1063,7 +648,7 @@ class DisplayService:
 
     @property
     def last_content(self) -> dict[str, Any] | None:
-        """Description of the last applied content, for preset saving."""
+        """Description of the last applied content, for screen restore."""
         return self._last_content
 
     def status(self) -> dict[str, Any]:
@@ -1075,7 +660,6 @@ class DisplayService:
             "device": device,
             "resolution": {"width": panel_width, "height": panel_height},
             "settings": self.display_settings(),
-            "video": dict(self._video_state),
             "scene": dict(self._scene_state),
             "has_frame": self.get_preview() is not None,
             "last_content": self._last_content,

@@ -11,8 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
 from oled_webui.config import Settings
 from oled_webui.services.content_state import (
     content_state_path,
@@ -71,8 +69,10 @@ def test_save_none_removes_file(tmp_path: Path) -> None:
     assert not path.exists()
 
 
-async def test_restore_color_snapshot(tmp_path: Path, fake_lcd: list) -> None:
-    """A persisted color snapshot is re-rendered after connect."""
+async def test_restore_legacy_snapshot_returns_false(
+    tmp_path: Path, fake_lcd: list
+) -> None:
+    """Snapshots of removed content types are ignored, not restored."""
     settings = Settings(data_dir=tmp_path / "data")
     settings.ensure_dirs()
     save_content_state(
@@ -81,40 +81,11 @@ async def test_restore_color_snapshot(tmp_path: Path, fake_lcd: list) -> None:
     display = await _connected_display(settings)
 
     restored = await restore_last_content(display, SceneService(settings), settings)
+    state = display.status()["scene"]
     await display.shutdown()
 
-    assert restored is True
-    assert display.last_content == {
-        "type": "color",
-        "params": {},
-        "payload": {"color": "ff0000"},
-    }
-    assert len(fake_lcd) > 0
-
-
-async def test_restore_image_snapshot(tmp_path: Path, fake_lcd: list) -> None:
-    """A persisted image snapshot is re-rendered from its source file."""
-    settings = Settings(data_dir=tmp_path / "data")
-    settings.ensure_dirs()
-    image_path = settings.uploads_dir / "shot.png"
-    Image.new("RGB", (64, 32), "#123456").save(image_path)
-    save_content_state(
-        content_state_path(settings),
-        {
-            "type": "image",
-            "params": {"rotation": 0, "fit": "contain"},
-            "payload": {"file": image_path.name, "path": str(image_path)},
-        },
-    )
-    display = await _connected_display(settings)
-
-    restored = await restore_last_content(display, SceneService(settings), settings)
-    await display.shutdown()
-
-    assert restored is True
-    assert display.last_content is not None
-    assert display.last_content["type"] == "image"
-    assert len(fake_lcd) > 0
+    assert restored is False
+    assert state["running"] is False
 
 
 async def test_restore_scene_restarts_scene(tmp_path: Path, fake_lcd: list) -> None:

@@ -8,12 +8,9 @@ import { useArgbStore } from '../argb/store'
 import type {
   DisplaySettings,
   LastContent,
-  Preset,
-  RenderOptions,
   SceneInfo,
   SceneState,
   StatusData,
-  TextRequest,
 } from '../api'
 
 interface StoreState {
@@ -21,12 +18,10 @@ interface StoreState {
   device: StatusData['device']
   resolution: StatusData['resolution']
   settings: DisplaySettings
-  video: StatusData['video']
   scene: SceneState
   hasFrame: boolean
   lastContent: LastContent | null
   frameTs: number
-  presets: Preset[]
   scenes: SceneInfo[]
   fonts: string[]
   error: string | null
@@ -53,12 +48,10 @@ const state = reactive<StoreState>({
     quality: 95,
     blank_on_display_off: false,
   },
-  video: { playing: false, preparing: false, file: null, loop: false, fps: 0, frames_sent: 0 },
   scene: { ...NO_SCENE },
   hasFrame: false,
   lastContent: null,
   frameTs: Date.now(),
-  presets: [],
   scenes: [],
   fonts: [],
   error: null,
@@ -70,7 +63,6 @@ function applyStatus(status: StatusData): void {
   state.device = status.device
   state.resolution = status.resolution
   state.settings = status.settings
-  state.video = status.video
   state.scene = status.scene
   state.hasFrame = status.has_frame
   state.lastContent = status.last_content
@@ -113,7 +105,7 @@ function handleSseEvent(event: MessageEvent): void {
     void refreshStatus()
     return
   }
-  if (event.type === 'video' || event.type === 'display_settings') {
+  if (event.type === 'display_settings') {
     void refreshStatus()
     return
   }
@@ -147,7 +139,6 @@ function startSse(): void {
     'connection',
     'frame_updated',
     'display_settings',
-    'video',
     'scene',
     'argb',
     'error',
@@ -180,7 +171,7 @@ async function wrap(action: () => Promise<void>): Promise<boolean> {
 const actions = {
   async init(): Promise<void> {
     await refreshStatus()
-    await Promise.all([actions.loadPresets(), actions.loadFonts(), actions.loadScenes()])
+    await Promise.all([actions.loadFonts(), actions.loadScenes()])
     startSse()
   },
 
@@ -205,24 +196,6 @@ const actions = {
     })
   },
 
-  async sendColor(color: string): Promise<boolean> {
-    return wrap(async () => {
-      await API.sendColor(color)
-    })
-  },
-
-  async sendText(req: TextRequest): Promise<boolean> {
-    return wrap(async () => {
-      await API.sendText(req)
-    })
-  },
-
-  async uploadImage(file: File, opts: RenderOptions): Promise<boolean> {
-    return wrap(async () => {
-      await API.uploadImage(file, opts)
-    })
-  },
-
   async powerOff(): Promise<boolean> {
     return wrap(() => API.powerOff().then(() => undefined))
   },
@@ -233,23 +206,6 @@ const actions = {
 
   async runTest(delay: number): Promise<boolean> {
     return wrap(() => API.runTest(delay).then(() => undefined))
-  },
-
-  async startVideo(
-    file: File,
-    fps: number,
-    loop: boolean,
-    opts: RenderOptions,
-  ): Promise<boolean> {
-    return wrap(async () => {
-      state.video = await API.startVideo(file, fps, loop, opts)
-    })
-  },
-
-  async stopVideo(): Promise<boolean> {
-    return wrap(async () => {
-      state.video = await API.stopVideo()
-    })
   },
 
   async loadScenes(): Promise<void> {
@@ -280,34 +236,6 @@ const actions = {
         state.scene = { ...NO_SCENE }
       }
       await actions.loadScenes()
-    })
-  },
-
-  async loadPresets(): Promise<void> {
-    try {
-      state.presets = (await API.listPresets()).presets
-    } catch {
-      state.presets = []
-    }
-  },
-
-  async saveCurrent(name: string): Promise<boolean> {
-    return wrap(async () => {
-      await API.saveCurrentPreset(name)
-      await actions.loadPresets()
-    })
-  },
-
-  async applyPreset(id: string): Promise<boolean> {
-    return wrap(async () => {
-      await API.applyPreset(id)
-    })
-  },
-
-  async deletePreset(id: string): Promise<boolean> {
-    return wrap(async () => {
-      await API.deletePreset(id)
-      await actions.loadPresets()
     })
   },
 
