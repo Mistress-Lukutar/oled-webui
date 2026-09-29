@@ -26,13 +26,33 @@ const { state } = store
 let geometry: Map<string, DeviceGeometry> = new Map()
 let allCells: Cell[] = []
 
-// Resize gesture base: box and scale at drag start (uniform-scale mapping).
-const baseBoxes = new Map<string, { box: WidgetBox; scale: number }>()
+// Gesture base: box, scale and position at gesture start. The stage
+// passes absolute deltas from the start point, so both move and the
+// uniform-scale mapping of resize are computed against this snapshot.
+const baseBoxes = new Map<
+  string,
+  { box: WidgetBox; scale: number; x: number; y: number }
+>()
 
 let paint: { mode: 'add' | 'remove' } | null = null
 
 function clampScale(value: number): number {
   return Math.min(5, Math.max(0.2, value))
+}
+
+/** Snapshot a device as the base for the active gesture (once). */
+function ensureBase(id: string): void {
+  if (baseBoxes.has(id)) return
+  const geo = geometry.get(id)
+  const device = state.layout.devices.find((item) => item.id === id)
+  if (geo !== undefined && device !== undefined) {
+    baseBoxes.set(id, {
+      box: deviceBox(geo),
+      scale: device.scale,
+      x: device.x,
+      y: device.y,
+    })
+  }
 }
 
 // ----------------------------------------------------------------------
@@ -65,22 +85,24 @@ const adapter: StageAdapter = {
 
   dragStart(ids: string[]): void {
     baseBoxes.clear()
-    for (const id of ids) {
-      const geo = geometry.get(id)
-      const device = state.layout.devices.find((item) => item.id === id)
-      if (geo !== undefined && device !== undefined) {
-        baseBoxes.set(id, { box: deviceBox(geo), scale: device.scale })
-      }
-    }
+    for (const id of ids) ensureBase(id)
   },
 
   moveBy(ids: string[], dx: number, dy: number): void {
-    store.actions.moveDevicesBy(ids, dx, dy)
+    // dx/dy are absolute from the drag start, so place each device at
+    // its snapshotted origin plus the delta (not incrementally).
+    for (const id of ids) {
+      const base = baseBoxes.get(id)
+      if (base !== undefined) {
+        store.actions.updateDevice(id, { x: base.x + dx, y: base.y + dy })
+      }
+    }
   },
 
   resizeTo(id: string, box: WidgetBox): void {
     // Devices scale uniformly: map the resized width back onto `scale`,
     // keeping the device center anchored.
+    ensureBase(id)
     const device = state.layout.devices.find((item) => item.id === id)
     const base = baseBoxes.get(id)
     if (device === undefined || base === undefined || base.box.w <= 0) return
