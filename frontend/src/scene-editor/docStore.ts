@@ -377,6 +377,11 @@ const WIDGET_DEFAULTS: Record<string, Record<string, unknown>> = {
     path: '',
     fit: 'contain',
   },
+  shape: {
+    type: 'shape',
+    shape: 'rect',
+    style: { fill_color: '#2244CC', stroke_width: 0 },
+  },
 }
 
 const WIDGET_SIZES: Record<string, [number, number, number, number]> = {
@@ -385,6 +390,7 @@ const WIDGET_SIZES: Record<string, [number, number, number, number]> = {
   ring: [-45, -45, 90, 90],
   graph: [-100, -40, 200, 80],
   image: [-32, -32, 64, 64],
+  shape: [-80, -40, 160, 80],
 }
 
 /** Insert a new widget of the given type centered on the viewport. */
@@ -413,6 +419,29 @@ function addWidget(type: string, center: { x: number; y: number }): void {
       )
       const last = images[images.length - 1]
       if (last !== undefined) entry['path'] = `assets/${last}`
+    }
+    widgets.push(entry as EntryRaw)
+    doc.widgets = widgets
+  })
+  if (newIndex >= 0) setSelection([newIndex])
+}
+
+/** Insert a new widget of the given type with an explicit box. */
+function addWidgetRect(
+  type: string,
+  rect: [number, number, number, number],
+  extra: Record<string, unknown> = {},
+): void {
+  const defaults = WIDGET_DEFAULTS[type]
+  if (defaults === undefined) return
+  let newIndex = -1
+  mutate((doc) => {
+    const widgets = doc.widgets ?? []
+    newIndex = widgets.length
+    const entry: Record<string, unknown> = {
+      ...JSON.parse(JSON.stringify(defaults)),
+      ...extra,
+      rect: [Math.round(rect[0]), Math.round(rect[1]), Math.round(rect[2]), Math.round(rect[3])],
     }
     widgets.push(entry as EntryRaw)
     doc.widgets = widgets
@@ -466,6 +495,7 @@ export const editor = {
   setEntryField,
   updateWidget,
   addWidget,
+  addWidgetRect,
   toggleLock,
   isLockedIndex,
 }

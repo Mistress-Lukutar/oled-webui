@@ -216,8 +216,23 @@ class ImageWidget(WidgetBase):
     style: ImageStyle = Field(default_factory=lambda: ImageStyle())
 
 
+class ShapeWidget(WidgetBase):
+    """Static geometric shape painted with the universal paint block.
+
+    ``rect`` fills with paint fill, rounds corners by ``style.radius``;
+    ``ellipse`` fits the rect; ``line`` runs along the rect diagonal and
+    ignores the fill and corner radius.
+    """
+
+    type: Literal["shape"]
+    shape: Literal["rect", "ellipse", "line"] = Field(
+        "rect", description="Shape kind: rect, ellipse or diagonal line"
+    )
+    style: CorneredPaint = Field(default_factory=lambda: CorneredPaint())
+
+
 Widget = Annotated[
-    TextWidget | BarWidget | RingWidget | GraphWidget | ImageWidget,
+    TextWidget | BarWidget | RingWidget | GraphWidget | ImageWidget | ShapeWidget,
     Field(discriminator="type"),
 ]
 

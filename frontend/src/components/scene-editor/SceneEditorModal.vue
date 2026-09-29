@@ -60,12 +60,27 @@ const ADD_BUTTONS = [
   { type: 'ring', label: '◯', title: 'Add ring widget (R)' },
   { type: 'graph', label: '∿', title: 'Add graph widget (G)' },
   { type: 'image', label: '▣', title: 'Add image widget (I)' },
+  { type: 'shape', label: '▭', title: 'Add shape widget (S)' },
 ] as const
+
+const DRAW_TOOLS = [
+  { kind: 'rect', label: '▭', title: 'Draw rectangle (drag on canvas)' },
+  { kind: 'ellipse', label: '◯', title: 'Draw ellipse (drag on canvas)' },
+  { kind: 'line', label: '╱', title: 'Draw diagonal line (drag on canvas)' },
+] as const
+
+// Armed shape-drawing tool; Esc or a second click disarms it.
+const drawTool = ref<'rect' | 'ellipse' | 'line' | null>(null)
+
+function toggleDrawTool(kind: 'rect' | 'ellipse' | 'line'): void {
+  drawTool.value = drawTool.value === kind ? null : kind
+}
 
 const helpVisible = ref(false)
 
 const SHORTCUTS: Array<[string, string]> = [
-  ['T / B / R / G / I', 'Add text / bar / ring / graph / image widget'],
+  ['T / B / R / G / I / S', 'Add text / bar / ring / graph / image / shape widget'],
+  ['▭ ◯ ╱ tool + drag', 'Draw a shape on the canvas (Shift = square, Esc = off)'],
   ['Click / Shift+click', 'Select / extend selection'],
   ['Drag on empty canvas', 'Marquee selection'],
   ['Drag selection', 'Move (Shift = 45° axes, Alt disables snapping)'],
@@ -78,7 +93,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Space + drag / middle drag', 'Pan the viewport'],
   ['Mouse wheel', 'Zoom'],
   ['Ctrl+S', 'Save'],
-  ['Esc', 'Deselect / close editor'],
+  ['Esc', 'Exit draw tool / deselect / close editor'],
 ]
 
 function addWidget(type: string): void {
@@ -232,6 +247,10 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   if (event.key === 'Escape') {
+    if (drawTool.value !== null) {
+      drawTool.value = null
+      return
+    }
     if (state.selection.length > 0 && !isTypingTarget(event.target)) {
       editor.setSelection([])
       return
@@ -254,6 +273,7 @@ function onKeydown(event: KeyboardEvent): void {
       r: 'ring',
       g: 'graph',
       i: 'image',
+      s: 'shape',
     }
     const type = addKeys[event.key.toLowerCase()]
     if (type !== undefined) {
@@ -300,6 +320,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             @click="addWidget(btn.type)"
           >
             {{ btn.label }}
+          </button>
+          <span class="seg-divider"></span>
+          <button
+            v-for="tool in DRAW_TOOLS"
+            :key="tool.kind"
+            class="seg-btn add-btn"
+            :class="{ on: drawTool === tool.kind }"
+            :title="tool.title"
+            @click="toggleDrawTool(tool.kind)"
+          >
+            {{ tool.label }}
           </button>
         </div>
         <span class="spacer"></span>
@@ -356,7 +387,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               v-if="state.viewMode === 'design' || state.viewMode === 'split'"
               class="viewport-wrap"
             >
-              <EditorCanvas />
+            <EditorCanvas :draw-shape="drawTool" />
               <div
                 v-if="previewUrl !== null"
                 class="frame-preview"
@@ -510,6 +541,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .add-seg .add-btn:hover {
   color: var(--accent);
+}
+
+.seg-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 3px;
+  background: var(--border);
 }
 
 .spacer {

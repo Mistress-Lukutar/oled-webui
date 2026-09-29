@@ -124,12 +124,23 @@ export interface ImageWidgetRaw extends BaseFields {
   style?: ImageStyle
 }
 
+export type ShapeKind = 'rect' | 'ellipse' | 'line'
+
+export interface ShapeStyle extends FillSpec, StrokeSpec, CornerSpec {}
+
+export interface ShapeWidgetRaw extends BaseFields {
+  type: 'shape'
+  shape?: ShapeKind
+  style?: ShapeStyle
+}
+
 export type WidgetRaw =
   | TextWidgetRaw
   | BarWidgetRaw
   | RingWidgetRaw
   | GraphWidgetRaw
   | ImageWidgetRaw
+  | ShapeWidgetRaw
 
 /** A `use:` entry referencing a reusable component. */
 export interface ComponentInstanceRaw extends BaseFields {
@@ -157,7 +168,7 @@ export interface SceneDocumentRaw {
   [key: string]: unknown
 }
 
-export const WIDGET_TYPES = ['text', 'bar', 'ring', 'graph', 'image'] as const
+export const WIDGET_TYPES = ['text', 'bar', 'ring', 'graph', 'image', 'shape'] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 
 export const EASINGS = [
@@ -224,6 +235,7 @@ const WIDGET_KEYS: Record<WidgetType, Set<string>> = {
   ring: new Set(['source', 'style']),
   graph: new Set(['source', 'history', 'style']),
   image: new Set(['path', 'fit', 'scale']),
+  shape: new Set(['shape', 'style']),
 }
 
 const STYLE_KEYS = new Set([
@@ -286,6 +298,9 @@ export function entryLabel(entry: EntryRaw, index: number): string {
   if (type === 'image' && typeof entry['path'] === 'string') {
     return `image · ${String(entry['path']).slice(0, 24)}`
   }
+  if (type === 'shape' && typeof entry['shape'] === 'string') {
+    return `shape · ${entry['shape']}`
+  }
   return type
 }
 
@@ -346,6 +361,11 @@ export const PAINT_SLOTS: Record<string, PaintSlotConfig> = {
     stroke: { label: 'Frame', align: true },
     corners: true,
   },
+  shape: {
+    fill: { label: 'Fill' },
+    stroke: { label: 'Outline', align: true },
+    corners: true,
+  },
 }
 
 /** Type-specific style keys editable on a multi-selection of one type. */
@@ -355,6 +375,7 @@ export const EXTRA_STYLE_KEYS: Record<string, string[]> = {
   ring: ['start_angle', 'sweep'],
   graph: ['scale_max'],
   image: [],
+  shape: [],
 }
 
 /**

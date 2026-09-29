@@ -14,7 +14,7 @@ import pytest
 
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.loader import load_scene
-from oled_webui.scene.schema import BarWidget, RingWidget, TextWidget
+from oled_webui.scene.schema import BarWidget, RingWidget, ShapeWidget, TextWidget
 
 
 def _write(tmp_path: Path, relative: str, content: str) -> Path:
@@ -243,3 +243,28 @@ def test_locked_instance_override_propagates(tmp_path: Path) -> None:
     document = load_scene(scene_path)
     assert len(document.widgets) == 1
     assert document.widgets[0].locked is True
+
+
+def test_load_shape_widget(tmp_path: Path) -> None:
+    """A shape widget loads with its paint style and kind."""
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        widgets:
+          - type: shape
+            shape: rect
+            rect: [0, 0, 100, 50]
+            style:
+              fill_color: "#FF0000"
+              stroke_color: "#00FF00"
+              stroke_width: 2
+              radius: 4
+        """,
+    )
+    document = load_scene(scene_path)
+    widget = document.widgets[0]
+    assert isinstance(widget, ShapeWidget)
+    assert widget.shape == "rect"
+    assert widget.style.fill_color == "#FF0000"
+    assert widget.style.radius == 4

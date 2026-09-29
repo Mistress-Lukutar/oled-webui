@@ -18,12 +18,14 @@ from oled_webui.scene.schema import (
     AnimateSpec,
     BarStyle,
     BarWidget,
+    CorneredPaint,
     GraphStyle,
     GraphWidget,
     ImageStyle,
     ImageWidget,
     RingStyle,
     RingWidget,
+    ShapeWidget,
     TextStyle,
     TextWidget,
 )
@@ -34,6 +36,7 @@ from oled_webui.scene.widgets import (
     render_graph,
     render_image,
     render_ring,
+    render_shape,
     render_text,
 )
 
@@ -381,3 +384,36 @@ def test_render_image_rounds_corners(tmp_path) -> None:
     render_image(layer, rect, widget, opacity=1.0, rotation=0.0)
     assert layer.load()[10, 10][3] == 0  # corner masked away
     assert layer.load()[30, 20][3] == 255  # center stays opaque
+
+
+def _shape_widget(shape: str, **style_kwargs: object) -> ShapeWidget:
+    style = CorneredPaint(**style_kwargs)
+    return ShapeWidget(type="shape", rect=(0, 0, 60, 30), shape=shape, style=style)  # type: ignore[arg-type]
+
+
+def test_render_shape_rect_fill_and_stroke() -> None:
+    """A rect paints its fill under the aligned inside stroke."""
+    image, draw = _scratch()
+    render_shape(draw, (0, 0, 60, 30), _shape_widget("rect", fill_color="#FF0000", stroke_color="#0000FF", stroke_width=2))
+
+    assert image.getpixel((30, 15)) == (255, 0, 0, 255)  # interior fill
+    assert image.getpixel((0, 0)) == (0, 0, 255, 255)  # inside stroke edge
+
+
+def test_render_shape_ellipse_fill_center_only() -> None:
+    """An ellipse fills the center and leaves corners transparent."""
+    image, draw = _scratch()
+    render_shape(draw, (0, 0, 60, 30), _shape_widget("ellipse", fill_color="#00FF00", stroke_width=0))
+
+    assert image.getpixel((30, 15)) == (0, 255, 0, 255)
+    assert image.getpixel((0, 0))[3] == 0
+
+
+def test_render_shape_line_ignores_fill() -> None:
+    """A line draws the diagonal stroke only; fill never appears."""
+    image, draw = _scratch()
+    render_shape(draw, (0, 0, 60, 30), _shape_widget("line", fill_color="#FF0000", stroke_color="#FFFFFF", stroke_width=3))
+
+    assert image.getpixel((0, 0)) == (255, 255, 255, 255)
+    assert image.getpixel((59, 29)) == (255, 255, 255, 255)
+    assert image.getpixel((5, 15))[3] == 0  # off-diagonal stays empty

@@ -144,6 +144,68 @@ function drawBar(
   }
 }
 
+function drawShape(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  widget: Record<string, unknown>,
+): void {
+  const style = (widget['style'] ?? {}) as Record<string, unknown>
+  const kind = (widget['shape'] ?? 'rect') as 'rect' | 'ellipse' | 'line'
+  const fillColor = cssColor(style['fill_color'] as string, '#2244CC')
+  const strokeColor = cssColor(style['stroke_color'] as string, '#888888')
+  const fillOn = style['fill'] !== false
+  const border = typeof style['stroke_width'] === 'number' ? style['stroke_width'] : 0
+  const align = (style['stroke_align'] ?? 'inside') as 'center' | 'inside' | 'outside'
+  const radius = typeof style['radius'] === 'number' ? style['radius'] : 0
+
+  if (kind === 'line') {
+    if (border > 0) {
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = border
+      ctx.lineCap = 'butt'
+      ctx.beginPath()
+      ctx.moveTo(0, 0)
+      ctx.lineTo(w - 1, h - 1)
+      ctx.stroke()
+    }
+    return
+  }
+
+  if (fillOn) {
+    ctx.fillStyle = fillColor
+    ctx.beginPath()
+    if (kind === 'ellipse') {
+      ctx.ellipse(w / 2, h / 2, Math.max(0, w / 2 - 1), Math.max(0, h / 2 - 1), 0, 0, Math.PI * 2)
+    } else {
+      roundedRect(ctx, 0, 0, w, h, radius)
+    }
+    ctx.fill()
+  }
+  if (border > 0) {
+    // Mirror the PIL bbox shift in render_shape for stroke_align.
+    const out = align === 'center' ? Math.floor(border / 2) : align === 'outside' ? border : 0
+    const inset = border / 2 - out
+    ctx.strokeStyle = strokeColor
+    ctx.lineWidth = border
+    ctx.beginPath()
+    if (kind === 'ellipse') {
+      ctx.ellipse(
+        w / 2,
+        h / 2,
+        Math.max(0, w / 2 - 1 + inset),
+        Math.max(0, h / 2 - 1 + inset),
+        0,
+        0,
+        Math.PI * 2,
+      )
+    } else {
+      roundedRect(ctx, inset, inset, w - 2 * inset, h - 2 * inset, radius)
+    }
+    ctx.stroke()
+  }
+}
+
 function drawRing(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -588,6 +650,7 @@ export function drawScene(opts: DrawSceneOptions): void {
       else if (type === 'ring') drawRing(c, w, h, entry.value01, widgetRecord)
       else if (type === 'graph') drawGraph(c, w, h, entry.history, widgetRecord)
       else if (type === 'text') drawText(c, w, h, entry.text, widgetRecord, sceneId)
+      else if (type === 'shape') drawShape(c, w, h, widgetRecord)
     }
 
     const rotation = entry.rotation

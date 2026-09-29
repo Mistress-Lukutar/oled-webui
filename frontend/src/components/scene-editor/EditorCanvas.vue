@@ -7,7 +7,8 @@
  */
 import { computed, ref, watch, watchEffect } from 'vue'
 import CanvasStage from '../canvas/CanvasStage.vue'
-import { unionBox } from '../../canvas/geometry'
+import { snapBox, unionBox } from '../../canvas/geometry'
+import { SNAP_THRESHOLD } from '../../canvas/stage'
 import type { StageAdapter, StageBox } from '../../canvas/stage'
 import type { WidgetBox } from '../../canvas/geometry'
 import { useDisplayStore } from '../../composables/useDisplayStore'
@@ -18,8 +19,10 @@ import type { EvalEntry } from '../../scene-editor/runtime'
 import { createImageCache, drawScene } from '../../scene-editor/render/draw'
 import { ensureFont } from '../../scene-editor/render/fonts'
 import { isComponentInstance } from '../../scene-editor/types'
-import type { EntryRaw, SceneDocumentRaw } from '../../scene-editor/types'
+import type { EntryRaw, SceneDocumentRaw, ShapeKind } from '../../scene-editor/types'
 import { viewState } from '../../scene-editor/viewState'
+
+const props = defineProps<{ drawShape?: ShapeKind | null }>()
 
 const { state: appState } = useDisplayStore()
 const { state } = editor
@@ -155,6 +158,46 @@ function moveRawBy(index: number, dx: number, dy: number, origin: DragOrigin): v
 }
 
 // ----------------------------------------------------------------------
+// Draw-shape tool: dragging on the canvas creates a shape widget with
+// the dragged box. Uses the stage's custom-gesture hooks, so the tool
+// takes precedence over selection/marquee while armed.
+// ----------------------------------------------------------------------
+
+const ghostRect = ref<WidgetBox | null>(null)
+let drawStart: { x: number; y: number } | null = null
+
+function normalizedRect(
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  square: boolean,
+): WidgetBox {
+  let w = current.x - start.x
+  let h = current.y - start.y
+  if (square) {
+    const size = Math.max(Math.abs(w), Math.abs(h))
+    w = Math.sign(w) * size
+    h = Math.sign(h) * size
+  }
+  return {
+    x: Math.min(start.x, start.x + w),
+    y: Math.min(start.y, start.y + h),
+    w: Math.abs(w),
+    h: Math.abs(h),
+  }
+}
+
+function snapGhost(box: WidgetBox): WidgetBox {
+  const snapped = snapBox(
+    box,
+    boxes.value.map((info) => info.box),
+    panelWidth.value,
+    panelHeight.value,
+    SNAP_THRESHOLD / Math.max(0.05, viewState.zoom),
+  )
+  return { ...box, x: snapped.x, y: snapped.y }
+}
+
+// ----------------------------------------------------------------------
 // Stage adapter
 // ----------------------------------------------------------------------
 
@@ -243,6 +286,33 @@ const adapter: StageAdapter = {
   endBatch(): void {
     editor.endBatch()
   },
+
+  pointerDown(x: number, y: number): boolean {
+    if (props.drawShape === null || props.drawShape === undefined) return false
+    drawStart = { x, y }
+    ghostRect.value = null
+    editor.setSelection([])
+    return true
+  },
+
+  pointerMove(x: number, y: number, event: PointerEvent): void {
+    if (drawStart === null || props.drawShape === null || props.drawShape === undefined) return
+    const box = normalizedRect(drawStart, { x, y }, event.shiftKey)
+    ghostRect.value = box.w >= 1 || box.h >= 1 ? snapGhost(box) : box
+  },
+
+  pointerUp(x: number, y: number, event: PointerEvent): void {
+    if (drawStart === null || props.drawShape === null || props.drawShape === undefined) return
+    const kind = props.drawShape
+    const box = snapGhost(normalizedRect(drawStart, { x, y }, event.shiftKey))
+    drawStart = null
+    ghostRect.value = null
+    if (box.w >= 1 && box.h >= 1) {
+      editor.addWidgetRect('shape', [box.x, box.y, Math.round(box.w), Math.round(box.h)], {
+        shape: kind,
+      })
+    }
+  },
 }
 
 // Publish the view state for other panels (widget insertion).
@@ -287,6 +357,20 @@ function drawContent(
     showGrid: true,
     gridPixelSize: 20,
   })
+  // In-progress shape ghost: dashed outline plus translucent fill.
+  const ghost = ghostRect.value
+  if (ghost !== null && ghost.w >= 1 && ghost.h >= 1) {
+    ctx.save()
+    ctx.globalAlpha = 0.35
+    ctx.fillStyle = '#35c98e'
+    ctx.fillRect(ghost.x, ghost.y, ghost.w, ghost.h)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#35c98e'
+    ctx.lineWidth = 1
+    ctx.setLineDash([4, 3])
+    ctx.strokeRect(ghost.x + 0.5, ghost.y + 0.5, ghost.w, ghost.h)
+    ctx.restore()
+  }
 }
 </script>
 

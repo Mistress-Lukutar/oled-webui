@@ -2,8 +2,8 @@
 File:   widgets.py
 Brief:  Pillow renderers for scene widgets: bar, text, ring, graph, image.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.4.0
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from oled_webui.scene.schema import (
     GraphWidget,
     ImageWidget,
     RingWidget,
+    ShapeWidget,
     TextWidget,
 )
 
@@ -251,6 +252,72 @@ def render_bar(
                 radius=min(radius, w // 2),
                 fill=parse_color(style.progress_color),
             )
+
+def render_shape(
+    draw: ImageDraw.ImageDraw,
+    rect: tuple[int, int, int, int],
+    widget: ShapeWidget,
+) -> None:
+    """Draw a static geometric shape into the local widget box.
+
+    Rect and ellipse use the universal paint block (fill, stroke with
+    alignment, corner radius); a line runs along the rect diagonal and
+    uses only the stroke.
+
+    Args:
+        draw: Target draw context (local coordinates).
+        rect: Local widget box (0-based).
+        widget: Shape widget with style.
+    """
+    x, y, w, h = rect
+    style = widget.style
+    radius = min(style.radius, w // 2, h // 2)
+    x1, y1 = x + w - 1, y + h - 1
+
+    if widget.shape == "line":
+        if style.stroke_width:
+            draw.line((x, y, x1, y1), fill=parse_color(style.stroke_color), width=style.stroke_width)
+        else:
+            draw.line((x, y, x1, y1), fill=parse_color(style.stroke_color))
+        return
+
+    if widget.shape == "ellipse":
+        if style.fill:
+            draw.ellipse((x, y, x1, y1), fill=parse_color(style.fill_color))
+        if style.stroke_width:
+            # PIL ellipse outlines grow inward from the bbox; shift the
+            # bbox outward so the stroke sits inside, across, or outside
+            # the shape edge (same idiom as render_bar).
+            out = 0
+            if style.stroke_align == "center":
+                out = style.stroke_width // 2
+            elif style.stroke_align == "outside":
+                out = style.stroke_width
+            draw.ellipse(
+                (x - out, y - out, x1 + out, y1 + out),
+                outline=parse_color(style.stroke_color),
+                width=style.stroke_width,
+            )
+        return
+
+    if style.fill:
+        draw.rounded_rectangle(
+            (x, y, x1, y1),
+            radius=radius,
+            fill=parse_color(style.fill_color),
+        )
+    if style.stroke_width:
+        out = 0
+        if style.stroke_align == "center":
+            out = style.stroke_width // 2
+        elif style.stroke_align == "outside":
+            out = style.stroke_width
+        draw.rounded_rectangle(
+            (x - out, y - out, x1 + out, y1 + out),
+            radius=radius,
+            outline=parse_color(style.stroke_color),
+            width=style.stroke_width,
+        )
 
 def render_ring(
     draw: ImageDraw.ImageDraw,

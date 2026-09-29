@@ -410,6 +410,19 @@ const dataSourceList = [...DATA_SOURCES]
             />
           </div>
         </template>
+        <template v-else-if="widgetType === 'shape'">
+          <div class="field">
+            <label>shape</label>
+            <select
+              :value="(entry['shape'] as string | undefined) ?? 'rect'"
+              @change="setField('shape', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="rect">Rectangle</option>
+              <option value="ellipse">Ellipse</option>
+              <option value="line">Line (diagonal)</option>
+            </select>
+          </div>
+        </template>
         <template v-else>
           <div class="field">
             <label>source</label>

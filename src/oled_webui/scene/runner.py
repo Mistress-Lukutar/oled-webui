@@ -26,6 +26,7 @@ from oled_webui.scene.schema import (
     ImageWidget,
     RingWidget,
     SceneDocument,
+    ShapeWidget,
     TextWidget,
     Widget,
 )
@@ -38,6 +39,7 @@ from oled_webui.scene.widgets import (
     render_graph,
     render_image,
     render_ring,
+    render_shape,
     render_text,
 )
 from oled_webui.services.frame_builder import FrameBuilder
@@ -569,6 +571,8 @@ class SceneRenderer:
             render_graph(draw, local, item.runtime.history, widget)
         elif isinstance(widget, TextWidget):
             render_text(scratch, local, item.text, widget)
+        elif isinstance(widget, ShapeWidget):
+            render_shape(draw, local, widget)
         else:  # pragma: no cover - schema limits widget types
             raise SceneError(f"Unsupported widget type: {type(widget).__name__}")
 
