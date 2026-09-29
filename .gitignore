@@ -13,6 +13,9 @@ data/
 # Node
 frontend/node_modules/
 
+# GUI-test evidence artifacts
+gui-test-screenshots/
+
 # Environment
 .env
 .zcode
