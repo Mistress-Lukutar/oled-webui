@@ -81,3 +81,9 @@ class SaveSceneRequest(BaseModel):
 
     yaml: str = Field(..., min_length=1, max_length=200_000)
     name: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class DeviceYamlRequest(BaseModel):
+    """Save ARGB device definition YAML source request."""
+
+    yaml: str = Field(..., min_length=1, max_length=200_000)

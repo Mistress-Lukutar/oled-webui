@@ -84,6 +84,11 @@ class Settings(BaseSettings):
         return self.data_dir / "argb"
 
     @property
+    def argb_devices_dir(self) -> Path:
+        """Directory holding ARGB device definition YAML files."""
+        return self.argb_dir / "devices"
+
+    @property
     def presets_dir(self) -> Path:
         """Directory holding preset JSON files and their assets."""
         return self.data_dir / "presets"
@@ -117,6 +122,7 @@ class Settings(BaseSettings):
             self.fonts_dir,
             self.scenes_dir,
             self.argb_dir,
+            self.argb_devices_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

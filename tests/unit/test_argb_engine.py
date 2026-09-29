@@ -21,6 +21,10 @@ from oled_webui.argb.schema import (
 
 WHITE = (255, 255, 255)
 
+# LED counts recorded by the _strip factory; the engine takes them as an
+# argument now that instances reference device definitions.
+_COUNTS: dict[str, int] = {}
+
 
 def _layout(
     devices: list[ArgbDevice],
@@ -32,10 +36,18 @@ def _layout(
 
 
 def _strip(device_id: str, header_id: str, leds: int) -> ArgbDevice:
-    """Make a strip device."""
+    """Make a strip device and remember its LED count."""
+    _COUNTS[device_id] = leds
     return ArgbDevice(
-        id=device_id, type="strip", header_id=header_id, leds=leds, x=0, y=0
+        id=device_id, device="test-def", header_id=header_id, x=0, y=0
     )
+
+
+def _render(
+    layout: ArgbLayout, t: float = 0.0, samples: dict[str, float] | None = None
+) -> dict[str, bytearray]:
+    """Render with the counts recorded so far."""
+    return render_layout(layout, t, samples, dict(_COUNTS))
 
 
 def _fill_layer(color: str, **kwargs: Any) -> ArgbLayer:
@@ -61,7 +73,7 @@ def test_fill_covers_chain() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [_fill_layer("#102030")],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert len(buf) == 12
     assert _pixel(buf, 0) == (0x10, 0x20, 0x30)
     assert _pixel(buf, 3) == (0x10, 0x20, 0x30)
@@ -75,7 +87,7 @@ def test_two_devices_share_header_offset() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1", "d2"])],
         [_fill_layer("#010203")],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert len(buf) == 15
     for led in range(5):
         assert _pixel(buf, led) == (1, 2, 3)
@@ -99,7 +111,7 @@ def test_alpha_blending_makes_purple() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [_fill_layer("#0000FF"), comet],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     # Head sits at chain index 0 at t=0: 0.5*255 red over 0 blue.
     assert _pixel(buf, 0) == (128, 0, 128)
     # Untouched pixels stay pure blue.
@@ -116,7 +128,7 @@ def test_mask_limits_fill() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert _pixel(buf, 0) == (0, 0, 0)
     assert _pixel(buf, 1) == WHITE
     assert _pixel(buf, 2) == WHITE
@@ -131,7 +143,7 @@ def test_disabled_layer_is_skipped() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert _pixel(buf, 0) == (0, 0, 0)
 
 
@@ -174,10 +186,10 @@ def test_gradient_scrolls_over_time() -> None:
             )
         ],
     )
-    a = render_layout(static, 0.0)["h1"]
-    b = render_layout(scrolling, 0.0)["h1"]
+    a = _render(static, 0.0)["h1"]
+    b = _render(scrolling, 0.0)["h1"]
     assert _pixel(a, 4) == _pixel(b, 4)
-    c = render_layout(scrolling, 2.0)["h1"]
+    c = _render(scrolling, 2.0)["h1"]
     # Half a tile (4 LEDs) of scroll shift: LED 4 now shows LED 0's color.
     assert _pixel(c, 4) == _pixel(a, 0)
 
@@ -190,7 +202,7 @@ def test_rainbow_has_full_cycle() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert _pixel(buf, 0) == _pixel(buf, 8)
 
 
@@ -210,8 +222,8 @@ def test_breathing_alpha_modulates() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    at_min = render_layout(layout, 0.0)["h1"]
-    at_peak = render_layout(layout, 1.0)["h1"]
+    at_min = _render(layout, 0.0)["h1"]
+    at_peak = _render(layout, 1.0)["h1"]
     assert _pixel(at_min, 0) == (0, 0, 0)
     assert _pixel(at_peak, 0)[0] > 250
 
@@ -234,11 +246,11 @@ def test_comet_loop_wraps_with_transparent_gap() -> None:
         [comet],
     )
     # t=2 -> head at index 0 (it starts one tail-length before the chain).
-    buf = render_layout(layout, 2.0)["h1"]
+    buf = _render(layout, 2.0)["h1"]
     assert _pixel(buf, 0) == (0, 255, 0)
     assert _pixel(buf, 5) == (0, 0, 0)
     # t=4 -> head at index 2, tail fading across 1 and 0.
-    later = render_layout(layout, 4.0)["h1"]
+    later = _render(layout, 4.0)["h1"]
     assert _pixel(later, 2) == (0, 255, 0)
     assert _pixel(later, 1) == (0, 170, 0)
     assert _pixel(later, 0) == (0, 85, 0)
@@ -262,8 +274,8 @@ def test_comet_bounce_reflects() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [comet],
     )
-    start = render_layout(layout, 0.0)["h1"]
-    far = render_layout(layout, 2.0)["h1"]
+    start = _render(layout, 0.0)["h1"]
+    far = _render(layout, 2.0)["h1"]
     assert _pixel(start, 0) == WHITE
     assert _pixel(far, 4) == WHITE
 
@@ -279,7 +291,7 @@ def test_scanner_covers_width() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert _pixel(buf, 0) == (255, 0, 255)
     assert _pixel(buf, 1) == (255, 0, 255)
     assert _pixel(buf, 2) == (0, 0, 0)
@@ -303,7 +315,7 @@ def test_meter_bar_maps_value() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0, {"cpu.percent": 50.0})["h1"]
+    buf = _render(layout, 0.0, {"cpu.percent": 50.0})["h1"]
     assert _pixel(buf, 1) == (0, 255, 0)
     assert _pixel(buf, 2) == (0, 0, 0)
 
@@ -316,7 +328,7 @@ def test_meter_missing_source_is_transparent() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0, {})["h1"]
+    buf = _render(layout, 0.0, {})["h1"]
     assert _pixel(buf, 0) == (0, 0, 0)
 
 
@@ -327,7 +339,7 @@ def test_zone_size_pads_with_black() -> None:
         [ArgbHeader(id="h1", zone_index=0, size=5, devices=["d1"])],
         [_fill_layer("#0A0B0C")],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     assert len(buf) == 15
     assert _pixel(buf, 1) == (0x0A, 0x0B, 0x0C)
     assert _pixel(buf, 4) == (0, 0, 0)
@@ -348,7 +360,7 @@ def test_gradient_spans_across_devices() -> None:
         [ArgbHeader(id="h1", zone_index=0, devices=["d1", "d2"])],
         [layer],
     )
-    buf = render_layout(layout, 0.0)["h1"]
+    buf = _render(layout, 0.0)["h1"]
     # Chain indices continue across devices: device 2 picks up at 50 % of
     # the tile instead of restarting dark.
     assert _pixel(buf, 2) == (128, 128, 128)

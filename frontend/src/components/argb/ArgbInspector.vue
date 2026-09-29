@@ -11,12 +11,6 @@ import { DATA_SOURCES } from '../../scene-editor/types'
 const store = useArgbStore()
 const { state } = store
 
-const DEVICE_TYPES = [
-  { value: 'strip', label: 'Strip' },
-  { value: 'ring', label: 'Ring (fan)' },
-  { value: 'ring_stripes', label: 'Ring + stripes (fan)' },
-] as const
-
 const EFFECT_TYPES: { value: EffectType; label: string }[] = [
   { value: 'fill', label: 'Fill' },
   { value: 'gradient', label: 'Gradient' },
@@ -78,13 +72,13 @@ function updateDeviceField(field: keyof ArgbDevice, value: unknown): void {
   if (device !== null) store.actions.updateDevice(device.id, { [field]: value })
 }
 
-function onDeviceTypeChange(event: Event): void {
+function onDeviceDefinitionChange(event: Event): void {
   const device = selectedDevice.value
   if (device === null) return
-  const type = (event.target as HTMLSelectElement).value as ArgbDevice['type']
-  const patch: Partial<ArgbDevice> = { type }
-  if (type === 'ring_stripes' && device.leds_side === 0) patch.leds_side = 8
-  store.actions.updateDevice(device.id, patch)
+  store.actions.changeDeviceDefinition(
+    device.id,
+    (event.target as HTMLSelectElement).value,
+  )
 }
 
 function upd(field: string, value: unknown): void {
@@ -224,10 +218,10 @@ function onZoneChange(event: Event): void {
       </label>
 
       <label class="field">
-        <span>Type</span>
-        <select :value="selectedDevice.type" @change="onDeviceTypeChange">
-          <option v-for="t in DEVICE_TYPES" :key="t.value" :value="t.value">
-            {{ t.label }}
+        <span>Definition</span>
+        <select :value="selectedDevice.device" @change="onDeviceDefinitionChange">
+          <option v-for="item in state.library" :key="item.id" :value="item.id">
+            {{ item.name }} — {{ item.leds }} LEDs
           </option>
         </select>
       </label>
@@ -257,29 +251,6 @@ function onZoneChange(event: Event): void {
             ▶
           </button>
         </div>
-      </div>
-
-      <div class="grid2">
-        <label class="field">
-          <span>{{ selectedDevice.type === 'ring_stripes' ? 'Ring LEDs' : 'LEDs' }}</span>
-          <input
-            type="number"
-            min="1"
-            max="512"
-            :value="selectedDevice.leds"
-            @input="updateDeviceField('leds', num($event))"
-          />
-        </label>
-        <label v-if="selectedDevice.type === 'ring_stripes'" class="field">
-          <span>Stripe LEDs</span>
-          <input
-            type="number"
-            min="1"
-            max="256"
-            :value="selectedDevice.leds_side"
-            @input="updateDeviceField('leds_side', num($event))"
-          />
-        </label>
       </div>
 
       <p v-if="chainUsage !== null" class="hint" :class="{ warn: chainUsage.capacity !== null && chainUsage.used > chainUsage.capacity }">

@@ -10,12 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
+import yaml
 
+from oled_webui.argb.devices import (
+    ArgbDeviceDefinition,
+    DeviceLibrary,
+    validate_with_library,
+)
 from oled_webui.argb.engine import apply_brightness, render_layout
 from oled_webui.argb.schema import ArgbLayout, default_layout
 from oled_webui.exceptions import ArgbError, DeviceNotConnectedError
@@ -47,10 +52,14 @@ class ArgbService:
         self._bus = bus
         self._client = OpenRgbClient(settings.openrgb_host, settings.openrgb_port)
         self._lock = asyncio.Lock()
-        self._layout_file = settings.argb_dir / "layout.json"
+        self._layout_file = settings.argb_dir / "layout.yaml"
+        # The library is loaded first: stored layout instances reference
+        # device definitions, and seeding must happen before that load.
+        self._library = DeviceLibrary(settings.argb_dir / "devices")
         self._layout: ArgbLayout = self._load_layout()
         self._run_task: asyncio.Task[None] | None = None
         self._run_layout: ArgbLayout | None = None
+        self._run_counts: dict[str, int] = {}
         self._last_sent: dict[str, bytes] = {}
         self._frames_sent = 0
         self._last_poll = float("-inf")
@@ -79,8 +88,13 @@ class ArgbService:
             ArgbError: If the layout cannot be written to disk.
         """
         try:
-            payload = json.dumps(layout.model_dump(), indent=2)
-            tmp = self._layout_file.with_suffix(".json.tmp")
+            payload = yaml.safe_dump(
+                layout.model_dump(mode="json"),
+                sort_keys=False,
+                allow_unicode=True,
+                width=100,
+            )
+            tmp = self._layout_file.with_name(self._layout_file.name + ".tmp")
             tmp.write_text(payload, encoding="utf-8")
             tmp.replace(self._layout_file)
         except OSError as exc:
@@ -97,12 +111,124 @@ class ArgbService:
         """
         try:
             text = self._layout_file.read_text(encoding="utf-8")
-            return ArgbLayout.model_validate_json(text)
+            data = yaml.safe_load(text)
+            if isinstance(data, dict):
+                return ArgbLayout.model_validate(data)
+            logger.warning("argb_layout_load_failed", error="layout is not a mapping")
         except FileNotFoundError:
             pass
         except Exception as exc:
             logger.warning("argb_layout_load_failed", error=str(exc))
         return default_layout()
+
+    def validate_layout(self, layout: ArgbLayout) -> dict[str, int]:
+        """Check the layout against the device definition library.
+
+        Args:
+            layout: Layout to validate.
+
+        Returns:
+            Resolved LED counts per device instance id.
+
+        Raises:
+            ArgbError: If a definition is unknown, a chain overflows or a
+                mask run leaves the device's LED range.
+        """
+        return validate_with_library(layout, self._library)
+
+    # ------------------------------------------------------------------
+    # Device definition library
+    # ------------------------------------------------------------------
+
+    @property
+    def library(self) -> DeviceLibrary:
+        """The device definition library."""
+        return self._library
+
+    def list_device_definitions(self) -> list[dict[str, Any]]:
+        """Summaries of every installed definition plus layout usage."""
+        used: dict[str, list[str]] = {}
+        for device in self._layout.devices:
+            used.setdefault(device.device, []).append(device.id)
+        return [
+            {
+                "id": definition.id,
+                "name": definition.name,
+                "leds": definition.led_count,
+                "used_by": used.get(definition.id, []),
+                "definition": definition.model_dump(mode="json"),
+            }
+            for definition in self._library.list()
+        ]
+
+    def get_device_definition(self, device_id: str) -> dict[str, Any]:
+        """Raw YAML text and parsed form of one definition.
+
+        Raises:
+            ArgbError: If the id is unknown.
+        """
+        definition = self._library.get(device_id)
+        if definition is None:
+            raise ArgbError(f"Unknown device definition: {device_id!r}")
+        return {
+            "yaml": self._library.source(device_id),
+            "definition": definition.model_dump(mode="json"),
+        }
+
+    async def save_device_definition(
+        self, yaml_text: str, expected_id: str | None = None
+    ) -> dict[str, Any]:
+        """Validate and store a definition, then re-check the layout.
+
+        Args:
+            yaml_text: Raw YAML source of the definition.
+            expected_id: When given, the definition id must match it.
+
+        Returns:
+            The stored definition as a plain dict.
+
+        Raises:
+            ArgbError: On invalid YAML or id mismatch.
+        """
+        definition = self._library.save_yaml(yaml_text, expected_id)
+        await self._after_library_change()
+        return definition.model_dump(mode="json")
+
+    async def delete_device_definition(self, device_id: str) -> None:
+        """Remove a definition unless layout instances still reference it.
+
+        Raises:
+            ArgbError: If the definition is unknown or still in use.
+        """
+        used_by = [
+            device.id for device in self._layout.devices if device.device == device_id
+        ]
+        if used_by:
+            raise ArgbError(
+                f"Device definition {device_id!r} is used by layout devices: "
+                + ", ".join(used_by)
+            )
+        self._library.delete(device_id)
+        await self._after_library_change()
+
+    async def _after_library_change(self) -> None:
+        """Re-validate the stored layout after a definition changed.
+
+        A definition edit can change LED counts, so a running engine is
+        restarted with fresh counts; if the layout no longer validates,
+        the engine is stopped and the error surfaced on the bus.
+        """
+        try:
+            counts = validate_with_library(self._layout, self._library)
+        except ArgbError as exc:
+            if self.is_running:
+                await self.stop()
+                await self._bus.publish("error", {"source": "argb", "error": str(exc)})
+            await self._publish_status()
+            return
+        if self.is_running:
+            await self._restart_engine(counts)
+        await self._publish_status()
 
     # ------------------------------------------------------------------
     # OpenRGB connection
@@ -179,9 +305,13 @@ class ArgbService:
 
         Returns:
             Status snapshot after the restart.
+
+        Raises:
+            ArgbError: If the layout does not match the device library.
         """
+        counts = validate_with_library(layout, self._library)
         self.save_layout(layout)
-        await self._restart_engine()
+        await self._restart_engine(counts)
         await self._publish_status()
         return self.status()
 
@@ -206,8 +336,19 @@ class ArgbService:
         """Stop everything; called from the app lifespan."""
         await self.disconnect()
 
-    async def _restart_engine(self) -> None:
-        """Cancel any current loop and start a fresh one."""
+    async def _restart_engine(self, counts: dict[str, int] | None = None) -> None:
+        """Cancel any current loop and start a fresh one.
+
+        Args:
+            counts: Resolved LED counts; resolved from the library when
+                omitted.
+
+        Raises:
+            ArgbError: If counts were not given and the stored layout no
+                longer matches the device library.
+        """
+        if counts is None:
+            counts = validate_with_library(self._layout, self._library)
         old = self._run_task
         self._run_task = None
         if old is not None and not old.done():
@@ -215,16 +356,20 @@ class ArgbService:
             with contextlib.suppress(asyncio.CancelledError):
                 await old
         self._run_layout = self._layout
+        self._run_counts = counts
         self._last_sent = {}
         self._run_task = asyncio.get_running_loop().create_task(
-            self._engine_loop(self._layout)
+            self._engine_loop(self._layout, counts)
         )
 
-    async def _engine_loop(self, layout: ArgbLayout) -> None:
+    async def _engine_loop(
+        self, layout: ArgbLayout, counts: dict[str, int]
+    ) -> None:
         """Render the layout at its fps and push changed buffers to OpenRGB.
 
         Args:
             layout: Frozen layout snapshot for this run.
+            counts: Frozen LED counts matching this run's definitions.
         """
         interval = 1.0 / layout.fps
         lut = brightness_lut(layout.brightness)
@@ -240,7 +385,7 @@ class ArgbService:
                         await asyncio.to_thread(self._sources.poll)
                         self._samples = self._sources.snapshot()
                 buffers = await asyncio.to_thread(
-                    render_layout, layout, elapsed, self._samples
+                    render_layout, layout, elapsed, self._samples, counts
                 )
                 await self._dispatch(buffers, lut)
                 sleep_time = interval - (time.perf_counter() - start)
@@ -294,10 +439,14 @@ class ArgbService:
 
         Returns:
             Mapping of header id to a packed ``RGBRGB...`` hex string.
+
+        Raises:
+            ArgbError: If the layout does not match the device library.
         """
         if t is None:
             t = time.monotonic() % 3600.0
-        buffers = render_layout(layout, t, self._samples)
+        counts = validate_with_library(layout, self._library)
+        buffers = render_layout(layout, t, self._samples, counts)
         return {header_id: bytes(buf).hex() for header_id, buf in buffers.items()}
 
     def status(self) -> dict[str, Any]:

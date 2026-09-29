@@ -1,9 +1,8 @@
 /**
- * TypeScript mirror of the backend ARGB schema (argb/schema.py)
- * plus factory templates for editor objects.
+ * TypeScript mirror of the backend ARGB schema (argb/schema.py,
+ * argb/devices.py) plus factory templates for editor objects.
  */
 
-export type DeviceType = 'strip' | 'ring' | 'ring_stripes'
 export type EffectType =
   | 'fill'
   | 'gradient'
@@ -87,13 +86,99 @@ export type ArgbEffect =
   | ScannerEffect
   | MeterEffect
 
+// ---------------------------------------------------------------------------
+// Device definitions (argb/devices.py): one LED shape per LED, list order is
+// the LED index; decor is non-LED artwork drawn underneath the LEDs.
+// ---------------------------------------------------------------------------
+
+export interface LedRectShape {
+  type: 'rect'
+  rect: [number, number, number, number]
+  radius?: number
+  stroke_color?: string | null
+  stroke_width?: number
+}
+
+export interface LedCircleShape {
+  type: 'circle'
+  center: [number, number]
+  radius: number
+  stroke_color?: string | null
+  stroke_width?: number
+}
+
+export interface LedPolygonShape {
+  type: 'polygon'
+  points: [number, number][]
+  stroke_color?: string | null
+  stroke_width?: number
+}
+
+export type LedShape = LedRectShape | LedCircleShape | LedPolygonShape
+
+export interface DecorPaint {
+  fill: boolean
+  fill_color: string
+  stroke_color: string
+  stroke_width: number
+  stroke_align: 'center' | 'inside' | 'outside'
+  opacity: number
+}
+
+export interface DecorRectShape extends DecorPaint {
+  type: 'rect'
+  rect: [number, number, number, number]
+  radius?: number
+}
+
+export interface DecorCircleShape extends DecorPaint {
+  type: 'circle'
+  center: [number, number]
+  radius: number
+}
+
+export interface DecorPolygonShape extends DecorPaint {
+  type: 'polygon'
+  points: [number, number][]
+}
+
+export interface DecorPolylineShape {
+  type: 'polyline'
+  points: [number, number][]
+  stroke_color: string
+  stroke_width: number
+  opacity: number
+}
+
+export type DecorShape =
+  | DecorRectShape
+  | DecorCircleShape
+  | DecorPolygonShape
+  | DecorPolylineShape
+
+export interface DeviceDefinition {
+  id: string
+  name: string
+  size: [number, number] | null
+  leds: LedShape[]
+  decor: DecorShape[]
+}
+
+/** Library listing entry: summary plus the full parsed definition. */
+export interface DeviceSummary {
+  id: string
+  name: string
+  leds: number
+  used_by: string[]
+  definition: DeviceDefinition
+}
+
 export interface ArgbDevice {
   id: string
   name: string
-  type: DeviceType
+  /** Device definition id from the library. */
+  device: string
   header_id: string
-  leds: number
-  leds_side: number
   x: number
   y: number
   rotation: number
@@ -148,45 +233,28 @@ export interface ArgbStatus {
 export const WORKSPACE_WIDTH = 800
 export const WORKSPACE_HEIGHT = 500
 
-export function deviceTotalLeds(device: ArgbDevice): number {
-  return device.type === 'ring_stripes'
-    ? device.leds + 2 * device.leds_side
-    : device.leds
-}
-
 function uid(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`
 }
 
-/** Create a new device of the given type with sensible defaults. */
+/** Create a new device instance from a library definition. */
 export function makeDevice(
-  type: DeviceType,
+  definition: DeviceDefinition,
   headerId: string,
   x: number,
   y: number,
   ordinal: number,
 ): ArgbDevice {
-  const base = {
+  const base = definition.name || definition.id
+  return {
     id: uid('d'),
+    name: `${base} ${ordinal}`,
+    device: definition.id,
     header_id: headerId,
     x,
     y,
     rotation: 0,
     scale: 1,
-    leds_side: 0,
-  }
-  if (type === 'strip') {
-    return { ...base, type, name: `Strip ${ordinal}`, leds: 24 }
-  }
-  if (type === 'ring') {
-    return { ...base, type, name: `Fan ${ordinal}`, leds: 24 }
-  }
-  return {
-    ...base,
-    type,
-    name: `Dual-ring Fan ${ordinal}`,
-    leds: 12,
-    leds_side: 8,
   }
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Fullscreen ARGB designer modal (scene-editor conventions): toolbar,
- * Effects/Hardware side tabs, canvas or JSON source view, inspector and
+ * Effects/Hardware side tabs, canvas or YAML source view, inspector and
  * a statusbar with the OpenRGB connection controls. All state lives in
  * the argb store singleton, so opening/closing loses nothing.
  */
@@ -9,10 +9,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ArgbCanvas from './ArgbCanvas.vue'
 import ArgbHeaders from './ArgbHeaders.vue'
 import ArgbInspector from './ArgbInspector.vue'
-import ArgbJson from './ArgbJson.vue'
+import ArgbYaml from './ArgbYaml.vue'
 import ArgbLayers from './ArgbLayers.vue'
+import DeviceLibraryModal from './DeviceLibraryModal.vue'
 import { useArgbStore } from '../../argb/store'
-import type { DeviceType } from '../../argb/types'
 import { isTypingTarget } from '../../canvas/shortcuts'
 
 const emit = defineEmits<{ close: [] }>()
@@ -20,16 +20,12 @@ const emit = defineEmits<{ close: [] }>()
 const store = useArgbStore()
 const { state } = store
 
-type ViewMode = 'design' | 'json'
+type ViewMode = 'design' | 'yaml'
 const viewMode = ref<ViewMode>('design')
 const sideTab = ref<'effects' | 'hardware'>('effects')
 const helpVisible = ref(false)
-
-const ADD_BUTTONS: { type: DeviceType; label: string }[] = [
-  { type: 'strip', label: '+ Strip' },
-  { type: 'ring', label: '+ Ring' },
-  { type: 'ring_stripes', label: '+ Dual' },
-]
+const addMenuOpen = ref(false)
+const libraryOpen = ref(false)
 
 function requestClose(): void {
   if (state.dirty && !window.confirm('Discard unsaved changes?')) return
@@ -38,6 +34,11 @@ function requestClose(): void {
 
 async function save(): Promise<void> {
   await store.actions.save()
+}
+
+function addFromLibrary(definitionId: string): void {
+  addMenuOpen.value = false
+  store.actions.addDevice(definitionId)
 }
 
 const statusText = computed(() =>
@@ -96,12 +97,23 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onGlobalClick(event: MouseEvent): void {
+  if (!addMenuOpen.value) return
+  const wrapEl = addWrapEl.value
+  if (wrapEl !== null && event.target instanceof Node && wrapEl.contains(event.target)) return
+  addMenuOpen.value = false
+}
+
+const addWrapEl = ref<HTMLElement | null>(null)
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('click', onGlobalClick)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('click', onGlobalClick)
 })
 </script>
 
@@ -114,16 +126,26 @@ onBeforeUnmount(() => {
           :class="{ on: state.dirty }"
           :title="state.dirty ? 'Unsaved changes' : 'All changes saved'"
         />
-        <div class="seg add-seg">
-          <button
-            v-for="btn in ADD_BUTTONS"
-            :key="btn.type"
-            class="seg-btn add-btn"
-            :title="`Add ${btn.label.slice(2).trim()} device`"
-            @click="store.actions.addDevice(btn.type)"
-          >
-            {{ btn.label }}
-          </button>
+        <div ref="addWrapEl" class="add-wrap">
+          <button class="add-btn" @click="addMenuOpen = !addMenuOpen">+ Device ▾</button>
+          <div v-if="addMenuOpen" class="add-menu" @click.stop>
+            <button
+              v-for="item in state.library"
+              :key="item.id"
+              class="add-item"
+              :title="`${item.name} — ${item.leds} LEDs (${item.id}.yaml)`"
+              @click="addFromLibrary(item.id)"
+            >
+              <span class="add-name">{{ item.name }}</span>
+              <span class="add-leds">{{ item.leds }} LED</span>
+            </button>
+            <div v-if="state.library.length === 0" class="add-empty">
+              Library is empty
+            </div>
+            <button class="add-manage" @click="addMenuOpen = false; libraryOpen = true">
+              Manage library…
+            </button>
+          </div>
         </div>
 
         <span class="spacer" />
@@ -132,8 +154,8 @@ onBeforeUnmount(() => {
           <button class="seg-btn" :class="{ on: viewMode === 'design' }" @click="viewMode = 'design'">
             Design
           </button>
-          <button class="seg-btn" :class="{ on: viewMode === 'json' }" @click="viewMode = 'json'">
-            JSON
+          <button class="seg-btn" :class="{ on: viewMode === 'yaml' }" @click="viewMode = 'yaml'">
+            YAML
           </button>
         </div>
         <button class="icon-btn" :disabled="!store.canUndo()" title="Undo (Ctrl+Z)" @click="store.undo()">⟲</button>
@@ -160,7 +182,7 @@ onBeforeUnmount(() => {
         <div class="center">
           <div class="center-area">
             <ArgbCanvas v-if="viewMode === 'design'" />
-            <ArgbJson v-else />
+            <ArgbYaml v-else />
           </div>
           <div class="statusbar">
             <span
@@ -214,6 +236,8 @@ onBeforeUnmount(() => {
           </table>
         </div>
       </div>
+
+      <DeviceLibraryModal v-if="libraryOpen" @close="libraryOpen = false" />
     </div>
   </div>
 </template>
@@ -286,6 +310,77 @@ onBeforeUnmount(() => {
 .seg-btn.on {
   background: var(--accent-dim);
   color: #fff;
+}
+
+.add-wrap {
+  position: relative;
+  flex: none;
+}
+
+.add-btn {
+  padding: 6px 12px;
+}
+
+.add-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.add-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.add-item:hover {
+  background: var(--accent-dim);
+}
+
+.add-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-leds {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: none;
+}
+
+.add-empty {
+  padding: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.add-manage {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 7px 10px;
+  margin-top: 2px;
 }
 
 .spacer,

@@ -20,6 +20,7 @@ watchEffect(() => {
   const layout = state.layout
   const preview = state.preview
   const brightness = layout.brightness
+  const defs = new Map(state.library.map((item) => [item.id, item.definition]))
   const el = canvas.value
   if (el === null) return
   const ctx = el.getContext('2d')
@@ -27,6 +28,7 @@ watchEffect(() => {
   drawPreview(
     ctx,
     layout,
+    defs,
     preview,
     brightness,
     WORKSPACE_WIDTH,

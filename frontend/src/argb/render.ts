@@ -1,16 +1,15 @@
 /**
  * Workspace geometry and Canvas2D drawing for the ARGB editor.
- * Pure functions over the layout; the Vue component supplies pixels.
+ * Pure functions over the layout + device definition library; the Vue
+ * component supplies pixels. Device shapes come from their definition:
+ * decor is drawn with its own paint, LED shape fills carry the effect
+ * color of the matching LED index.
  */
 
-import type { ArgbDevice, ArgbLayout } from './types'
-import { deviceTotalLeds, WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from './types'
+import type { ArgbDevice, ArgbLayout, DecorShape, DeviceDefinition, LedShape } from './types'
+import { WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from './types'
+import { defBounds, defCenter, shapeCenter, shapeExtent } from './deviceDef'
 import type { WidgetBox } from '../canvas/geometry'
-
-/** LED cell pitch/size in workspace units at scale 1. */
-const PITCH = 16
-const CELL = 11
-const DOT = 5.5
 
 export interface Cell {
   /** Center in workspace coordinates. */
@@ -19,13 +18,14 @@ export interface Cell {
   /** Hit radius in workspace units. */
   r: number
   deviceId: string
-  /** Pixel index within the device. */
+  /** Pixel index within the device (LED list position). */
   index: number
-  shape: 'rect' | 'dot'
 }
 
 export interface DeviceGeometry {
   cells: Cell[]
+  /** Bounding box of the whole device incl. decor (world coordinates). */
+  bbox: WidgetBox
   cx: number
   cy: number
   radius: number
@@ -44,61 +44,62 @@ function rotate(x: number, y: number, cx: number, cy: number, deg: number): {
   return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
 }
 
-/** Compute LED cell centers for one device (local pixel order preserved). */
-export function deviceGeometry(device: ArgbDevice): DeviceGeometry {
+/** World-space geometry of one device instance. */
+export function deviceGeometry(
+  device: ArgbDevice,
+  def: DeviceDefinition | undefined,
+): DeviceGeometry {
   const cells: Cell[] = []
   const s = device.scale
-  const push = (
-    x: number,
-    y: number,
-    index: number,
-    shape: Cell['shape'],
-    r: number,
-  ): void => {
-    const p = rotate(x, y, device.x, device.y, device.rotation)
-    cells.push({ x: p.x, y: p.y, r, deviceId: device.id, index, shape })
+  if (def !== undefined) {
+    const center = defCenter(def)
+    def.leds.forEach((shape, index) => {
+      const local = shapeCenter(shape)
+      const p = rotate(
+        device.x + (local.x - center.x) * s,
+        device.y + (local.y - center.y) * s,
+        device.x,
+        device.y,
+        device.rotation,
+      )
+      cells.push({
+        x: p.x,
+        y: p.y,
+        r: shapeExtent(shape) * s + 2,
+        deviceId: device.id,
+        index,
+      })
+    })
   }
 
-  if (device.type === 'strip') {
-    const n = device.leds
-    const start = device.x - ((n - 1) * PITCH * s) / 2
-    for (let i = 0; i < n; i += 1) {
-      push(start + i * PITCH * s, device.y, i, 'rect', (CELL / 2) * s + 2)
-    }
-  } else if (device.type === 'ring') {
-    const n = device.leds
-    const radius = clampRingRadius(n, s)
-    for (let i = 0; i < n; i += 1) {
-      const angle = (device.rotation * Math.PI) / 180 + (i / n) * Math.PI * 2
-      push(
-        device.x + Math.cos(angle) * radius,
-        device.y + Math.sin(angle) * radius,
-        i,
-        'dot',
-        DOT * s + 3,
-      )
-    }
-  } else {
-    const n = device.leds
-    const side = device.leds_side
-    const radius = clampRingRadius(n, s)
-    for (let i = 0; i < n; i += 1) {
-      const angle = (device.rotation * Math.PI) / 180 + (i / n) * Math.PI * 2
-      push(
-        device.x + Math.cos(angle) * radius,
-        device.y + Math.sin(angle) * radius,
-        i,
-        'dot',
-        DOT * s + 3,
-      )
-    }
-    const stripeX = radius + 16 * s
-    for (const sign of [-1, 1] as const) {
-      const x = device.x + sign * stripeX
-      const start = device.y - ((side - 1) * PITCH * s) / 2
-      for (let i = 0; i < side; i += 1) {
-        push(x, start + i * PITCH * s, n + (sign === -1 ? i : side + i), 'rect', (CELL / 2) * s + 2)
-      }
+  // Bounding box: rotate the local design box around the device center.
+  let bbox: WidgetBox = { x: device.x - 20, y: device.y - 20, w: 40, h: 40 }
+  if (def !== undefined) {
+    const b = def.size !== null
+      ? { x: 0, y: 0, w: def.size[0], h: def.size[1] }
+      : defBounds(def)
+    const center = defCenter(def)
+    const corners = [
+      [b.x, b.y],
+      [b.x + b.w, b.y],
+      [b.x + b.w, b.y + b.h],
+      [b.x, b.y + b.h],
+    ].map(([lx, ly]) =>
+      rotate(
+        device.x + (lx - center.x) * s,
+        device.y + (ly - center.y) * s,
+        device.x,
+        device.y,
+        device.rotation,
+      ),
+    )
+    const xs = corners.map((p) => p.x)
+    const ys = corners.map((p) => p.y)
+    bbox = {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
     }
   }
 
@@ -106,16 +107,14 @@ export function deviceGeometry(device: ArgbDevice): DeviceGeometry {
   for (const cell of cells) {
     radius = Math.max(radius, Math.hypot(cell.x - device.x, cell.y - device.y))
   }
-  return { cells, cx: device.x, cy: device.y, radius: radius + 10 }
-}
-
-function clampRingRadius(leds: number, scale: number): number {
-  const natural = (leds * PITCH) / (2 * Math.PI)
-  return Math.min(Math.max(natural, 26), 84) * scale
+  return { cells, bbox, cx: device.x, cy: device.y, radius: radius + 10 }
 }
 
 /** Build the cell map for the whole layout plus header buffer offsets. */
-export function layoutGeometry(layout: ArgbLayout): {
+export function layoutGeometry(
+  layout: ArgbLayout,
+  defs: Map<string, DeviceDefinition>,
+): {
   byDevice: Map<string, DeviceGeometry>
   offsets: Map<string, number>
 } {
@@ -126,13 +125,15 @@ export function layoutGeometry(layout: ArgbLayout): {
     for (const id of header.devices) {
       const device = layout.devices.find((item) => item.id === id)
       if (device === undefined) continue
-      byDevice.set(id, deviceGeometry(device))
+      byDevice.set(id, deviceGeometry(device, defs.get(device.device)))
       offsets.set(id, offset)
-      offset += deviceTotalLeds(device)
+      offset += defs.get(device.device)?.leds.length ?? 0
     }
   }
   for (const device of layout.devices) {
-    if (!byDevice.has(device.id)) byDevice.set(device.id, deviceGeometry(device))
+    if (!byDevice.has(device.id)) {
+      byDevice.set(device.id, deviceGeometry(device, defs.get(device.device)))
+    }
   }
   return { byDevice, offsets }
 }
@@ -157,19 +158,9 @@ export function hitCell(
   return best
 }
 
-/** Tight axis-aligned bounding box of a device's LED cells. */
+/** Tight axis-aligned bounding box of a device (kept for stage boxes). */
 export function deviceBox(geo: DeviceGeometry): WidgetBox {
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const cell of geo.cells) {
-    minX = Math.min(minX, cell.x - cell.r)
-    minY = Math.min(minY, cell.y - cell.r)
-    maxX = Math.max(maxX, cell.x + cell.r)
-    maxY = Math.max(maxY, cell.y + cell.r)
-  }
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+  return geo.bbox
 }
 
 /** Convert '#RRGGBB[AA]' hex to a CSS color (falls back to dim gray). */
@@ -178,34 +169,132 @@ function cssColor(hex: string | undefined): string {
   return hex.startsWith('#') ? hex.slice(0, 7) : `#${hex.slice(0, 6)}`
 }
 
+// ---------------------------------------------------------------------------
+// Shape painting (under the device transform, definition coordinates).
+// ---------------------------------------------------------------------------
+
+function traceShape(
+  ctx: CanvasRenderingContext2D,
+  shape: LedShape | DecorShape,
+  inset = 0,
+): void {
+  ctx.beginPath()
+  if (shape.type === 'rect') {
+    const [x, y, w, h] = shape.rect
+    if (inset !== 0) {
+      ctx.roundRect(x + inset, y + inset, w - inset * 2, h - inset * 2, Math.max((shape.radius ?? 0) - inset, 0))
+    } else {
+      ctx.roundRect(x, y, w, h, shape.radius ?? 0)
+    }
+  } else if (shape.type === 'circle') {
+    ctx.arc(shape.center[0], shape.center[1], Math.max(shape.radius - inset, 0.1), 0, Math.PI * 2)
+  } else {
+    ctx.moveTo(shape.points[0][0], shape.points[0][1])
+    for (let i = 1; i < shape.points.length; i += 1) {
+      ctx.lineTo(shape.points[i][0], shape.points[i][1])
+    }
+    if (shape.type !== 'polyline') ctx.closePath()
+  }
+}
+
+function paintDecorShape(ctx: CanvasRenderingContext2D, shape: DecorShape): void {
+  ctx.globalAlpha = shape.opacity
+  traceShape(ctx, shape)
+  if (shape.type !== 'polyline') {
+    if (shape.fill) {
+      ctx.fillStyle = shape.fill_color
+      ctx.fill()
+    }
+    if (shape.stroke_width > 0) {
+      const inset =
+        shape.stroke_align === 'inside'
+          ? shape.stroke_width / 2
+          : shape.stroke_align === 'outside'
+            ? -shape.stroke_width / 2
+            : 0
+      if (inset !== 0 && (shape.type === 'rect' || shape.type === 'circle')) {
+        traceShape(ctx, shape, inset)
+      } else {
+        traceShape(ctx, shape)
+      }
+      ctx.strokeStyle = shape.stroke_color
+      ctx.lineWidth = shape.stroke_width
+      ctx.stroke()
+    }
+  } else if (shape.stroke_width > 0) {
+    ctx.strokeStyle = shape.stroke_color
+    ctx.lineWidth = shape.stroke_width
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.stroke()
+  }
+  ctx.globalAlpha = 1
+}
+
+function paintLedShape(
+  ctx: CanvasRenderingContext2D,
+  shape: LedShape,
+  fill: string,
+): void {
+  traceShape(ctx, shape)
+  ctx.fillStyle = fill
+  ctx.fill()
+  if (shape.stroke_color && (shape.stroke_width ?? 0) > 0) {
+    ctx.strokeStyle = shape.stroke_color
+    ctx.lineWidth = shape.stroke_width ?? 1
+    ctx.stroke()
+  }
+}
+
+/**
+ * Draw one device under the current transform context: decor first, then
+ * one shape per LED. `colorFor(index)` returns the LED fill or null for
+ * the dim "unlit" state; `dim(index)` extra-fades masked-out pixels.
+ */
+function drawDeviceShapes(
+  ctx: CanvasRenderingContext2D,
+  device: ArgbDevice,
+  def: DeviceDefinition,
+  colorFor: (index: number) => string | null,
+  dim: (index: number) => boolean,
+): void {
+  const s = device.scale
+  const center = defCenter(def)
+  ctx.save()
+  ctx.translate(device.x, device.y)
+  if (device.rotation !== 0) {
+    ctx.rotate((device.rotation * Math.PI) / 180)
+  }
+  ctx.scale(s, s)
+  ctx.translate(-center.x, -center.y)
+  for (const shape of def.decor) paintDecorShape(ctx, shape)
+  def.leds.forEach((shape, index) => {
+    const color = colorFor(index)
+    if (dim(index)) {
+      ctx.globalAlpha = 0.22
+      paintLedShape(ctx, shape, color ?? '#2b2b2b')
+      ctx.globalAlpha = 1
+      return
+    }
+    paintLedShape(ctx, shape, color ?? '#2b2b2b')
+  })
+  ctx.restore()
+}
+
 export interface DrawOptions {
   preview: Record<string, string>
   /** When painting, cells outside this layer's mask are dimmed. */
   maskCoverage: ((deviceId: string, index: number) => boolean) | null
 }
 
-/** Draw one LED cell in workspace space (transform applied by caller). */
-function drawCell(ctx: CanvasRenderingContext2D, cell: Cell, fill: string): void {
-  ctx.fillStyle = fill
-  if (cell.shape === 'rect') {
-    const half = CELL / 2
-    ctx.beginPath()
-    ctx.roundRect(cell.x - half, cell.y - half, CELL, CELL, 3)
-    ctx.fill()
-  } else {
-    ctx.beginPath()
-    ctx.arc(cell.x, cell.y, DOT, 0, Math.PI * 2)
-    ctx.fill()
-  }
-}
-
-/** Draw the full ARGB workspace: devices, live colors, selection, mask. */
+/** Draw the full ARGB workspace: devices, live colors, labels, mask. */
 export function drawWorkspace(
   ctx: CanvasRenderingContext2D,
   layout: ArgbLayout,
+  defs: Map<string, DeviceDefinition>,
   options: DrawOptions,
 ): void {
-  const { byDevice, offsets } = layoutGeometry(layout)
+  const { byDevice, offsets } = layoutGeometry(layout, defs)
   ctx.clearRect(0, 0, WORKSPACE_WIDTH, WORKSPACE_HEIGHT)
   ctx.fillStyle = '#101210'
   ctx.fillRect(0, 0, WORKSPACE_WIDTH, WORKSPACE_HEIGHT)
@@ -226,44 +315,41 @@ export function drawWorkspace(
 
   for (const device of layout.devices) {
     const geo = byDevice.get(device.id)
+    const def = defs.get(device.device)
     if (geo === undefined) continue
-    const buffer = options.preview[device.header_id]
-    const offset = offsets.get(device.id) ?? 0
 
-    if (device.type !== 'strip') {
-      // Faint guide circle behind ring fans.
-      ctx.strokeStyle = 'rgba(255,255,255,0.07)'
-      ctx.beginPath()
-      const ringRadius = clampRingRadius(device.leds, device.scale)
-      ctx.arc(device.x, device.y, ringRadius, 0, Math.PI * 2)
-      ctx.stroke()
-    }
-
-    for (const cell of geo.cells) {
-      let fill = '#2b2b2b'
-      if (buffer !== undefined) {
-        const base = (offset + cell.index) * 3
-        const hex = buffer.slice(base * 2, base * 2 + 6)
-        fill = cssColor(`#${hex}`)
-      }
-      if (options.maskCoverage !== null) {
-        const covered = options.maskCoverage(cell.deviceId, cell.index)
-        if (!covered) {
-          ctx.globalAlpha = 0.22
-          drawCell(ctx, cell, fill)
-          ctx.globalAlpha = 1
-          continue
-        }
-      }
-      drawCell(ctx, cell, fill)
+    if (def !== undefined) {
+      const buffer = options.preview[device.header_id]
+      const offset = offsets.get(device.id) ?? 0
+      drawDeviceShapes(
+        ctx,
+        device,
+        def,
+        (index) => {
+          if (buffer === undefined) return null
+          const base = (offset + index) * 3
+          return cssColor(`#${buffer.slice(base * 2, base * 2 + 6)}`)
+        },
+        (index) =>
+          options.maskCoverage !== null &&
+          !options.maskCoverage(device.id, index),
+      )
     }
 
     ctx.fillStyle = 'rgba(255,255,255,0.45)'
     ctx.font = '10px system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(device.name, device.x, device.y + (device.type === 'strip' ? 26 : clampRingRadius(device.leds, device.scale) + 26))
+    const labelY =
+      def === undefined ? device.y : geo.bbox.y + geo.bbox.h + 12
+    ctx.fillText(
+      def === undefined ? `${device.name} (missing ${device.device})` : device.name,
+      device.x,
+      labelY,
+    )
   }
 }
+
+/** Identity helper removed: device id is captured in the dim closure. */
 
 /**
  * Server preview buffers carry raw effect colors; the engine applies the
@@ -298,6 +384,7 @@ function shadedColor(
 export function drawPreview(
   ctx: CanvasRenderingContext2D,
   layout: ArgbLayout,
+  defs: Map<string, DeviceDefinition>,
   preview: Record<string, string>,
   brightness: number,
   width: number,
@@ -307,7 +394,7 @@ export function drawPreview(
   ctx.fillStyle = '#0b0d0b'
   ctx.fillRect(0, 0, width, height)
 
-  const { byDevice, offsets } = layoutGeometry(layout)
+  const { byDevice, offsets } = layoutGeometry(layout, defs)
   const scale = Math.min(width / WORKSPACE_WIDTH, height / WORKSPACE_HEIGHT)
   ctx.save()
   ctx.translate(
@@ -321,16 +408,20 @@ export function drawPreview(
 
   for (const device of layout.devices) {
     const geo = byDevice.get(device.id)
-    if (geo === undefined) continue
+    const def = defs.get(device.device)
+    if (geo === undefined || def === undefined) continue
     const buffer = preview[device.header_id]
     const offset = offsets.get(device.id) ?? 0
-    for (const cell of geo.cells) {
-      const fill =
+    drawDeviceShapes(
+      ctx,
+      device,
+      def,
+      (index) =>
         buffer !== undefined
-          ? shadedColor(buffer, (offset + cell.index) * 3, mult, cache)
-          : '#1c1f1c'
-      drawCell(ctx, cell, fill)
-    }
+          ? shadedColor(buffer, (offset + index) * 3, mult, cache)
+          : null,
+      () => false,
+    )
   }
   ctx.restore()
 }

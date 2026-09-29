@@ -1,0 +1,89 @@
+# Built-in ARGB device definition.
+# `leds` holds one shape per LED; the list position is the LED index used
+# by effects, masks and the header chain order. LED fills come from the
+# effect engine (shape outline is optional); `decor` is non-LED artwork
+# (case, housing, blades) drawn underneath the LEDs.
+id: strip
+name: LED Strip
+size: [403, 35]
+leds:
+- type: rect
+  rect: [12, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [28, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [44, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [60, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [76, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [92, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [108, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [124, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [140, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [156, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [172, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [188, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [204, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [220, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [236, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [252, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [268, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [284, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [300, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [316, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [332, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [348, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [364, 12, 11, 11]
+  radius: 2
+- type: rect
+  rect: [380, 12, 11, 11]
+  radius: 2
+decor:
+- type: rect
+  rect: [0, 0, 403, 35]
+  radius: 8
+  fill: true
+  fill_color: '#161616'
+  stroke_color: '#3a3a3a'
+  stroke_width: 2

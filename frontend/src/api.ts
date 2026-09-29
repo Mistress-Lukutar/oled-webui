@@ -2,7 +2,7 @@
  * Typed fetch wrapper and API endpoint functions.
  */
 
-import type { ArgbLayout, ArgbStatus } from './argb/types'
+import type { ArgbLayout, ArgbStatus, DeviceDefinition, DeviceSummary } from './argb/types'
 
 export interface Resolution {
   width: number
@@ -294,6 +294,23 @@ export const API = {
       body: JSON.stringify(layout),
     }),
   stopArgb: () => api<ArgbStatus>('/api/argb/stop', { method: 'POST' }),
+  listArgbDevices: () => api<{ devices: DeviceSummary[] }>('/api/argb/devices'),
+  getArgbDevice: (id: string) =>
+    api<{ yaml: string; definition: DeviceDefinition }>(`/api/argb/devices/${id}`),
+  createArgbDevice: (yaml: string) =>
+    api<{ definition: DeviceDefinition }>('/api/argb/devices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml }),
+    }),
+  updateArgbDevice: (id: string, yaml: string) =>
+    api<{ definition: DeviceDefinition }>(`/api/argb/devices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml }),
+    }),
+  deleteArgbDevice: (id: string) =>
+    api<{ deleted: string }>(`/api/argb/devices/${id}`, { method: 'DELETE' }),
   renderArgbPreview: (layout: ArgbLayout, t?: number) =>
     api<{ buffers: Record<string, string> }>(
       t === undefined ? '/api/argb/render_preview' : `/api/argb/render_preview?t=${t}`,

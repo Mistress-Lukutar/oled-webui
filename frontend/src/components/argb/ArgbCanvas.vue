@@ -17,10 +17,16 @@ import {
 } from '../../argb/render'
 import type { Cell, DeviceGeometry } from '../../argb/render'
 import { WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from '../../argb/types'
+import type { DeviceDefinition } from '../../argb/types'
 import { useArgbStore } from '../../argb/store'
 
 const store = useArgbStore()
 const { state } = store
+
+/** Definition lookup for geometry and drawing. */
+function defsMap(): Map<string, DeviceDefinition> {
+  return new Map(state.library.map((item) => [item.id, item.definition]))
+}
 
 // Workspace geometry from the last drawn frame, reused for hit-testing.
 let geometry: Map<string, DeviceGeometry> = new Map()
@@ -172,7 +178,8 @@ function applyPaint(cell: Cell): void {
 // ----------------------------------------------------------------------
 
 function drawContent(ctx: CanvasRenderingContext2D): void {
-  const geo = layoutGeometry(state.layout)
+  const defs = defsMap()
+  const geo = layoutGeometry(state.layout, defs)
   geometry = geo.byDevice
   allCells = [...geo.byDevice.values()].flatMap((item) => item.cells)
 
@@ -186,7 +193,7 @@ function drawContent(ctx: CanvasRenderingContext2D): void {
           store.maskCoverage(layer, deviceId)?.[index] ?? false
       : null
 
-  drawWorkspace(ctx, state.layout, {
+  drawWorkspace(ctx, state.layout, defs, {
     preview: state.preview,
     maskCoverage: state.maskLayerId !== null ? coverage : null,
   })

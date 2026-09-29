@@ -1,0 +1,158 @@
+# Built-in ARGB device definition.
+# `leds` holds one shape per LED; the list position is the LED index used
+# by effects, masks and the header chain order. LED fills come from the
+# effect engine (shape outline is optional); `decor` is non-LED artwork
+# (case, housing, blades) drawn underneath the LEDs.
+id: ring
+name: Ring Fan
+size: [140, 140]
+leds:
+- type: circle
+  center: [130, 70]
+  radius: 5.5
+- type: circle
+  center: [127.96, 85.53]
+  radius: 5.5
+- type: circle
+  center: [121.96, 100]
+  radius: 5.5
+- type: circle
+  center: [112.43, 112.43]
+  radius: 5.5
+- type: circle
+  center: [100, 121.96]
+  radius: 5.5
+- type: circle
+  center: [85.53, 127.96]
+  radius: 5.5
+- type: circle
+  center: [70, 130]
+  radius: 5.5
+- type: circle
+  center: [54.47, 127.96]
+  radius: 5.5
+- type: circle
+  center: [40, 121.96]
+  radius: 5.5
+- type: circle
+  center: [27.57, 112.43]
+  radius: 5.5
+- type: circle
+  center: [18.04, 100]
+  radius: 5.5
+- type: circle
+  center: [12.04, 85.53]
+  radius: 5.5
+- type: circle
+  center: [10, 70]
+  radius: 5.5
+- type: circle
+  center: [12.04, 54.47]
+  radius: 5.5
+- type: circle
+  center: [18.04, 40]
+  radius: 5.5
+- type: circle
+  center: [27.57, 27.57]
+  radius: 5.5
+- type: circle
+  center: [40, 18.04]
+  radius: 5.5
+- type: circle
+  center: [54.47, 12.04]
+  radius: 5.5
+- type: circle
+  center: [70, 10]
+  radius: 5.5
+- type: circle
+  center: [85.53, 12.04]
+  radius: 5.5
+- type: circle
+  center: [100, 18.04]
+  radius: 5.5
+- type: circle
+  center: [112.43, 27.57]
+  radius: 5.5
+- type: circle
+  center: [121.96, 40]
+  radius: 5.5
+- type: circle
+  center: [127.96, 54.47]
+  radius: 5.5
+decor:
+- type: polygon
+  points:
+  - [86, 70]
+  - [118.27, 96.37]
+  - [113.45, 103.72]
+  - [77.96, 83.88]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [79.98, 82.51]
+  - [79.48, 124.18]
+  - [70.73, 125]
+  - [64.11, 84.88]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [66.44, 85.6]
+  - [33.55, 111.19]
+  - [27.46, 104.86]
+  - [54.7, 74.67]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [55.58, 76.94]
+  - [15.07, 67.19]
+  - [16.22, 58.47]
+  - [56.81, 60.95]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [55.58, 63.06]
+  - [37.95, 25.3]
+  - [45.48, 20.77]
+  - [68.85, 54.04]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [66.44, 54.4]
+  - [84.97, 17.08]
+  - [93.21, 20.14]
+  - [81.76, 59.15]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: polygon
+  points:
+  - [79.98, 57.49]
+  - [120.71, 48.7]
+  - [123.45, 57.05]
+  - [85.81, 72.43]
+  fill: true
+  fill_color: '#1c1c1c'
+  stroke_width: 0
+- type: circle
+  center: [70, 70]
+  radius: 67
+  fill: false
+  stroke_color: '#3a3a3a'
+  stroke_width: 2
+- type: circle
+  center: [70, 70]
+  radius: 14
+  fill: true
+  fill_color: '#161616'
+  stroke_color: '#333333'
+  stroke_width: 1

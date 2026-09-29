@@ -13,7 +13,7 @@ from fastapi import APIRouter
 
 from oled_webui.argb.schema import ArgbLayout
 from oled_webui.dependencies import ArgbDep
-from oled_webui.models.schemas import StatusResponse
+from oled_webui.models.schemas import DeviceYamlRequest, StatusResponse
 
 router = APIRouter(prefix="/api/argb", tags=["argb"])
 
@@ -47,6 +47,7 @@ async def put_layout(
     layout: ArgbLayout, argb: ArgbDep, apply: bool = False
 ) -> StatusResponse:
     """Validate and store a layout; optionally start the engine with it."""
+    argb.validate_layout(layout)
     if apply:
         return StatusResponse(data=await argb.apply(layout))
     argb.save_layout(layout)
@@ -65,6 +66,41 @@ async def apply_layout(
 async def stop(argb: ArgbDep) -> StatusResponse:
     """Stop the running effect engine."""
     return StatusResponse(data=await argb.stop())
+
+
+@router.get("/devices", response_model=StatusResponse)
+async def list_devices(argb: ArgbDep) -> StatusResponse:
+    """List installed device definitions with their layout usage."""
+    return StatusResponse(data={"devices": argb.list_device_definitions()})
+
+
+@router.get("/devices/{device_id}", response_model=StatusResponse)
+async def get_device(device_id: str, argb: ArgbDep) -> StatusResponse:
+    """Return one device definition as raw YAML plus parsed form."""
+    return StatusResponse(data=argb.get_device_definition(device_id))
+
+
+@router.post("/devices", response_model=StatusResponse)
+async def create_device(body: DeviceYamlRequest, argb: ArgbDep) -> StatusResponse:
+    """Validate and install a new device definition from YAML source."""
+    definition = await argb.save_device_definition(body.yaml)
+    return StatusResponse(data={"definition": definition})
+
+
+@router.put("/devices/{device_id}", response_model=StatusResponse)
+async def update_device(
+    device_id: str, body: DeviceYamlRequest, argb: ArgbDep
+) -> StatusResponse:
+    """Validate and store an updated device definition."""
+    definition = await argb.save_device_definition(body.yaml, expected_id=device_id)
+    return StatusResponse(data={"definition": definition})
+
+
+@router.delete("/devices/{device_id}", response_model=StatusResponse)
+async def delete_device(device_id: str, argb: ArgbDep) -> StatusResponse:
+    """Remove a device definition; rejected while layout instances use it."""
+    await argb.delete_device_definition(device_id)
+    return StatusResponse(data={"deleted": device_id})
 
 
 @router.post("/render_preview", response_model=StatusResponse)

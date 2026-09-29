@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * JSON source view of the ARGB layout: valid JSON applies to the draft
+ * YAML source view of the ARGB layout: valid YAML applies to the draft
  * immediately (one undo snapshot per replace); parse errors strip below.
  * Schema-level errors surface when the layout is saved/applied.
  */
 import { ref, watch } from 'vue'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { ArgbLayout } from '../../argb/types'
 import { useArgbStore } from '../../argb/store'
 
@@ -16,7 +17,7 @@ const error = ref<string | null>(null)
 const focused = ref(false)
 
 function serialize(): string {
-  return JSON.stringify(state.layout, null, 2)
+  return stringifyYaml(state.layout, { lineWidth: 120 })
 }
 
 // Resync from the store (undo, external edits) unless the user is typing,
@@ -42,9 +43,9 @@ function looksLikeLayout(doc: unknown): doc is ArgbLayout {
 
 function onInput(): void {
   try {
-    const doc: unknown = JSON.parse(text.value)
+    const doc: unknown = parseYaml(text.value)
     if (!looksLikeLayout(doc)) {
-      error.value = 'Layout JSON must contain headers, devices and layers arrays.'
+      error.value = 'Layout YAML must contain headers, devices and layers lists.'
       return
     }
     store.actions.replaceLayout(doc)
@@ -62,10 +63,10 @@ function onBlur(): void {
 </script>
 
 <template>
-  <div class="json-wrap">
+  <div class="yaml-wrap">
     <textarea
       v-model="text"
-      class="json"
+      class="yaml"
       spellcheck="false"
       @input="onInput"
       @focus="focused = true"
@@ -76,7 +77,7 @@ function onBlur(): void {
 </template>
 
 <style scoped>
-.json-wrap {
+.yaml-wrap {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -84,7 +85,7 @@ function onBlur(): void {
   min-height: 0;
 }
 
-.json {
+.yaml {
   flex: 1;
   min-height: 0;
   resize: none;

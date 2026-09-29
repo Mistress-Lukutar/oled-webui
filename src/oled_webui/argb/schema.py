@@ -177,31 +177,25 @@ class MaskSpec(_Strict):
 
 
 class ArgbDevice(_Strict):
-    """One physical ARGB item (strip, fan ring, dual-ring fan)."""
+    """One physical ARGB item placed on the workspace.
+
+    The instance references a device definition from the YAML library
+    (``data/argb/devices/<id>.yaml``); the definition supplies the shape
+    graphics and the LED count, the instance supplies placement.
+    """
 
     id: str = Field(..., min_length=1, max_length=64)
     name: str = Field("", max_length=100, description="Display name")
-    type: Literal["strip", "ring", "ring_stripes"]
+    device: str = Field(
+        ..., min_length=1, description="Device definition id from the library"
+    )
     header_id: str = Field(..., min_length=1, description="Header this device hangs on")
-    leds: int = Field(
-        24, ge=1, le=512, description="LED count (ring size for ring_stripes)"
-    )
-    leds_side: int = Field(
-        0, ge=0, le=256, description="Per-stripe LED count (ring_stripes only)"
-    )
     x: float = Field(100.0, description="Workspace center X")
     y: float = Field(100.0, description="Workspace center Y")
     rotation: float = Field(
         0.0, ge=-360, le=360, description="Visual angle in degrees"
     )
     scale: float = Field(1.0, gt=0, le=10, description="Visual size multiplier")
-
-    @property
-    def total_leds(self) -> int:
-        """Full pixel count including side stripes."""
-        if self.type == "ring_stripes":
-            return self.leds + 2 * self.leds_side
-        return self.leds
 
 
 class ArgbHeader(_Strict):
@@ -268,7 +262,6 @@ class ArgbLayout(BaseModel):
         by_id = {device.id: device for device in self.devices}
         chained: set[str] = set()
         for header in self.headers:
-            used = 0
             for device_id in header.devices:
                 device = by_id.get(device_id)
                 if device is None:
@@ -285,46 +278,27 @@ class ArgbLayout(BaseModel):
                         f"but is chained on {header.id!r}"
                     )
                 chained.add(device_id)
-                used += device.total_leds
-            if header.size is not None and used > header.size:
-                raise ValueError(
-                    f"Header {header.id!r} chain needs {used} LEDs "
-                    f"but the zone provides {header.size}"
-                )
 
         for device in self.devices:
             if device.id not in chained:
                 raise ValueError(
                     f"Device {device.id!r} is not chained on any header devices list"
                 )
-            if device.type == "ring_stripes" and device.leds_side == 0:
-                raise ValueError(
-                    f"Device {device.id!r}: ring_stripes requires leds_side >= 1"
-                )
 
         for layer in self.layers:
-            for device_id, runs in layer.mask.runs.items():
+            for device_id in layer.mask.runs:
                 if device_id not in by_id:
                     raise ValueError(
                         f"Layer {layer.id!r} mask references unknown device "
                         f"{device_id!r}"
                     )
-                last = by_id[device_id].total_leds - 1
-                for start, end in runs:
-                    if start > end:
-                        raise ValueError(
-                            f"Layer {layer.id!r} mask run [{start}, {end}] is inverted"
-                        )
-                    if start < 0 or end > last:
-                        raise ValueError(
-                            f"Layer {layer.id!r} mask run [{start}, {end}] is out of "
-                            f"range for device {device_id!r} ({last + 1} LEDs)"
-                        )
         return self
 
 
 def default_layout() -> ArgbLayout:
-    """Build the starter layout: one header, one 24-LED strip, blue fill.
+    """Build the starter layout: one header, one strip device, blue fill.
+
+    The device references the seeded ``strip`` library definition (24 LEDs).
 
     Returns:
         A minimal valid layout to seed the editor and persistence.
@@ -335,9 +309,8 @@ def default_layout() -> ArgbLayout:
             ArgbDevice(
                 id="d1",
                 name="Strip 1",
-                type="strip",
+                device="strip",
                 header_id="h1",
-                leds=24,
                 x=200.0,
                 y=250.0,
             )

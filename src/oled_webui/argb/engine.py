@@ -82,6 +82,7 @@ class PixelContext:
 
     Attributes:
         device: The device the pixel belongs to.
+        device_leds: LED count of the device (from its definition).
         i_local: Pixel index within the device (0-based).
         i_chain: Pixel index along the whole header chain.
         chain_len: Total LED count of the header chain.
@@ -90,6 +91,7 @@ class PixelContext:
     """
 
     device: ArgbDevice
+    device_leds: int
     i_local: int
     i_chain: int
     chain_len: int
@@ -200,7 +202,7 @@ def _fx_meter(effect: MeterEffect, ctx: PixelContext) -> Rgba:
             parse_rgba(effect.color_low), parse_rgba(effect.color_high), value
         )
         return (color[0], color[1], color[2], 1.0)
-    lit = round(value * ctx.device.total_leds)
+    lit = round(value * ctx.device_leds)
     if ctx.i_local < lit:
         color = _lerp_rgba(
             parse_rgba(effect.color_low), parse_rgba(effect.color_high), value
@@ -243,13 +245,24 @@ def _render_device(
     buffer: bytearray,
     offset: int,
     device: ArgbDevice,
+    total: int,
     layers: list[ArgbLayer],
     t: float,
     chain_len: int,
     samples: Mapping[str, float | str],
 ) -> None:
-    """Composite all layers onto one device's slice of the header buffer."""
-    total = device.total_leds
+    """Composite all layers onto one device's slice of the header buffer.
+
+    Args:
+        buffer: Header RGB buffer to draw into.
+        offset: Device's first pixel index within the header chain.
+        device: The device instance.
+        total: LED count resolved from the device's definition.
+        layers: Effect layers, bottom first.
+        t: Effect time in seconds.
+        chain_len: Total LED count of the whole chain.
+        samples: Data-source snapshot for meter effects.
+    """
     for i_local in range(total):
         red = green = blue = 0
         for layer in layers:
@@ -259,6 +272,7 @@ def _render_device(
                 continue
             ctx = PixelContext(
                 device=device,
+                device_leds=total,
                 i_local=i_local,
                 i_chain=offset + i_local,
                 chain_len=chain_len,
@@ -285,6 +299,7 @@ def render_layout(
     layout: ArgbLayout,
     t: float,
     samples: Mapping[str, float | str] | None = None,
+    led_counts: Mapping[str, int] | None = None,
 ) -> dict[str, bytearray]:
     """Render the full layout into one RGB buffer per header.
 
@@ -292,25 +307,29 @@ def render_layout(
         layout: Validated layout (references are assumed consistent).
         t: Effect time in seconds.
         samples: Data-source snapshot for meter effects.
+        led_counts: Device instance id -> LED count, resolved from the
+            device definition library. Unknown ids render as zero LEDs.
 
     Returns:
         Mapping of header id to an ``RGBRGB...`` bytearray; buffer length
         is the zone size when known, otherwise the chained LED count.
     """
     snapshot = samples if samples is not None else {}
+    counts_map = led_counts if led_counts is not None else {}
     devices = {device.id: device for device in layout.devices}
     buffers: dict[str, bytearray] = {}
     for header in layout.headers:
         chained = [devices[did] for did in header.devices if did in devices]
-        chain_len = sum(device.total_leds for device in chained)
+        counts = [counts_map.get(device.id, 0) for device in chained]
+        chain_len = sum(counts)
         size = header.size if header.size is not None else chain_len
         buffer = bytearray(max(size, 1) * 3)
         offset = 0
-        for device in chained:
+        for device, total in zip(chained, counts):
             _render_device(
-                buffer, offset, device, layout.layers, t, chain_len, snapshot
+                buffer, offset, device, total, layout.layers, t, chain_len, snapshot
             )
-            offset += device.total_leds
+            offset += total
         buffers[header.id] = buffer
     return buffers
 

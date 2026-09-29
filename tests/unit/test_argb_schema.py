@@ -3,7 +3,7 @@ File:   test_argb_schema.py
 Brief:  Validation tests for the ARGB layout schema.
 Author: Mistress-Lukutar
 Date:   2026-09-29
-Version: v0.1.0
+Version: v0.2.0
 """
 
 from __future__ import annotations
@@ -26,9 +26,7 @@ def _layout(**overrides: object) -> ArgbLayout:
     payload: dict[str, object] = {
         "headers": [ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
         "devices": [
-            ArgbDevice(
-                id="d1", type="strip", header_id="h1", leds=10, x=0, y=0
-            )
+            ArgbDevice(id="d1", device="strip", header_id="h1", x=0, y=0)
         ],
         "layers": [ArgbLayer(id="l1", effect={"type": "fill", "color": "#FF0000"})],
     }
@@ -37,9 +35,9 @@ def _layout(**overrides: object) -> ArgbLayout:
 
 
 def test_default_layout_is_valid() -> None:
-    """The starter layout validates and has one chained device."""
+    """The starter layout validates and references the strip definition."""
     layout = default_layout()
-    assert layout.devices[0].total_leds == 24
+    assert layout.devices[0].device == "strip"
     assert layout.headers[0].devices == ["d1"]
 
 
@@ -48,11 +46,11 @@ def test_unknown_keys_are_rejected() -> None:
     with pytest.raises(ValidationError):
         ArgbDevice(
             id="d1",
-            type="strip",
+            device="strip",
             header_id="h1",
-            leds=1,
             x=0,
             y=0,
+            leds=5,  # type: ignore[call-arg]
             bogus=1,  # type: ignore[call-arg]
         )
 
@@ -61,44 +59,6 @@ def test_bad_color_pattern_rejected() -> None:
     """Colors must be #RRGGBB or #RRGGBBAA hex strings."""
     with pytest.raises(ValidationError):
         ArgbLayer(id="l1", effect={"type": "fill", "color": "red"})
-
-
-def test_ring_stripes_total_leds() -> None:
-    """ring_stripes counts the ring plus both side stripes."""
-    device = ArgbDevice(
-        id="d",
-        type="ring_stripes",
-        header_id="h1",
-        leds=24,
-        leds_side=8,
-        x=0,
-        y=0,
-    )
-    assert device.total_leds == 40
-
-
-def test_ring_stripes_requires_side_leds() -> None:
-    """ring_stripes without side LEDs is rejected."""
-    with pytest.raises(ValidationError):
-        _layout(
-            devices=[
-                ArgbDevice(
-                    id="d1",
-                    type="ring_stripes",
-                    header_id="h1",
-                    leds=12,
-                    leds_side=0,
-                    x=0,
-                    y=0,
-                )
-            ]
-        )
-
-
-def test_chain_overflow_rejected() -> None:
-    """A chain needing more LEDs than the zone provides is rejected."""
-    with pytest.raises(ValidationError, match="chain needs"):
-        _layout(headers=[ArgbHeader(id="h1", zone_index=0, size=8, devices=["d1"])])
 
 
 def test_unknown_device_reference_rejected() -> None:
@@ -129,30 +89,19 @@ def test_header_mismatch_rejected() -> None:
         _layout(
             headers=[ArgbHeader(id="h1", zone_index=0, devices=["d1"])],
             devices=[
-                ArgbDevice(id="d1", type="strip", header_id="h2", leds=4, x=0, y=0)
+                ArgbDevice(id="d1", device="strip", header_id="h2", x=0, y=0)
             ],
         )
 
 
-def test_mask_run_out_of_range_rejected() -> None:
-    """Mask runs beyond the device LED count are rejected."""
+def test_mask_unknown_device_rejected() -> None:
+    """Masks may only reference devices that exist in the layout."""
     layer = ArgbLayer(
         id="l1",
         effect={"type": "fill"},
-        mask=MaskSpec(all=False, runs={"d1": [(0, 99)]}),
+        mask=MaskSpec(all=False, runs={"ghost": [(0, 1)]}),
     )
-    with pytest.raises(ValidationError, match="out of range"):
-        _layout(layers=[layer])
-
-
-def test_mask_run_inverted_rejected() -> None:
-    """Mask runs with start > end are rejected."""
-    layer = ArgbLayer(
-        id="l1",
-        effect={"type": "fill"},
-        mask=MaskSpec(all=False, runs={"d1": [(5, 2)]}),
-    )
-    with pytest.raises(ValidationError, match="inverted"):
+    with pytest.raises(ValidationError, match="unknown device"):
         _layout(layers=[layer])
 
 
@@ -161,8 +110,8 @@ def test_duplicate_ids_rejected() -> None:
     with pytest.raises(ValidationError, match="Duplicate device"):
         _layout(
             devices=[
-                ArgbDevice(id="d1", type="strip", header_id="h1", leds=4, x=0, y=0),
-                ArgbDevice(id="d1", type="strip", header_id="h1", leds=4, x=9, y=9),
+                ArgbDevice(id="d1", device="strip", header_id="h1", x=0, y=0),
+                ArgbDevice(id="d1", device="strip", header_id="h1", x=9, y=9),
             ]
         )
 

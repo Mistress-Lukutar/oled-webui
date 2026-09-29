@@ -6,7 +6,6 @@
  * state.
  */
 import { useArgbStore } from '../../argb/store'
-import { deviceTotalLeds } from '../../argb/types'
 
 const store = useArgbStore()
 const { state } = store
@@ -17,7 +16,7 @@ function num(event: Event): number {
 
 function deviceLabel(id: string): string {
   const device = state.layout.devices.find((item) => item.id === id)
-  return device === undefined ? '?' : `${device.name} · ${deviceTotalLeds(device)} LEDs`
+  return device === undefined ? '?' : `${device.name} · ${store.deviceLeds(device)} LEDs`
 }
 
 function onZoneChange(event: Event, headerId: string): void {

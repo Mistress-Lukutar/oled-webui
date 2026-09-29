@@ -257,6 +257,15 @@ export function parseSceneYaml(text: string): ParseResult {
  * header, section and trailing comments survive graphical edits.
  */
 export function stringifySceneYaml(doc: SceneDocumentRaw, previousText?: string): string {
+  return stringifyYamlWithComments(doc, previousText)
+}
+
+/**
+ * Generic variant of the scene stringifier, shared with the ARGB device
+ * designer: short scalar sequences go flow style, comments are grafted
+ * from the previous text when given.
+ */
+export function stringifyYamlWithComments(doc: unknown, previousText?: string): string {
   const yamlDoc = new Document(doc as Record<string, unknown>)
   markShortSeqsFlow(yamlDoc.contents as YAMLMap | YAMLSeq | null)
   const regenerated = stringify(yamlDoc, { lineWidth: 120 })

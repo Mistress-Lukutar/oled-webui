@@ -8,7 +8,6 @@ import { API } from '../api'
 import {
   cloneLayout,
   defaultLayout,
-  deviceTotalLeds,
   makeDevice,
   makeLayer,
 } from './types'
@@ -18,7 +17,8 @@ import type {
   ArgbLayer,
   ArgbLayout,
   ArgbStatus,
-  DeviceType,
+  DeviceDefinition,
+  DeviceSummary,
   EffectType,
 } from './types'
 
@@ -32,6 +32,8 @@ interface ArgbState {
   layout: ArgbLayout
   loaded: boolean
   dirty: boolean
+  /** Installed device definitions (library summaries with full shapes). */
+  library: DeviceSummary[]
   /** Inspector focus (single item); devices on canvas sync into it. */
   selection: Selection
   /** Canvas multi-selection of device ids. */
@@ -59,12 +61,23 @@ const state = reactive<ArgbState>({
   layout: defaultLayout(),
   loaded: false,
   dirty: false,
+  library: [],
   selection: { kind: null, id: null },
   deviceSelection: [],
   maskLayerId: null,
   preview: {},
   error: null,
 })
+
+/** Resolve the definition a device instance references. */
+function definitionOf(device: ArgbDevice): DeviceDefinition | undefined {
+  return state.library.find((item) => item.id === device.device)?.definition
+}
+
+/** LED count of a device instance (0 when its definition is missing). */
+function deviceLeds(device: ArgbDevice): number {
+  return definitionOf(device)?.leds.length ?? 0
+}
 
 let previewBusy = false
 
@@ -207,6 +220,7 @@ const actions = {
   async init(): Promise<void> {
     if (state.loaded) return
     await actions.refreshStatus()
+    await actions.loadLibrary()
     try {
       const { layout } = await API.getArgbLayout()
       state.layout = layout
@@ -226,6 +240,15 @@ const actions = {
       state.status = await API.getArgbStatus()
     } catch {
       // Keep the last known status; the panel shows a stale indicator.
+    }
+  },
+
+  async loadLibrary(): Promise<void> {
+    try {
+      const { devices } = await API.listArgbDevices()
+      state.library = devices
+    } catch {
+      // Keep the last known library; the picker will retry on demand.
     }
   },
 
@@ -289,10 +312,15 @@ const actions = {
   // Devices (CRUD)
   // -----------------------------------------------------------------
 
-  addDevice(type: DeviceType): void {
+  addDevice(definitionId: string): void {
     const header = state.layout.headers[0]
     if (header === undefined) {
       showError('Create a header first')
+      return
+    }
+    const summary = state.library.find((item) => item.id === definitionId)
+    if (summary === undefined) {
+      showError('Unknown device definition')
       return
     }
     // Stagger spawn positions so consecutive devices do not overlap.
@@ -300,17 +328,42 @@ const actions = {
     const x = WORKSPACE_CENTER.x + ((n % 4) - 1.5) * 110
     const y = WORKSPACE_CENTER.y + (Math.floor(n / 4) % 3) * 80 - 80
     const device = makeDevice(
-      type,
+      summary.definition,
       header.id,
       x,
       y,
-      nextOrdinal(type === 'strip' ? 'Strip' : 'Fan'),
+      nextOrdinal(summary.definition.name || definitionId),
     )
     mutate((layout) => {
       layout.devices.push(device)
       layout.headers[0].devices.push(device.id)
     })
     actions.select('device', device.id)
+  },
+
+  /** Point an existing instance at another definition, clamping masks. */
+  changeDeviceDefinition(id: string, definitionId: string): void {
+    mutate((layout) => {
+      const device = layout.devices.find((item) => item.id === id)
+      if (device === undefined) return
+      device.device = definitionId
+      const leds =
+        state.library.find((item) => item.id === definitionId)?.definition
+          .leds.length ?? 0
+      if (leds > 0) {
+        for (const layer of layout.layers) {
+          const runs = layer.mask.runs[id]
+          if (runs === undefined) continue
+          const clamped: [number, number][] = []
+          for (const [start, end] of runs) {
+            if (start > leds - 1) continue
+            clamped.push([start, Math.min(end, leds - 1)])
+          }
+          if (clamped.length > 0) layer.mask.runs[id] = clamped
+          else delete layer.mask.runs[id]
+        }
+      }
+    })
   },
 
   updateDevice(id: string, patch: Partial<ArgbDevice>): void {
@@ -448,6 +501,58 @@ const actions = {
       device.header_id = headerId
       const target = layout.headers.find((item) => item.id === headerId)
       if (target !== undefined) target.devices.push(id)
+    })
+  },
+
+  // -----------------------------------------------------------------
+  // Device definition library (YAML sources on the server)
+  // -----------------------------------------------------------------
+
+  async createDeviceDefinition(yamlText: string): Promise<boolean> {
+    const ok = await wrap(async () => {
+      await API.createArgbDevice(yamlText)
+      await actions.loadLibrary()
+    })
+    return ok
+  },
+
+  async updateDeviceDefinition(id: string, yamlText: string): Promise<boolean> {
+    return wrap(async () => {
+      await API.updateArgbDevice(id, yamlText)
+      await actions.loadLibrary()
+    })
+  },
+
+  async deleteDeviceDefinition(id: string): Promise<boolean> {
+    return wrap(async () => {
+      await API.deleteArgbDevice(id)
+      await actions.loadLibrary()
+    })
+  },
+
+  /** Duplicate a definition under a fresh id with " copy" name. */
+  async duplicateDeviceDefinition(id: string): Promise<boolean> {
+    return wrap(async () => {
+      const { yaml } = await API.getArgbDevice(id)
+      const existing = new Set(state.library.map((item) => item.id))
+      let base = `${id}-copy`
+      let candidate = base
+      let n = 2
+      while (existing.has(candidate)) {
+        candidate = `${base}-${n}`
+        n += 1
+      }
+      base = candidate
+      const nameMatch = yaml.match(/^name:\s*(.*)$/m)
+      const body = yaml.replace(
+        /^id:\s*.*$/m,
+        `id: ${base}`,
+      )
+      const text = nameMatch
+        ? body.replace(/^name:\s*.*$/m, `name: ${nameMatch[1]} copy`)
+        : body
+      await API.createArgbDevice(text)
+      await actions.loadLibrary()
     })
   },
 
@@ -619,7 +724,7 @@ const actions = {
       if (layer === undefined) return
       const runs: Record<string, [number, number][]> = {}
       for (const device of layout.devices) {
-        runs[device.id] = [[0, deviceTotalLeds(device) - 1]]
+        runs[device.id] = [[0, deviceLeds(device) - 1]]
       }
       layer.mask.all = false
       layer.mask.runs = runs
@@ -641,7 +746,7 @@ const actions = {
       if (layer === undefined) return
       const runs: Record<string, [number, number][]> = {}
       for (const device of layout.devices) {
-        const total = deviceTotalLeds(device)
+        const total = deviceLeds(device)
         const covered = new Array<boolean>(total).fill(false)
         for (const [start, end] of layer.mask.runs[device.id] ?? []) {
           for (let i = start; i <= Math.min(end, total - 1); i += 1) {
@@ -676,7 +781,7 @@ const actions = {
       const layer = layout.layers.find((item) => item.id === layerId)
       const device = layout.devices.find((item) => item.id === deviceId)
       if (layer === undefined || device === undefined) return
-      const total = deviceTotalLeds(device)
+      const total = deviceLeds(device)
       const covered = new Array<boolean>(total).fill(false)
       for (const [start, end] of layer.mask.runs[deviceId] ?? []) {
         for (let i = start; i <= Math.min(end, total - 1); i += 1) {
@@ -708,7 +813,7 @@ function headerUsage(header: ArgbHeader): { used: number; capacity: number | nul
   let used = 0
   for (const id of header.devices) {
     const device = state.layout.devices.find((item) => item.id === id)
-    if (device !== undefined) used += deviceTotalLeds(device)
+    if (device !== undefined) used += deviceLeds(device)
   }
   return { used, capacity: header.size }
 }
@@ -718,7 +823,7 @@ function maskCoverage(layer: ArgbLayer | undefined, deviceId: string): boolean[]
   if (layer === undefined || layer.mask.all) return null
   const device = state.layout.devices.find((item) => item.id === deviceId)
   if (device === undefined) return null
-  const total = deviceTotalLeds(device)
+  const total = deviceLeds(device)
   const covered = new Array<boolean>(total).fill(false)
   for (const [start, end] of layer.mask.runs[deviceId] ?? []) {
     for (let i = start; i <= Math.min(end, total - 1); i += 1) covered[i] = true
@@ -736,6 +841,8 @@ export function useArgbStore() {
     showError,
     headerUsage,
     maskCoverage,
+    definitionOf,
+    deviceLeds,
     beginBatch,
     endBatch,
     startPreviewPolling,
