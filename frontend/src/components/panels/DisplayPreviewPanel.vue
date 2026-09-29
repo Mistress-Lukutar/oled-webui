@@ -1,9 +1,15 @@
 <script setup lang="ts">
+/**
+ * Display preview panel: live panel frame, no controls — everything
+ * operable lives in the display settings / scenes panels.
+ */
 import { computed, ref, watch } from 'vue'
-import { useDisplayStore } from '../composables/useDisplayStore'
+import { useDisplayStore } from '../../composables/useDisplayStore'
 
-const { state, previewUrl, actions } = useDisplayStore()
-const busy = ref(false)
+const props = defineProps<{ deviceId?: string | null }>()
+void props
+
+const { state, previewUrl } = useDisplayStore()
 
 const panelRatioStyle = computed(() => `${state.resolution.width} / ${state.resolution.height}`)
 
@@ -25,41 +31,13 @@ watch(
   },
   { immediate: true },
 )
-
-async function withBusy(action: () => Promise<boolean>): Promise<void> {
-  busy.value = true
-  await action()
-  busy.value = false
-}
 </script>
 
 <template>
-  <div class="card preview-card">
-    <h2>Display preview</h2>
-    <div class="frame" :style="{ aspectRatio: panelRatioStyle }">
-      <img
-        v-if="shownUrl"
-        :src="shownUrl"
-        alt="Current display content"
-      />
-      <div v-else class="placeholder">
-        <span>No frame yet</span>
-      </div>
-    </div>
-    <div class="controls">
-      <button :disabled="busy || !state.connected" @click="withBusy(actions.powerOff)">
-        Off
-      </button>
-      <button :disabled="busy || !state.connected" @click="withBusy(actions.powerOn)">
-        On
-      </button>
-      <button
-        class="primary"
-        :disabled="busy || !state.connected"
-        @click="withBusy(() => actions.runTest(1.0))"
-      >
-        Test pattern
-      </button>
+  <div class="frame" :style="{ aspectRatio: panelRatioStyle }">
+    <img v-if="shownUrl" :src="shownUrl" alt="Current display content" />
+    <div v-else class="placeholder">
+      <span>No frame yet</span>
     </div>
   </div>
 </template>
@@ -67,11 +45,6 @@ async function withBusy(action: () => Promise<boolean>): Promise<void> {
 <style scoped>
 /* The frame height derives only from the card width and the panel aspect
    ratio, so it stays identical no matter which tab is open. */
-.preview-card {
-  display: flex;
-  flex-direction: column;
-}
-
 .frame {
   aspect-ratio: 16 / 9;
   width: 100%;
@@ -82,7 +55,6 @@ async function withBusy(action: () => Promise<boolean>): Promise<void> {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: hidden;
-  margin-bottom: 12px;
 }
 
 .frame img {
@@ -97,14 +69,5 @@ async function withBusy(action: () => Promise<boolean>): Promise<void> {
 .placeholder {
   color: #555;
   font-size: 14px;
-}
-
-.controls {
-  display: flex;
-  gap: 8px;
-}
-
-.controls button {
-  flex: 1;
 }
 </style>

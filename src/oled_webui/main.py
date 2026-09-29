@@ -27,6 +27,8 @@ from oled_webui.routers import argb as argb_router
 from oled_webui.routers import device as device_router
 from oled_webui.routers import frame as frame_router
 from oled_webui.routers import scenes as scenes_router
+from oled_webui.routers import system as system_router
+from oled_webui.routers import ui as ui_router
 from oled_webui.services.content_state import restore_last_content
 from oled_webui.services.display_service import DisplayService
 from oled_webui.services.event_bus import EventBus
@@ -176,6 +178,8 @@ def create_app() -> FastAPI:
     app.include_router(frame_router.router)
     app.include_router(scenes_router.router)
     app.include_router(argb_router.router)
+    app.include_router(system_router.router)
+    app.include_router(ui_router.router)
 
     @app.get("/events")
     async def events() -> Any:

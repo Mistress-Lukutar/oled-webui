@@ -43,6 +43,35 @@ class TestRequest(BaseModel):
     delay: float = Field(default=1.0, ge=0.1, le=10, description="Seconds per color")
 
 
+class PanelConfig(BaseModel):
+    """One dashboard panel instance."""
+
+    id: str = Field(..., min_length=1, max_length=64, description="Unique panel id")
+    type: str = Field(..., min_length=1, max_length=40, description="Panel type")
+    device: str | None = Field(
+        None, max_length=64, description="Owning device id for device panels"
+    )
+    span: int = Field(1, ge=1, le=3, description="Grid columns to span")
+
+
+class PanelLayout(BaseModel):
+    """Ordered dashboard panel layout."""
+
+    version: int = Field(1, ge=1, description="Layout schema version")
+    panels: list[PanelConfig] = Field(
+        default_factory=list, max_length=32, description="Panels in display order"
+    )
+
+
+class SystemDeviceInfo(BaseModel):
+    """One entry of the system device registry."""
+
+    id: str = Field(..., description="Stable device id, e.g. display:0")
+    kind: str = Field(..., description="Device kind: display or argb")
+    name: str = Field(..., description="Human-readable device name")
+    connected: bool = Field(..., description="Live connection state")
+
+
 class SaveSceneRequest(BaseModel):
     """Save scene YAML source request."""
 

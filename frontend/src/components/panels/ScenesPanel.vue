@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
- * Scene tab: library of stored YAML scenes. Editing happens in the
- * full-screen scene editor modal (scene-editor/SceneEditorModal.vue).
+ * Scenes panel: library of stored YAML scenes — the only content source
+ * for the display. Editing happens in the full-screen scene editor modal
+ * (scene-editor/SceneEditorModal.vue).
  */
 import { ref } from 'vue'
-import { API } from '../api'
-import { useDisplayStore } from '../composables/useDisplayStore'
-import FileDropZone from './FileDropZone.vue'
-import SceneEditorModal from './scene-editor/SceneEditorModal.vue'
+import { API } from '../../api'
+import { useDisplayStore } from '../../composables/useDisplayStore'
+import FileDropZone from '../FileDropZone.vue'
+import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
+
+const props = defineProps<{ deviceId?: string | null }>()
+void props
 
 const { state, actions, showError } = useDisplayStore()
 

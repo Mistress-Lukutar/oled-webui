@@ -5,6 +5,7 @@
 import { computed, reactive, readonly } from 'vue'
 import { API } from '../api'
 import { useArgbStore } from '../argb/store'
+import { usePanelsStore } from './usePanelsStore'
 import type {
   DisplaySettings,
   LastContent,
@@ -103,6 +104,8 @@ function handleSseEvent(event: MessageEvent): void {
   }
   if (event.type === 'connection') {
     void refreshStatus()
+    // Device availability (registry connection flags) may have changed.
+    void usePanelsStore().refreshDevices()
     return
   }
   if (event.type === 'display_settings') {
@@ -116,6 +119,7 @@ function handleSseEvent(event: MessageEvent): void {
   }
   if (event.type === 'argb') {
     void useArgbStore().actions.refreshStatus()
+    void usePanelsStore().refreshDevices()
     return
   }
   if (event.type === 'error') {

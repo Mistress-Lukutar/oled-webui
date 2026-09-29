@@ -56,6 +56,25 @@ export interface LastContent {
   payload: Record<string, unknown>
 }
 
+export interface SystemDevice {
+  id: string
+  kind: 'display' | 'argb'
+  name: string
+  connected: boolean
+}
+
+export interface PanelConfig {
+  id: string
+  type: string
+  device: string | null
+  span: number
+}
+
+export interface PanelLayout {
+  version: number
+  panels: PanelConfig[]
+}
+
 export interface StatusData {
   connected: boolean
   device: DeviceInfo | null
@@ -201,6 +220,19 @@ export const API = {
   },
 
   getArgbStatus: () => api<ArgbStatus>('/api/argb/status'),
+
+  getSystemDevices: () =>
+    api<{ devices: SystemDevice[] }>('/api/system/devices'),
+  getPanelLayout: () => api<PanelLayout>('/api/ui/panels'),
+  savePanelLayout: (layout: PanelLayout) =>
+    api<PanelLayout>('/api/ui/panels', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(layout),
+    }),
+  resetPanelLayout: () =>
+    api<PanelLayout>('/api/ui/panels', { method: 'DELETE' }),
+
   connectArgb: () => api<ArgbStatus>('/api/argb/connect', { method: 'POST' }),
   disconnectArgb: () => api<ArgbStatus>('/api/argb/disconnect', { method: 'POST' }),
   getArgbLayout: () => api<{ layout: ArgbLayout }>('/api/argb/layout'),
