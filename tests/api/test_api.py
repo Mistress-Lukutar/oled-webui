@@ -70,7 +70,7 @@ def test_status_shape(client: TestClient) -> None:
 def test_frame_ops_without_hardware_409(client: TestClient) -> None:
     """Frame ops fail with 409 when the display is disconnected."""
     client.post("/api/device/disconnect")
-    response = client.post("/api/frame/off")
+    response = client.post("/api/frame/test", json={"delay": 0.5})
     assert response.status_code == 409
     assert response.json()["success"] is False
 
@@ -86,23 +86,6 @@ def test_apply_scene_sends_frame(client: TestClient, sent_frames: list[dict]) ->
     stopped = client.post("/api/scenes/stop")
     assert stopped.status_code == 200
     assert stopped.json()["data"]["running"] is False
-
-
-def test_off_on(client: TestClient, sent_frames: list[dict]) -> None:
-    """Off sends a black frame; on restores the pre-blank content frame.
-
-    The restored content is the restarted scene, whose first tick fires
-    from a background task, so the restored frame is awaited by polling.
-    """
-    _apply_scene(client)
-    _wait_for_frames(sent_frames, 1)
-    content_payload = sent_frames[0]["payload"]
-
-    assert client.post("/api/frame/off").status_code == 200
-    assert client.post("/api/frame/on").status_code == 200
-    _wait_for_frames(sent_frames, 3)
-    assert sent_frames[1]["payload"] != content_payload  # blanked to black
-    assert sent_frames[2]["payload"] == content_payload  # restored
 
 
 def test_display_settings_roundtrip(client: TestClient) -> None:

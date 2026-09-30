@@ -154,8 +154,6 @@ export const API = {
       body: JSON.stringify(patch),
     }),
 
-  powerOff: () => api<null>('/api/frame/off', { method: 'POST' }),
-  powerOn: () => api<null>('/api/frame/on', { method: 'POST' }),
   runTest: (delay: number) =>
     api<null>('/api/frame/test', {
       method: 'POST',

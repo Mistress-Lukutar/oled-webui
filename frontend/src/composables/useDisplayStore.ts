@@ -200,14 +200,6 @@ const actions = {
     })
   },
 
-  async powerOff(): Promise<boolean> {
-    return wrap(() => API.powerOff().then(() => undefined))
-  },
-
-  async powerOn(): Promise<boolean> {
-    return wrap(() => API.powerOn().then(() => undefined))
-  },
-
   async runTest(delay: number): Promise<boolean> {
     return wrap(() => API.runTest(delay).then(() => undefined))
   },

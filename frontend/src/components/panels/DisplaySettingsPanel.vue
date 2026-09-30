@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /**
- * Display quick settings panel: connection, power, test pattern and the
- * global output settings (formerly the display settings modal), applied
- * immediately on change.
+ * Display quick settings panel: the Designer shortcut, test pattern and
+ * the global output settings (formerly the display settings modal),
+ * applied immediately on change. Manual power on/off is gone — blanking
+ * follows the Windows display power when the setting below is enabled.
  */
 import { computed, reactive, ref, watch } from 'vue'
+import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 
 const props = defineProps<{ deviceId?: string | null }>()
 void props
 
-const { state, actions } = useDisplayStore()
+const { state, actions, showError } = useDisplayStore()
 const busy = ref(false)
 
 async function withBusy(action: () => Promise<boolean>): Promise<void> {
@@ -42,19 +44,28 @@ function applySettings(): void {
 }
 
 const sceneRunning = computed(() => state.scene.running)
+
+const editorOpen = ref(false)
+const editSceneId = ref<string | null>(null)
+
+function openDesigner(): void {
+  const sceneId = state.scene.scene_id
+  if (sceneId === null) {
+    showError(
+      'No active scene — apply or create one in the Scenes panel first; the screen layout lives in a scene file',
+    )
+    return
+  }
+  editSceneId.value = sceneId
+  editorOpen.value = true
+}
 </script>
 
 <template>
   <div class="settings">
-    <div class="power">
-      <button :disabled="busy || !state.connected" @click="withBusy(actions.powerOff)">
-        Off
-      </button>
-      <button :disabled="busy || !state.connected" @click="withBusy(actions.powerOn)">
-        On
-      </button>
+    <div class="actions">
+      <button class="designer" @click="openDesigner">✏ Designer</button>
       <button
-        class="primary"
         :disabled="busy || !state.connected"
         @click="withBusy(() => actions.runTest(1.0))"
       >
@@ -122,6 +133,13 @@ const sceneRunning = computed(() => state.scene.running)
     <p v-if="sceneRunning" class="hint">
       Brightness and quality apply to the running scene immediately.
     </p>
+
+    <SceneEditorModal
+      v-if="editorOpen && editSceneId !== null"
+      :scene-id="editSceneId"
+      initial-section="screen"
+      @close="editorOpen = false"
+    />
   </div>
 </template>
 
@@ -132,15 +150,20 @@ const sceneRunning = computed(() => state.scene.running)
   gap: 12px;
 }
 
-.power {
+.actions {
   display: flex;
   gap: 8px;
 }
 
-.power button {
+.actions button {
   flex: 1;
   font-size: 12px;
   padding: 6px 8px;
+}
+
+.designer {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 .field span.label,

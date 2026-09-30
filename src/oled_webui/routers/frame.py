@@ -1,6 +1,6 @@
 """
 File:   frame.py
-Brief:  Frame endpoints: power, test pattern, preview and the font library.
+Brief:  Frame endpoints: test pattern, preview and the font library.
 Author: Mistress-Lukutar
 Date:   2026-09-30
 Version: v0.5.2
@@ -21,20 +21,6 @@ from oled_webui.models.schemas import StatusResponse, TestRequest
 router = APIRouter(prefix="/api/frame", tags=["frame"])
 
 ALLOWED_FONT_EXTENSIONS: frozenset[str] = frozenset({".ttf", ".otf"})
-
-
-@router.post("/off", response_model=StatusResponse)
-async def power_off(display: ConnectedDisplayDep) -> StatusResponse:
-    """Blank the display with a black frame."""
-    await display.power_off()
-    return StatusResponse()
-
-
-@router.post("/on", response_model=StatusResponse)
-async def power_on(display: ConnectedDisplayDep) -> StatusResponse:
-    """Restore the last cached frame."""
-    await display.power_on()
-    return StatusResponse()
 
 
 @router.post("/test", response_model=StatusResponse)
