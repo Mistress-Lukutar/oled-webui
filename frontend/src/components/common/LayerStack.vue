@@ -21,8 +21,14 @@ export interface LayerRow {
   enabled: boolean
   /** Eye button disabled (visibility driven by an expression). */
   toggleDisabled?: boolean
+  /** Rows without a visibility concept (e.g. hardware channels) hide the eye. */
+  toggleable?: boolean
   /** Delete disabled while locked; lock button shown via `lockable`. */
   locked?: boolean
+  /** Disable delete independent of `locked` (e.g. channel still has devices). */
+  deleteDisabled?: boolean
+  /** Delete button tooltip; defaults to 'Delete'. */
+  deleteTitle?: string
 }
 
 export interface LayerStackAddOption {
@@ -165,6 +171,7 @@ function onGripUp(): void {
           </svg>
         </span>
         <button
+          v-if="row.toggleable !== false"
           class="icon"
           :class="{ dim: !row.enabled }"
           :title="row.toggleDisabled
@@ -208,8 +215,8 @@ function onGripUp(): void {
         </button>
         <button
           class="icon danger"
-          :title="row.locked ? 'Locked — unlock first' : 'Delete'"
-          :disabled="row.locked"
+          :title="row.locked ? 'Locked — unlock first' : (row.deleteTitle ?? 'Delete')"
+          :disabled="row.locked || row.deleteDisabled === true"
           @click.stop="emit('delete', row.id)"
         >
           <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">

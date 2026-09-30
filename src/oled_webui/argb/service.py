@@ -277,6 +277,19 @@ class ArgbService:
                     )
                     header.size = zone.leds
 
+    async def _sync_zone_sizes_if_connected(self) -> None:
+        """Push explicit header sizes into the zones when connected.
+
+        Called on every engine apply: without it, an edited channel LED
+        count would make each send a size mismatch until reconnect.
+        """
+        if not self._client.is_connected:
+            return
+        async with self._lock:
+            zones = await asyncio.to_thread(self._client.list_zones)
+            await asyncio.to_thread(self._sync_header_sizes, zones)
+        self._last_sent = {}
+
     # ------------------------------------------------------------------
     # Engine lifecycle
     # ------------------------------------------------------------------
@@ -293,7 +306,9 @@ class ArgbService:
         service's job (it lives in the scene's ``argb`` section).
 
         The engine runs even without an OpenRGB connection; zone sends
-        simply resume once a connection exists.
+        simply resume once a connection exists. While connected, explicit
+        header sizes are pushed into the zones first so LED-count edits
+        don't make every send a size mismatch.
 
         Args:
             layout: The validated layout to run.
@@ -306,6 +321,7 @@ class ArgbService:
         """
         counts = validate_with_library(layout, self._library)
         self._layout = layout
+        await self._sync_zone_sizes_if_connected()
         await self._restart_engine(counts)
         await self._publish_status()
         return self.status()

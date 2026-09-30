@@ -526,18 +526,38 @@ const actions = {
   // Headers (CRUD)
   // -----------------------------------------------------------------
 
-  addHeader(): void {
+  /**
+   * Create a channel, optionally bound to an OpenRGB zone index. The
+   * zone's reported capacity is adopted only when it actually has LEDs;
+   * ITE-style zones report 0 until resized.
+   */
+  addHeader(zoneIndex?: number): void {
+    const zone =
+      zoneIndex === undefined
+        ? undefined
+        : state.status.zones.find((item) => item.index === zoneIndex)
     const header: ArgbHeader = {
       id: `h_${crypto.randomUUID().slice(0, 8)}`,
       name: `ARGB ${state.layout.headers.length + 1}`,
-      zone_index: state.layout.headers.length,
-      size: null,
+      zone_index: zoneIndex ?? state.layout.headers.length,
+      size: zone !== undefined && zone.leds > 0 ? zone.leds : null,
       devices: [],
     }
     mutate((layout) => {
       layout.headers.push(header)
     })
     actions.select('header', header.id)
+  },
+
+  /** Move a header within the channel stack (signed shift in positions). */
+  reorderHeader(id: string, delta: number): void {
+    mutate((layout) => {
+      const index = layout.headers.findIndex((item) => item.id === id)
+      const target = index + delta
+      if (index < 0 || target < 0 || target >= layout.headers.length) return
+      const [header] = layout.headers.splice(index, 1)
+      layout.headers.splice(target, 0, header)
+    })
   },
 
   updateHeader(id: string, patch: Partial<ArgbHeader>): void {

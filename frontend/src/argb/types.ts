@@ -214,6 +214,9 @@ export interface ZoneInfo {
   index: number
   name: string
   leds: number
+  /** OpenRGB device the zone belongs to (motherboard, GPU, mouse, ...). */
+  device_name: string
+  device_type: string
 }
 
 export interface OpenRgbProcessInfo {

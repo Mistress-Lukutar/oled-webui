@@ -6,8 +6,8 @@
 
 import type { Component } from 'vue'
 import ArgbCanvas from '../components/argb/ArgbCanvas.vue'
-import ArgbInspector from '../components/argb/ArgbInspector.vue'
-import ArgbSidePanels from '../components/argb/ArgbSidePanels.vue'
+import ArgbLayersPanel from '../components/argb/ArgbLayersPanel.vue'
+import ArgbRightColumn from '../components/argb/ArgbRightColumn.vue'
 import ArgbStatusbar from '../components/argb/ArgbStatusbar.vue'
 import ArgbToolbar from '../components/argb/ArgbToolbar.vue'
 import EditorCanvas from '../components/scene-editor/EditorCanvas.vue'
@@ -41,11 +41,11 @@ export const SECTION_VIEWS: Record<string, SectionView> = {
   },
   argb: {
     canvas: ArgbCanvas,
-    left: [ArgbSidePanels],
-    right: [ArgbInspector],
+    left: [ArgbLayersPanel],
+    right: [ArgbRightColumn],
     toolbar: ArgbToolbar,
     status: ArgbStatusbar,
-    leftWidth: '292px',
-    rightWidth: '280px',
+    leftWidth: '210px',
+    rightWidth: '300px',
   },
 }

@@ -1,9 +1,9 @@
 """
 File:   openrgb_transport.py
-Brief:  Synchronous OpenRGB SDK client wrapper for ARGB header output.
+Brief:  Synchronous OpenRGB SDK client wrapper for ARGB channel output.
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.5.2
+Version: v0.5.3
 """
 
 from __future__ import annotations
@@ -21,33 +21,62 @@ DEFAULT_HOST: str = "127.0.0.1"
 DEFAULT_PORT: int = 6742
 
 
+def _device_type_name(device: Any) -> str:
+    """Human-readable OpenRGB device type ('motherboard', 'gpu', ...)."""
+    raw = getattr(getattr(device, "type", None), "name", None)
+    return str(raw) if raw else "unknown"
+
+
 class ZoneInfo:
-    """Snapshot of one OpenRGB zone (an ARGB header on the controller)."""
+    """Snapshot of one OpenRGB zone (a hardware channel on any device).
 
-    __slots__ = ("index", "leds", "name")
+    ``index`` is the session-wide flat enumeration across every OpenRGB
+    device: motherboard ARGB headers, GPU and peripheral zones all share
+    one index space, which is what layouts reference.
+    """
 
-    def __init__(self, index: int, name: str, leds: int) -> None:
+    __slots__ = ("index", "leds", "name", "device_name", "device_type")
+
+    def __init__(
+        self,
+        index: int,
+        name: str,
+        leds: int,
+        device_name: str = "",
+        device_type: str = "",
+    ) -> None:
         self.index = index
         self.name = name
         self.leds = leds
+        self.device_name = device_name
+        self.device_type = device_type
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable view."""
-        return {"index": self.index, "name": self.name, "leds": self.leds}
+        return {
+            "index": self.index,
+            "name": self.name,
+            "leds": self.leds,
+            "device_name": self.device_name,
+            "device_type": self.device_type,
+        }
 
 
 class OpenRgbClient:
-    """Blocking OpenRGB SDK client bound to one controller device.
+    """Blocking OpenRGB SDK client covering every reported RGB device.
 
     All methods are synchronous and must be called off the event loop
-    (``asyncio.to_thread``). The ARGB service is the single owner.
+    (``asyncio.to_thread``). The ARGB service is the single owner. Zones
+    from all devices (motherboard, GPU, mice, ...) are enumerated into
+    one flat index space used by layouts and by :meth:`send_zone` /
+    :meth:`resize_zone`.
     """
 
     def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
         self._host = host
         self._port = port
         self._client: Any | None = None
-        self._controller: Any | None = None
+        self._devices: list[Any] = []
         self._zone_objects: list[Any] = []
         self._zones: list[ZoneInfo] = []
 
@@ -57,15 +86,14 @@ class OpenRgbClient:
         return self._client is not None
 
     def connect(self) -> list[ZoneInfo]:
-        """Open the SDK session and bind the RGB controller.
+        """Open the SDK session and enumerate every device's zones.
 
-        The controller is the first motherboard-type device reported by
-        OpenRGB (any device type is accepted as a fallback so USB ARGB
-        controllers work too). A ``Direct`` mode is requested when the
-        controller offers one, enabling per-LED updates.
+        Devices offering a ``Direct`` mode are switched to it (needed for
+        per-LED control on ITE-style ARGB zones); devices without one are
+        left untouched so their own effect modes survive.
 
         Returns:
-            Discovered zones as :class:`ZoneInfo` snapshots.
+            Discovered zones as flat-indexed :class:`ZoneInfo` snapshots.
 
         Raises:
             OpenRgbError: If the server is unreachable or reports no device.
@@ -74,7 +102,6 @@ class OpenRgbClient:
             return self.list_zones()
         try:
             from openrgb import OpenRGBClient
-            from openrgb.utils import DeviceType
         except ImportError as exc:  # pragma: no cover - dependency is declared
             raise OpenRgbError("openrgb-python is not installed") from exc
         try:
@@ -85,25 +112,31 @@ class OpenRgbClient:
             ) from exc
         try:
             devices = list(client.devices)
-            controller = next(
-                (d for d in devices if d.type == DeviceType.MOTHERBOARD), None
-            )
-            if controller is None:
-                controller = devices[0] if devices else None
-            if controller is None:
+            if not devices:
                 client.disconnect()
                 raise OpenRgbError("OpenRGB reports no RGB devices")
-            for mode in ("Direct", "Static"):
-                if any(getattr(m, "name", "") == mode for m in controller.modes):
-                    controller.set_mode(mode)
-                    break
+            for device in devices:
+                self._request_direct_mode(device)
             self._client = client
-            self._controller = controller
-            self._zone_objects = list(controller.zones)
-            self._zones = [
-                ZoneInfo(index, str(zone.name), len(zone.leds))
-                for index, zone in enumerate(self._zone_objects)
+            self._devices = devices
+            self._zone_objects = [
+                zone for device in devices for zone in device.zones
             ]
+            self._zones = []
+            for index, (device, zone) in enumerate(
+                (device, zone)
+                for device in devices
+                for zone in device.zones
+            ):
+                self._zones.append(
+                    ZoneInfo(
+                        index,
+                        str(zone.name),
+                        len(zone.leds),
+                        str(getattr(device, "name", "?")),
+                        _device_type_name(device),
+                    )
+                )
         except OpenRgbError:
             raise
         except Exception as exc:
@@ -111,7 +144,7 @@ class OpenRgbClient:
             raise OpenRgbError(f"OpenRGB session failed: {exc}") from exc
         logger.info(
             "openrgb_connected",
-            controller=getattr(self._controller, "name", "?"),
+            devices=len(self._devices),
             zones=len(self._zones),
         )
         return self.list_zones()
@@ -120,17 +153,36 @@ class OpenRgbClient:
         """Return the discovered zone snapshots."""
         return list(self._zones)
 
+    @staticmethod
+    def _request_direct_mode(device: Any) -> None:
+        """Best-effort switch to a per-LED ``Direct`` mode.
+
+        ITE-style ARGB zones need it; devices without the mode (or that
+        reject the switch) keep their current mode.
+        """
+        try:
+            if any(getattr(m, "name", "") == "Direct" for m in device.modes):
+                device.set_mode("Direct")
+        except Exception as exc:
+            logger.debug(
+                "openrgb_direct_mode_failed",
+                device=getattr(device, "name", "?"),
+                error=str(exc),
+            )
+
     def controller_name(self) -> str | None:
-        """Return the bound controller name, if connected."""
-        if self._controller is None:
+        """Summary of the bound devices, e.g. ``AORUS ELITE +3 more``."""
+        if not self._devices:
             return None
-        return str(getattr(self._controller, "name", None))
+        first = str(getattr(self._devices[0], "name", None) or "?")
+        extra = len(self._devices) - 1
+        return first if extra == 0 else f"{first} +{extra} more"
 
     def send_zone(self, zone_index: int, data: bytes) -> None:
         """Push one zone's colors as a packed RGBRGB... byte string.
 
         Args:
-            zone_index: Zone index as reported by :meth:`connect`.
+            zone_index: Flat zone index as reported by :meth:`connect`.
             data: Exactly ``leds * 3`` bytes of RGB values.
 
         Raises:
@@ -159,11 +211,11 @@ class OpenRgbClient:
         """Resize a zone to the layout's chain length.
 
         ITE-style ARGB zones report 0 LEDs until resized, so the layout
-        is the source of truth for header capacity. The zone object is
+        is the source of truth for channel capacity. The zone object is
         refreshed by the underlying library call.
 
         Args:
-            zone_index: Zone index as reported by :meth:`connect`.
+            zone_index: Flat zone index as reported by :meth:`connect`.
             leds: Target LED count.
 
         Raises:
@@ -178,8 +230,13 @@ class OpenRgbClient:
             zone.resize(leds)
         except Exception as exc:
             raise OpenRgbError(f"Zone resize failed: {exc}") from exc
+        previous = self._zones[zone_index]
         self._zones[zone_index] = ZoneInfo(
-            zone_index, str(zone.name), len(zone.leds)
+            zone_index,
+            str(zone.name),
+            len(zone.leds),
+            previous.device_name,
+            previous.device_type,
         )
         logger.info(
             "openrgb_zone_resized", zone=zone.name, leds=len(zone.leds)
@@ -196,6 +253,6 @@ class OpenRgbClient:
             with contextlib.suppress(Exception):
                 self._client.disconnect()
         self._client = None
-        self._controller = None
+        self._devices = []
         self._zone_objects = []
         self._zones = []

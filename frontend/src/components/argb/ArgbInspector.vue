@@ -179,7 +179,29 @@ function togglePaint(): void {
 
 function zoneLabel(index: number): string {
   const zone = state.status.zones.find((item) => item.index === index)
-  return zone === undefined ? `zone ${index}` : `${zone.name} (${zone.leds} LEDs)`
+  if (zone === undefined) return `zone ${index}`
+  const device = zone.device_name ? `${zone.device_name} · ` : ''
+  return `${device}${zone.name} (${zone.leds} LEDs)`
+}
+
+function deviceLabel(id: string): string {
+  const device = state.layout.devices.find((item) => item.id === id)
+  return device === undefined ? '?' : `${device.name} · ${store.deviceLeds(device)} LEDs`
+}
+
+/** Empty input = auto capacity (follows the chain length). */
+function onSizeInput(event: Event): void {
+  const header = selectedHeader.value
+  if (header === null) return
+  const raw = (event.target as HTMLInputElement).value.trim()
+  if (raw === '') {
+    store.actions.updateHeader(header.id, { size: null })
+    return
+  }
+  const value = Math.round(Number(raw))
+  if (Number.isFinite(value) && value >= 1) {
+    store.actions.updateHeader(header.id, { size: Math.min(1024, value) })
+  }
 }
 
 function onZoneChange(event: Event): void {
@@ -187,9 +209,14 @@ function onZoneChange(event: Event): void {
   if (header === null) return
   const index = num(event)
   const zone = state.status.zones.find((item) => item.index === index)
+  // Adopt the reported capacity only when the zone has LEDs; ITE-style
+  // zones report 0 until resized, which would wipe the size.
   store.actions.updateHeader(header.id, {
     zone_index: index,
-    size: zone !== undefined ? zone.leds : header.size,
+    size:
+      zone !== undefined && zone.leds > 0
+        ? zone.leds
+        : header.size,
   })
 }
 </script>
@@ -527,7 +554,7 @@ function onZoneChange(event: Event): void {
     <!-- ================= Header ================= -->
     <template v-else-if="selectedHeader !== null">
       <div class="head">
-        <h3>Header</h3>
+        <h3>Channel</h3>
         <button
           class="danger small"
           :disabled="selectedHeader.devices.length > 0"
@@ -560,11 +587,50 @@ function onZoneChange(event: Event): void {
           @input="store.actions.updateHeader(selectedHeader.id, { zone_index: num($event) })"
         />
       </label>
-      <p class="hint">
-        Chain: {{ store.headerUsage(selectedHeader).used
-        }}<template v-if="selectedHeader.size !== null"> / {{ selectedHeader.size }} LEDs</template>
-      </p>
-      <p class="hint">{{ selectedHeader.devices.length }} device(s) on this header.</p>
+      <label class="field">
+        <span>LEDs (capacity)</span>
+        <input
+          type="number" min="1" max="1024"
+          :value="selectedHeader.size ?? ''"
+          placeholder="auto"
+          title="Channel capacity in LEDs; empty = follow the chain length"
+          @input="onSizeInput"
+        />
+      </label>
+      <div class="field">
+        <span>Chain</span>
+        <p class="hint">
+          {{ store.headerUsage(selectedHeader).used
+          }}<template v-if="selectedHeader.size !== null"> / {{ selectedHeader.size }} LEDs</template>
+        </p>
+        <p v-if="selectedHeader.devices.length === 0" class="hint">No devices on this channel.</p>
+        <div v-for="(deviceId, i) in selectedHeader.devices" :key="deviceId" class="inline">
+          <span class="mono">{{ i + 1 }}</span>
+          <button
+            class="small chain-chip"
+            :title="deviceLabel(deviceId)"
+            @click="store.actions.select('device', deviceId)"
+          >
+            {{ deviceLabel(deviceId) }}
+          </button>
+          <button
+            class="small"
+            :disabled="i === 0"
+            title="Earlier in chain"
+            @click="store.actions.reorderDevice(deviceId, -1)"
+          >
+            ▲
+          </button>
+          <button
+            class="small"
+            :disabled="i === selectedHeader.devices.length - 1"
+            title="Later in chain"
+            @click="store.actions.reorderDevice(deviceId, 1)"
+          >
+            ▼
+          </button>
+        </div>
+      </div>
     </template>
 
     <!-- ================= Nothing selected ================= -->
@@ -582,8 +648,9 @@ function onZoneChange(event: Event): void {
       </div>
 
       <p class="hint">
-        Click a device on the canvas to edit it, a layer in the Effects tab for
-        its effect. Header wiring lives in the Hardware tab.
+        Click a device on the canvas to edit it, a layer in the Effects
+        stack for its effect, a channel in the Channels stack below for
+        its wiring.
       </p>
     </template>
   </div>
@@ -644,6 +711,15 @@ h4 {
 .inline input[type='color'] {
   width: 42px;
   padding: 1px;
+}
+
+.chain-chip {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .check {
