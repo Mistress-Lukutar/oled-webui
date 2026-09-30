@@ -13,7 +13,11 @@ from fastapi import APIRouter
 
 from oled_webui.argb.schema import ArgbLayout
 from oled_webui.dependencies import ArgbDep
-from oled_webui.models.schemas import DeviceYamlRequest, StatusResponse
+from oled_webui.models.schemas import (
+    ArgbSettingsRequest,
+    DeviceYamlRequest,
+    StatusResponse,
+)
 
 router = APIRouter(prefix="/api/argb", tags=["argb"])
 
@@ -34,6 +38,22 @@ async def connect(argb: ArgbDep) -> StatusResponse:
 async def disconnect(argb: ArgbDep) -> StatusResponse:
     """Stop the engine and close the OpenRGB SDK session."""
     return StatusResponse(data=await argb.disconnect())
+
+
+@router.get("/settings", response_model=StatusResponse)
+async def get_settings(argb: ArgbDep) -> StatusResponse:
+    """Return the persisted ARGB settings."""
+    return StatusResponse(data=argb.argb_settings())
+
+
+@router.put("/settings", response_model=StatusResponse)
+async def update_settings(
+    req: ArgbSettingsRequest, argb: ArgbDep
+) -> StatusResponse:
+    """Update ARGB settings; omitted fields keep their current value."""
+    return StatusResponse(
+        data=await argb.set_argb_settings(off_on_display_off=req.off_on_display_off)
+    )
 
 
 @router.get("/active", response_model=StatusResponse)

@@ -43,6 +43,14 @@ class TestRequest(BaseModel):
     delay: float = Field(default=1.0, ge=0.1, le=10, description="Seconds per color")
 
 
+class ArgbSettingsRequest(BaseModel):
+    """ARGB settings update; omitted fields keep their current value."""
+
+    off_on_display_off: bool | None = Field(
+        None, description="Turn lighting off when the Windows display powers off"
+    )
+
+
 class PanelConfig(BaseModel):
     """One dashboard panel instance."""
 

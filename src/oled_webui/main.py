@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.scene_runtime = SceneRuntime(app.state.scenes, display, argb)
     await openrgb_process.start()
 
-    watcher = _start_power_watcher(display)
+    watcher = _start_power_watcher(display, argb)
 
     if settings.auto_connect:
         try:
@@ -124,11 +124,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if watcher is not None and watcher.last_state is False:
         # The console display was already off at startup (idle timeout or
         # an RDP session), so no blanking notification will arrive; sync
-        # the freshly connected panel to that state.
+        # the freshly connected panel and the lighting to that state.
         try:
             await display.power_off()
         except OledWebUIError as exc:
             logger.warning("display_off_sync_failed", error=str(exc))
+        await argb.apply_display_power(False)
 
     yield
 
@@ -139,11 +140,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await display.shutdown()
 
 
-def _start_power_watcher(display: DisplayService) -> Any | None:
+def _start_power_watcher(display: DisplayService, argb: ArgbService) -> Any | None:
     """Start the Windows monitor-power watcher where it is supported.
 
     Args:
         display: Service receiving monitor on/off callbacks.
+        argb: Lighting service blanked/restored with the display.
 
     Returns:
         The started watcher, or None on non-Windows platforms.
@@ -153,7 +155,11 @@ def _start_power_watcher(display: DisplayService) -> Any | None:
         return None
     from oled_webui.services.display_power_watcher import DisplayPowerWatcher
 
-    watcher = DisplayPowerWatcher(display.on_monitor_power)
+    def on_monitor_power(monitor_on: bool) -> None:
+        display.on_monitor_power(monitor_on)
+        argb.on_monitor_power(monitor_on)
+
+    watcher = DisplayPowerWatcher(on_monitor_power)
     watcher.start()
     return watcher
 

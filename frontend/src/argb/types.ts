@@ -242,6 +242,11 @@ export interface ArgbStatus {
   process: OpenRgbProcessInfo | null
 }
 
+export interface ArgbSettings {
+  /** Turn lighting off with the Windows display; restore when it wakes. */
+  off_on_display_off: boolean
+}
+
 /** Logical workspace size the editor arranges devices on. */
 export const WORKSPACE_WIDTH = 800
 export const WORKSPACE_HEIGHT = 500

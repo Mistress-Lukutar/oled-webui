@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * ARGB panel: connection/engine status, the active scene's effect list
- * and the Designer button. The lighting state lives in the active
- * scene's ``argb`` section; editing happens in the unified scene editor
- * opened on the ARGB tab.
+ * ARGB panel: the lighting power setting, the active scene's effect list
+ * and the Designer button. Connection status lives in the Status panel;
+ * the lighting state lives in the active scene's ``argb`` section and is
+ * edited in the unified scene editor opened from here.
  */
 import { computed, ref } from 'vue'
 import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
@@ -20,6 +20,12 @@ const display = useDisplayStore()
 
 const editorOpen = ref(false)
 const editSceneId = ref<string | null>(null)
+
+/** Persisted on change, like the display settings panel's checkboxes. */
+const offWithDisplay = computed({
+  get: () => state.settings.off_on_display_off,
+  set: (value: boolean) => void store.actions.setSettings({ off_on_display_off: value }),
+})
 
 const EFFECT_LABELS: Record<EffectType, string> = {
   fill: 'Fill',
@@ -51,39 +57,10 @@ function openDesigner(): void {
 
 <template>
   <div class="quick">
-    <div class="status">
-      <span
-        class="dot"
-        :class="{ on: state.status.connected, run: state.status.running }"
-        :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
-      />
-      <span class="status-text">
-        <template v-if="state.status.running">
-          Engine running @ {{ state.status.fps }} fps · {{ state.status.frames_sent }} frames
-        </template>
-        <template v-else-if="state.status.connected">
-          OpenRGB connected · {{ state.status.zones.length }} zones · engine stopped
-        </template>
-        <template v-else>OpenRGB not connected</template>
-      </span>
-      <button
-        v-if="state.status.connected"
-        class="small"
-        @click="store.actions.disconnect()"
-      >
-        Disconnect
-      </button>
-      <button v-else class="small" @click="store.actions.connect()">Connect</button>
-    </div>
-
-    <p v-if="activeScene.running" class="hint">
-      Active scene: <b>{{ activeScene.name }}</b> — its <code>argb:</code> section
-      drives the lighting.
-    </p>
-    <p v-else class="hint">
-      No active scene. Apply a scene with an <code>argb:</code> section to start
-      the lighting engine.
-    </p>
+    <label class="check">
+      <input v-model="offWithDisplay" type="checkbox" />
+      <span>Off when the Windows display turns off</span>
+    </label>
 
     <button class="designer" @click="openDesigner">✏ Designer</button>
 
@@ -120,37 +97,12 @@ function openDesigner(): void {
   gap: 12px;
 }
 
-.status {
+.check {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
-}
-
-.status-text {
-  flex: 1;
-  color: var(--text-dim);
-}
-
-.status .small {
-  font-size: 11px;
-  padding: 2px 8px;
-}
-
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--danger);
-  flex: none;
-}
-
-.dot.on {
-  background: var(--accent);
-}
-
-.dot.run {
-  box-shadow: 0 0 6px var(--accent);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .designer {
@@ -206,11 +158,6 @@ h4 {
   font-size: 12px;
   color: var(--text-dim);
   margin: 0;
-}
-
-code {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 11px;
 }
 
 .error-toast {

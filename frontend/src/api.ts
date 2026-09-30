@@ -2,7 +2,7 @@
  * Typed fetch wrapper and API endpoint functions.
  */
 
-import type { ArgbLayout, ArgbStatus, DeviceDefinition, DeviceSummary } from './argb/types'
+import type { ArgbLayout, ArgbSettings, ArgbStatus, DeviceDefinition, DeviceSummary } from './argb/types'
 
 export interface Resolution {
   width: number
@@ -223,6 +223,13 @@ export const API = {
   },
 
   getArgbStatus: () => api<ArgbStatus>('/api/argb/status'),
+  getArgbSettings: () => api<ArgbSettings>('/api/argb/settings'),
+  setArgbSettings: (patch: Partial<ArgbSettings>) =>
+    api<ArgbSettings>('/api/argb/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
 
   getSystemDevices: () =>
     api<{ devices: SystemDevice[] }>('/api/system/devices'),

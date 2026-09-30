@@ -21,6 +21,12 @@ from oled_webui.argb.devices import (
 )
 from oled_webui.argb.engine import apply_brightness, render_layout
 from oled_webui.argb.schema import ArgbLayout
+from oled_webui.argb.settings import (
+    ArgbSettings,
+    resolve_argb_settings,
+    save_argb_settings,
+    settings_path,
+)
 from oled_webui.exceptions import ArgbError, DeviceNotConnectedError
 from oled_webui.infrastructure.openrgb_transport import OpenRgbClient
 from oled_webui.scene.providers import DataSources
@@ -38,6 +44,17 @@ _SAMPLE_INTERVAL: float = 1.0
 
 # Minimum seconds between automatic OpenRGB recovery attempts.
 _RECOVER_INTERVAL: float = 5.0
+
+
+def _consume_future(future: Any) -> None:
+    """Retrieve a cross-thread future's outcome to surface errors once.
+
+    Args:
+        future: Future returned by ``run_coroutine_threadsafe``.
+    """
+    error = future.exception()
+    if error is not None:
+        logger.warning("monitor_power_action_failed", error=str(error))
 
 
 class ArgbService:
@@ -63,6 +80,13 @@ class ArgbService:
         self._proc = process_manager
         self._client = OpenRgbClient(settings.openrgb_host, settings.openrgb_port)
         self._lock = asyncio.Lock()
+        self._loop = asyncio.get_running_loop()
+        self._argb_settings: ArgbSettings = resolve_argb_settings(settings)
+        self._settings_file = settings_path(settings)
+        # True while the engine was stopped and zones blacked by the
+        # Windows display-power hook, so the restore only undoes our own
+        # blanking, not a user-initiated stop.
+        self._display_blanked = False
         # The library is loaded first: scene layout sections reference
         # device definitions, and seeding must happen before validation.
         self._library = DeviceLibrary(settings.argb_dir / "devices")
@@ -346,6 +370,99 @@ class ArgbService:
     async def shutdown(self) -> None:
         """Stop everything; called from the app lifespan."""
         await self.disconnect()
+
+    # ------------------------------------------------------------------
+    # Settings and display power
+    # ------------------------------------------------------------------
+
+    def argb_settings(self) -> dict[str, Any]:
+        """Return the ARGB settings snapshot."""
+        return self._argb_settings.model_dump()
+
+    async def set_argb_settings(
+        self, *, off_on_display_off: bool | None = None
+    ) -> dict[str, Any]:
+        """Update and persist the ARGB settings.
+
+        Args:
+            off_on_display_off: Turn the lighting off with the Windows
+                display and restore it when the display turns back on.
+
+        Returns:
+            The updated settings snapshot.
+        """
+        update: dict[str, Any] = {
+            key: value
+            for key, value in (("off_on_display_off", off_on_display_off),)
+            if value is not None
+        }
+        self._argb_settings = self._argb_settings.model_copy(update=update)
+        save_argb_settings(self._argb_settings, self._settings_file)
+        logger.info("argb_settings_changed", **update)
+        return self.argb_settings()
+
+    def on_monitor_power(self, monitor_on: bool) -> None:
+        """React to a Windows monitor power event (watcher thread).
+
+        Marshals the action onto the event loop; no-ops unless the
+        ``off_on_display_off`` setting is enabled.
+
+        Args:
+            monitor_on: True when the Windows display turned on.
+        """
+        if self._loop.is_closed():
+            return
+        future = asyncio.run_coroutine_threadsafe(
+            self.apply_display_power(monitor_on), self._loop
+        )
+        future.add_done_callback(_consume_future)
+
+    async def apply_display_power(self, monitor_on: bool) -> None:
+        """Apply the lighting state matching the Windows display power.
+
+        On display off: stop the engine and black every known zone once.
+        On display on: restart the engine from the last applied layout,
+        but only when this service did the blanking.
+
+        Args:
+            monitor_on: True when the Windows display turned on.
+        """
+        if monitor_on:
+            if not self._display_blanked:
+                return
+            self._display_blanked = False
+            if self._layout.devices and not self.is_running:
+                await self._restart_engine()
+                await self._publish_status()
+            return
+        if not self._argb_settings.off_on_display_off:
+            return
+        if self._display_blanked or not self.is_running:
+            return
+        self._display_blanked = True
+        task = self._run_task
+        self._run_task = None
+        self._run_layout = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        await self._send_black()
+        await self._publish_status()
+        logger.info("argb_blanked_for_display_off")
+
+    async def _send_black(self) -> None:
+        """Push zeroed buffers to every zone with a known capacity."""
+        if not self._client.is_connected:
+            return
+        async with self._lock:
+            for header in self._layout.headers:
+                if header.size is None:
+                    continue
+                await asyncio.to_thread(
+                    self._client.send_zone, header.zone_index, bytes(header.size * 3)
+                )
+        self._last_sent = {}
 
     async def _restart_engine(self, counts: dict[str, int] | None = None) -> None:
         """Cancel any current loop and start a fresh one.

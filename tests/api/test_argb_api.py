@@ -262,3 +262,56 @@ def test_argb_scene_apply_syncs_header_sizes(client: TestClient) -> None:
             break
         time.sleep(0.05)
     assert size == 64
+
+
+def test_argb_settings_roundtrip(client: TestClient) -> None:
+    """ARGB settings can be read and updated; omitted fields keep values."""
+    data = client.get("/api/argb/settings").json()["data"]
+    assert data["off_on_display_off"] is False
+
+    updated = client.put("/api/argb/settings", json={"off_on_display_off": True})
+    assert updated.status_code == 200
+    assert updated.json()["data"]["off_on_display_off"] is True
+
+    kept = client.put("/api/argb/settings", json={})
+    assert kept.status_code == 200
+    assert kept.json()["data"]["off_on_display_off"] is True
+
+    # The running service echoes the stored snapshot on the next read.
+    reloaded = client.get("/api/argb/settings").json()["data"]
+    assert reloaded["off_on_display_off"] is True
+
+
+@pytest.mark.usefixtures("fake_openrgb")
+def test_argb_display_power_blanking(
+    client: TestClient, fake_openrgb: list[dict[str, Any]]
+) -> None:
+    """Display off blanks the lighting; display on restarts the engine."""
+    _install_tiny(client)
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    assert client.post(f"/api/scenes/{scene_id}/apply").status_code == 200
+    assert (
+        client.put("/api/argb/settings", json={"off_on_display_off": True}).status_code
+        == 200
+    )
+
+    argb = client.app.state.argb  # type: ignore[attr-defined]
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not (argb.is_running and argb.is_connected):
+        time.sleep(0.05)
+    assert argb.is_running
+    assert argb.is_connected
+
+    argb.on_monitor_power(False)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and argb.is_running:
+        time.sleep(0.05)
+    assert argb.is_running is False
+    last_zone0 = [f for f in fake_openrgb if f["zone_index"] == 0][-1]
+    assert set(last_zone0["data"]) == {0}  # blacked out
+
+    argb.on_monitor_power(True)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not argb.is_running:
+        time.sleep(0.05)
+    assert argb.is_running is True

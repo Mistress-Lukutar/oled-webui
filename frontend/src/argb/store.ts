@@ -24,6 +24,7 @@ import type {
   ArgbHeader,
   ArgbLayer,
   ArgbLayout,
+  ArgbSettings,
   ArgbStatus,
   DeviceDefinition,
   DeviceSummary,
@@ -37,6 +38,8 @@ interface Selection {
 
 interface ArgbState {
   status: ArgbStatus
+  /** Persisted ARGB settings (display-power behaviour). */
+  settings: ArgbSettings
   layout: ArgbLayout
   /** True while layout aliases the scene file's argb section. */
   bound: boolean
@@ -68,6 +71,7 @@ const EMPTY_STATUS: ArgbStatus = {
 
 const state = reactive<ArgbState>({
   status: { ...EMPTY_STATUS },
+  settings: { off_on_display_off: false },
   layout: defaultLayout(),
   bound: false,
   loaded: false,
@@ -190,6 +194,7 @@ const actions = {
   async init(): Promise<void> {
     if (state.loaded) return
     await actions.refreshStatus()
+    await actions.refreshSettings()
     await actions.loadLibrary()
     await actions.refreshActiveLayout()
     state.loaded = true
@@ -200,6 +205,24 @@ const actions = {
       state.status = await API.getArgbStatus()
     } catch {
       // Keep the last known status; the panel shows a stale indicator.
+    }
+  },
+
+  async refreshSettings(): Promise<void> {
+    try {
+      state.settings = await API.getArgbSettings()
+    } catch {
+      // Keep the last known settings.
+    }
+  },
+
+  async setSettings(patch: Partial<ArgbSettings>): Promise<void> {
+    state.settings = { ...state.settings, ...patch }
+    try {
+      state.settings = await API.setArgbSettings(patch)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : String(err))
+      void actions.refreshSettings()
     }
   },
 
