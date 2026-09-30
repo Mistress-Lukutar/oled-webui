@@ -218,6 +218,15 @@ export interface ZoneInfo {
   leds: number
 }
 
+export interface OpenRgbProcessInfo {
+  managed: boolean
+  running: boolean
+  owned: boolean
+  task: string | null
+  exe: string | null
+  pid: number | null
+}
+
 export interface ArgbStatus {
   connected: boolean
   controller: string | null
@@ -227,6 +236,7 @@ export interface ArgbStatus {
   brightness: number
   autostart: boolean
   frames_sent: number
+  process: OpenRgbProcessInfo | null
 }
 
 /** Logical workspace size the editor arranges devices on. */

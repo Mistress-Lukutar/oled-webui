@@ -155,6 +155,36 @@ class OpenRgbClient:
         except Exception as exc:
             raise OpenRgbError(f"Zone update failed: {exc}") from exc
 
+    def resize_zone(self, zone_index: int, leds: int) -> None:
+        """Resize a zone to the layout's chain length.
+
+        ITE-style ARGB zones report 0 LEDs until resized, so the layout
+        is the source of truth for header capacity. The zone object is
+        refreshed by the underlying library call.
+
+        Args:
+            zone_index: Zone index as reported by :meth:`connect`.
+            leds: Target LED count.
+
+        Raises:
+            OpenRgbError: If not connected or the resize fails.
+        """
+        if self._client is None or zone_index >= len(self._zone_objects):
+            raise OpenRgbError("OpenRGB is not connected")
+        zone = self._zone_objects[zone_index]
+        if len(zone.leds) == leds:
+            return
+        try:
+            zone.resize(leds)
+        except Exception as exc:
+            raise OpenRgbError(f"Zone resize failed: {exc}") from exc
+        self._zones[zone_index] = ZoneInfo(
+            zone_index, str(zone.name), len(zone.leds)
+        )
+        logger.info(
+            "openrgb_zone_resized", zone=zone.name, leds=len(zone.leds)
+        )
+
     def disconnect(self) -> None:
         """Close the SDK session, ignoring errors."""
         self._close_quietly()

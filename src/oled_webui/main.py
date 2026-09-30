@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from oled_webui.argb.service import ArgbService
 from oled_webui.config import get_settings
 from oled_webui.exceptions import OledWebUIError, setup_exception_handlers
+from oled_webui.infrastructure.openrgb_process import OpenRgbProcessManager
 from oled_webui.routers import argb as argb_router
 from oled_webui.routers import device as device_router
 from oled_webui.routers import frame as frame_router
@@ -86,8 +87,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     display = DisplayService(settings, bus)
     app.state.display = display
     app.state.scenes = SceneService(settings)
-    argb = ArgbService(settings, bus)
+    # When an OpenRGB executable is configured, the app owns the OpenRGB
+    # application lifecycle: spawn on demand, restart on crash, kill on
+    # shutdown. Without it, an already-running SDK server is used as-is.
+    openrgb_process = OpenRgbProcessManager(
+        settings.openrgb_exe,
+        settings.openrgb_host,
+        settings.openrgb_port,
+        start_timeout=settings.openrgb_start_timeout,
+        task=settings.openrgb_task,
+    )
+    app.state.openrgb_process = openrgb_process
+    argb = ArgbService(settings, bus, openrgb_process)
     app.state.argb = argb
+    await openrgb_process.start()
 
     watcher = _start_power_watcher(display)
 
@@ -127,6 +140,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if watcher is not None:
         watcher.stop()
     await argb.shutdown()
+    await openrgb_process.stop()
     await display.shutdown()
 
 

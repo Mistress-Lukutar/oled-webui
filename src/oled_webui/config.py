@@ -77,6 +77,21 @@ class Settings(BaseSettings):
     openrgb_port: int = Field(
         default=6742, ge=1, le=65535, description="OpenRGB SDK server port"
     )
+    openrgb_exe: Path | None = Field(
+        default=None,
+        description="Path to OpenRGB.exe; when set, the server spawns and "
+        "supervises the SDK server itself",
+    )
+    openrgb_task: str | None = Field(
+        default=None,
+        description="Task Scheduler entry that runs OpenRGB elevated; the "
+        "server starts it via schtasks when the SDK port is not served",
+    )
+    openrgb_start_timeout: float = Field(
+        default=45.0,
+        ge=1.0,
+        description="Seconds to wait for the spawned OpenRGB SDK port",
+    )
 
     @property
     def argb_dir(self) -> Path:

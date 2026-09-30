@@ -54,6 +54,7 @@ const EMPTY_STATUS: ArgbStatus = {
   brightness: 100,
   autostart: false,
   frames_sent: 0,
+  process: null,
 }
 
 const state = reactive<ArgbState>({

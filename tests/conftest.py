@@ -113,9 +113,24 @@ def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     def fake_disconnect(self: openrgb_transport.OpenRgbClient) -> None:
         self._fake_zones = []  # type: ignore[attr-defined]
 
+    def fake_resize_zone(
+        self: openrgb_transport.OpenRgbClient, zone_index: int, leds: int
+    ) -> None:
+        zones = getattr(self, "_fake_zones", [])
+        if not zones or zone_index >= len(zones):
+            from oled_webui.exceptions import OpenRgbError
+
+            raise OpenRgbError("OpenRGB is not connected")
+        zones[zone_index] = openrgb_transport.ZoneInfo(
+            zone_index, zones[zone_index].name, leds
+        )
+
     monkeypatch.setattr(openrgb_transport.OpenRgbClient, "connect", fake_connect)
     monkeypatch.setattr(openrgb_transport.OpenRgbClient, "list_zones", fake_list_zones)
     monkeypatch.setattr(openrgb_transport.OpenRgbClient, "send_zone", fake_send_zone)
+    monkeypatch.setattr(
+        openrgb_transport.OpenRgbClient, "resize_zone", fake_resize_zone
+    )
     monkeypatch.setattr(
         openrgb_transport.OpenRgbClient, "disconnect", fake_disconnect
     )

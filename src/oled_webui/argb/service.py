@@ -17,7 +17,6 @@ import structlog
 import yaml
 
 from oled_webui.argb.devices import (
-    ArgbDeviceDefinition,
     DeviceLibrary,
     validate_with_library,
 )
@@ -31,11 +30,15 @@ from oled_webui.services.frame_builder import brightness_lut
 
 if TYPE_CHECKING:
     from oled_webui.config import Settings
+    from oled_webui.infrastructure.openrgb_process import OpenRgbProcessManager
 
 logger = structlog.get_logger(__name__)
 
 # Meter source polling interval in seconds.
 _SAMPLE_INTERVAL: float = 1.0
+
+# Minimum seconds between automatic OpenRGB recovery attempts.
+_RECOVER_INTERVAL: float = 5.0
 
 
 class ArgbService:
@@ -47,9 +50,15 @@ class ArgbService:
     OpenRGB (when connected) after gamma-corrected brightness scaling.
     """
 
-    def __init__(self, settings: Settings, bus: EventBus) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        bus: EventBus,
+        process_manager: OpenRgbProcessManager | None = None,
+    ) -> None:
         self._settings = settings
         self._bus = bus
+        self._proc = process_manager
         self._client = OpenRgbClient(settings.openrgb_host, settings.openrgb_port)
         self._lock = asyncio.Lock()
         self._layout_file = settings.argb_dir / "layout.yaml"
@@ -63,6 +72,7 @@ class ArgbService:
         self._last_sent: dict[str, bytes] = {}
         self._frames_sent = 0
         self._last_poll = float("-inf")
+        self._last_recover = float("-inf")
         self._sources = DataSources()
         self._samples: dict[str, float | str] = self._sources.snapshot()
 
@@ -251,13 +261,18 @@ class ArgbService:
     async def connect(self) -> dict[str, Any]:
         """Open the OpenRGB SDK session and sync header zone sizes.
 
+        When a process manager is configured, the OpenRGB application is
+        spawned first if nothing serves the SDK port yet.
+
         Returns:
             Status snapshot after connection.
         """
+        if self._proc is not None:
+            await self._proc.ensure_running()
         async with self._lock:
             zones = await asyncio.to_thread(self._client.connect)
+            await self._sync_header_sizes(zones)
         self._last_sent = {}
-        self._sync_header_sizes(zones)
         await self._publish_status()
         return self.status()
 
@@ -273,15 +288,41 @@ class ArgbService:
         await self._publish_status()
         return self.status()
 
-    def _sync_header_sizes(self, zones: list[Any]) -> None:
-        """Persist discovered zone capacities into matching headers."""
+    async def _sync_header_sizes(self, zones: list[Any]) -> None:
+        """Reconcile layout header sizes with discovered zone capacities.
+
+        The layout is the source of truth: a header with an explicit size
+        is pushed into the zone (ITE-style ARGB zones report 0 LEDs until
+        resized), while unsized headers adopt the zone capacity.
+
+        Args:
+            zones: Zone snapshots from the last connect.
+        """
         by_index = {zone.index: zone for zone in zones}
         changed = False
         for header in self._layout.headers:
             zone = by_index.get(header.zone_index)
-            if zone is not None and header.size != zone.leds:
-                header.size = zone.leds
-                changed = True
+            if zone is None:
+                continue
+            if header.size is None:
+                if header.size != zone.leds:
+                    header.size = zone.leds
+                    changed = True
+            elif header.size != zone.leds:
+                try:
+                    await asyncio.to_thread(
+                        self._client.resize_zone, header.zone_index, header.size
+                    )
+                except DeviceNotConnectedError:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "argb_zone_resize_failed",
+                        header=header.id,
+                        error=str(exc),
+                    )
+                    header.size = zone.leds
+                    changed = True
         if changed:
             self.save_layout(self._layout)
 
@@ -401,6 +442,9 @@ class ArgbService:
     async def _dispatch(self, buffers: dict[str, bytearray], lut: list[int]) -> None:
         """Send changed, brightness-scaled zone buffers to OpenRGB.
 
+        While disconnected, an automatic recovery runs throttled in the
+        background so a restarted OpenRGB picks the stream back up.
+
         Args:
             buffers: Per-header raw RGB buffers from the engine.
             lut: Brightness lookup table to apply before sending.
@@ -415,7 +459,13 @@ class ArgbService:
             out = bytearray(buf)
             apply_brightness(out, lut)
             raw = bytes(out)
-            if not self._client.is_connected or header.size is None:
+            if not self._client.is_connected:
+                if await self._recover_output():
+                    # Buffers were rendered against stale zone sizes; the
+                    # next tick re-renders with the synced capacities.
+                    return
+                continue
+            if header.size is None:
                 continue
             if self._last_sent.get(header.id) == raw:
                 continue
@@ -423,6 +473,30 @@ class ArgbService:
             async with self._lock:
                 await asyncio.to_thread(self._client.send_zone, header.zone_index, raw)
             self._frames_sent += 1
+
+    async def _recover_output(self) -> bool:
+        """Throttled OpenRGB process + session (re)establishment.
+
+        Returns:
+            True when the SDK session became connected.
+        """
+        now = time.monotonic()
+        if now - self._last_recover < _RECOVER_INTERVAL:
+            return False
+        self._last_recover = now
+        try:
+            if self._proc is not None:
+                await self._proc.ensure_running()
+            async with self._lock:
+                zones = await asyncio.to_thread(self._client.connect)
+                await self._sync_header_sizes(zones)
+            self._last_sent = {}
+            await self._publish_status()
+            logger.info("argb_output_recovered")
+            return True
+        except Exception as exc:
+            logger.debug("argb_output_recover_failed", error=str(exc))
+            return False
 
     # ------------------------------------------------------------------
     # Preview and status
@@ -460,6 +534,7 @@ class ArgbService:
             "brightness": self._layout.brightness,
             "autostart": self._layout.autostart,
             "frames_sent": self._frames_sent,
+            "process": self._proc.status() if self._proc is not None else None,
         }
 
     async def _publish_status(self) -> None:

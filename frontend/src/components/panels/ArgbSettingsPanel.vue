@@ -34,6 +34,20 @@ const engineText = computed(() =>
     : 'Engine stopped',
 )
 
+const processText = computed(() => {
+  const p = state.status.process
+  if (!p?.managed) return null
+  if (p.running) {
+    if (p.owned) {
+      return p.task
+        ? 'OpenRGB supervised · scheduled task'
+        : `OpenRGB supervised · pid ${p.pid}`
+    }
+    return 'OpenRGB: external instance adopted'
+  }
+  return 'OpenRGB starts automatically on connect'
+})
+
 // Layers composite bottom-up; show the stack top-first like the editor.
 const layersTopFirst = computed(() => [...state.layout.layers].reverse())
 
@@ -120,10 +134,12 @@ onBeforeUnmount(() => {
           {{ state.status.connected ? `${state.status.controller ?? 'OpenRGB'} · ${state.status.zones.length} zones` : 'OpenRGB not connected' }}
         </span>
         <span class="sub">{{ engineText }}</span>
+        <span v-if="processText" class="sub dim">{{ processText }}</span>
       </div>
       <button
         v-if="!state.status.connected"
         class="small"
+        :title="state.status.process?.managed ? 'Starts OpenRGB automatically if needed' : 'Connect to a running OpenRGB SDK server'"
         @click="store.actions.connect()"
       >
         Connect
@@ -277,6 +293,11 @@ h4 {
 .status-texts .sub {
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.status-texts .sub.dim {
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 button.small {

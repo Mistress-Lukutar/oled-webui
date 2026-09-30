@@ -189,14 +189,31 @@ def test_argb_apply_sends_zone_buffers(
     assert stopped["running"] is False
 
 
-def test_argb_apply_without_connection_still_runs(client: TestClient) -> None:
-    """The engine runs headless; sends simply do not happen."""
+def test_argb_apply_without_connection_still_runs(
+    client: TestClient, fake_openrgb: list[dict[str, Any]]
+) -> None:
+    """The engine self-heals: it opens the transport on its own."""
     _install_tiny(client)
     response = client.post("/api/argb/apply", json=VALID_LAYOUT)
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["running"] is True
-    assert data["connected"] is False
+
+    deadline = time.monotonic() + 10.0
+    connected = False
+    while time.monotonic() < deadline:
+        connected = client.get("/api/argb/status").json()["data"]["connected"]
+        if connected:
+            break
+        time.sleep(0.05)
+    assert connected is True, "engine never recovered the OpenRGB transport"
+
+    # The next engine tick re-renders with synced zone sizes and sends.
+    deadline = time.monotonic() + 5.0
+    while not fake_openrgb and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert fake_openrgb, "recovered engine never sent a zone buffer"
+
     stopped = client.post("/api/argb/stop").json()["data"]
     assert stopped["running"] is False
 
