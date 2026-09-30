@@ -268,66 +268,68 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
 </script>
 
 <template>
-  <div class="designer-overlay" @click.self="requestClose()">
-    <div class="designer-modal">
-      <div class="toolbar">
-        <span class="title">Device designer</span>
-        <span class="mono">{{ state.defId === null ? 'new' : state.defId }}</span>
-        <span class="spacer" />
-        <span class="counter" :class="{ bad: ledCount === 0 }">
-          {{ ledCount }} LEDs · {{ decorCount }} decor
-        </span>
-        <button :disabled="state.doc === null" @click="onSave()">Save</button>
-        <button class="primary" :disabled="state.doc === null" @click="onSaveClose">Save &amp; close</button>
-        <button class="danger" @click="requestClose()">Close</button>
-      </div>
-
-      <div class="body">
-        <div class="left-pane">
-          <div class="shape-bar">
-            <span class="group">LED:</span>
-            <button class="small" :disabled="state.doc === null" @click="designer.addShape('leds')">+ LED</button>
-            <span class="group">Decor:</span>
-            <button class="small" :disabled="state.doc === null" @click="designer.addShape('decor')">+ Rect</button>
-            <span class="grow" />
-            <select v-model="genKind" class="small">
-              <option value="strip">Strip</option>
-              <option value="ring">Ring</option>
-              <option value="dual">Dual</option>
-            </select>
-            <input v-model="genCount" type="number" min="1" max="512" class="small num" title="LED count" />
-            <input v-if="genKind === 'dual'" v-model="genSide" type="number" min="0" max="256" class="small num" title="Side LEDs" />
-            <button class="small" :disabled="state.doc === null" @click="onGenerate">Generate</button>
-            <button class="small danger" :disabled="state.selected === null" @click="designer.deleteSelected()">Del</button>
-          </div>
-          <canvas
-            ref="canvas"
-            class="design-canvas"
-            :width="CANVAS_W"
-            :height="CANVAS_H"
-            @pointerdown="onPointerDown"
-            @pointermove="onPointerMove"
-            @pointerup="onPointerUp"
-            @pointercancel="onPointerUp"
-          />
-          <div class="hint">
-            Drag shapes to move them · Del deletes the selection · LED colors show chain order
-          </div>
+  <Teleport to="body">
+    <div class="designer-overlay" @click.self="requestClose()">
+      <div class="designer-modal">
+        <div class="toolbar">
+          <span class="title">Device designer</span>
+          <span class="mono">{{ state.defId === null ? 'new' : state.defId }}</span>
+          <span class="spacer" />
+          <span class="counter" :class="{ bad: ledCount === 0 }">
+            {{ ledCount }} LEDs · {{ decorCount }} decor
+          </span>
+          <button :disabled="state.doc === null" @click="onSave()">Save</button>
+          <button class="primary" :disabled="state.doc === null" @click="onSaveClose">Save &amp; close</button>
+          <button class="danger" @click="requestClose()">Close</button>
         </div>
 
-        <div class="right-pane">
-          <textarea
-            class="yaml"
-            spellcheck="false"
-            :value="state.yamlText"
-            @input="designer.setYamlText(($event.target as HTMLTextAreaElement).value)"
-          />
-          <div v-if="state.syntaxError !== null" class="error-strip">{{ state.syntaxError }}</div>
-          <div v-else class="hint">YAML is the source of truth — edit shapes, paints and size here.</div>
+        <div class="body">
+          <div class="left-pane">
+            <div class="shape-bar">
+              <span class="group">LED:</span>
+              <button class="small" :disabled="state.doc === null" @click="designer.addShape('leds')">+ LED</button>
+              <span class="group">Decor:</span>
+              <button class="small" :disabled="state.doc === null" @click="designer.addShape('decor')">+ Rect</button>
+              <span class="grow" />
+              <select v-model="genKind" class="small">
+                <option value="strip">Strip</option>
+                <option value="ring">Ring</option>
+                <option value="dual">Dual</option>
+              </select>
+              <input v-model="genCount" type="number" min="1" max="512" class="small num" title="LED count" />
+              <input v-if="genKind === 'dual'" v-model="genSide" type="number" min="0" max="256" class="small num" title="Side LEDs" />
+              <button class="small" :disabled="state.doc === null" @click="onGenerate">Generate</button>
+              <button class="small danger" :disabled="state.selected === null" @click="designer.deleteSelected()">Del</button>
+            </div>
+            <canvas
+              ref="canvas"
+              class="design-canvas"
+              :width="CANVAS_W"
+              :height="CANVAS_H"
+              @pointerdown="onPointerDown"
+              @pointermove="onPointerMove"
+              @pointerup="onPointerUp"
+              @pointercancel="onPointerUp"
+            />
+            <div class="hint">
+              Drag shapes to move them · Del deletes the selection · LED colors show chain order
+            </div>
+          </div>
+
+          <div class="right-pane">
+            <textarea
+              class="yaml"
+              spellcheck="false"
+              :value="state.yamlText"
+              @input="designer.setYamlText(($event.target as HTMLTextAreaElement).value)"
+            />
+            <div v-if="state.syntaxError !== null" class="error-strip">{{ state.syntaxError }}</div>
+            <div v-else class="hint">YAML is the source of truth — edit shapes, paints and size here.</div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>

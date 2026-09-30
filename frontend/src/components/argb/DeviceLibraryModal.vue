@@ -56,61 +56,63 @@ async function onImportFile(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="library-overlay" @click.self="emit('close')">
-    <div class="library-modal">
-      <div class="head">
-        <h3>Device library</h3>
-        <span class="count">{{ state.library.length }} devices</span>
-        <span class="grow" />
-        <button @click="fileInput?.click()">Import .yaml…</button>
-        <button class="primary" @click="openDesigner(null)">+ New device</button>
-        <button class="icon-btn" title="Close" @click="emit('close')">×</button>
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".yaml,.yml,text/yaml"
-          class="hidden-input"
-          @change="onImportFile"
-        />
-      </div>
+  <Teleport to="body">
+    <div class="library-overlay" @click.self="emit('close')">
+      <div class="library-modal">
+        <div class="head">
+          <h3>Device library</h3>
+          <span class="count">{{ state.library.length }} devices</span>
+          <span class="grow" />
+          <button @click="fileInput?.click()">Import .yaml…</button>
+          <button class="primary" @click="openDesigner(null)">+ New device</button>
+          <button class="icon-btn" title="Close" @click="emit('close')">×</button>
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".yaml,.yml,text/yaml"
+            class="hidden-input"
+            @change="onImportFile"
+          />
+        </div>
 
-      <div class="list">
-        <div v-for="item in state.library" :key="item.id" class="row">
-          <DeviceThumb :definition="item.definition" />
-          <div class="info">
-            <div class="name">{{ item.name }}</div>
-            <div class="meta mono">{{ item.id }}.yaml · {{ item.leds }} LEDs</div>
-            <div v-if="item.used_by.length > 0" class="meta dim">
-              used by {{ item.used_by.length }} layout device{{ item.used_by.length > 1 ? 's' : '' }}
+        <div class="list">
+          <div v-for="item in state.library" :key="item.id" class="row">
+            <DeviceThumb :definition="item.definition" />
+            <div class="info">
+              <div class="name">{{ item.name }}</div>
+              <div class="meta mono">{{ item.id }}.yaml · {{ item.leds }} LEDs</div>
+              <div v-if="item.used_by.length > 0" class="meta dim">
+                used by {{ item.used_by.length }} layout device{{ item.used_by.length > 1 ? 's' : '' }}
+              </div>
+            </div>
+            <div class="actions">
+              <button class="small" @click="addToCanvas(item.id)">Add</button>
+              <button class="small" @click="openDesigner(item.id)">Edit</button>
+              <button class="small" @click="duplicate(item.id)">Copy</button>
+              <button
+                class="small danger"
+                :disabled="item.used_by.length > 0"
+                :title="item.used_by.length > 0 ? 'Remove it from the layout first' : 'Delete definition'"
+                @click="remove(item.id)"
+              >
+                Del
+              </button>
             </div>
           </div>
-          <div class="actions">
-            <button class="small" @click="addToCanvas(item.id)">Add</button>
-            <button class="small" @click="openDesigner(item.id)">Edit</button>
-            <button class="small" @click="duplicate(item.id)">Copy</button>
-            <button
-              class="small danger"
-              :disabled="item.used_by.length > 0"
-              :title="item.used_by.length > 0 ? 'Remove it from the layout first' : 'Delete definition'"
-              @click="remove(item.id)"
-            >
-              Del
-            </button>
+          <div v-if="state.library.length === 0" class="empty">
+            No devices installed. Import a .yaml definition or create a new one.
           </div>
         </div>
-        <div v-if="state.library.length === 0" class="empty">
-          No devices installed. Import a .yaml definition or create a new one.
+
+        <div class="foot dim">
+          Definitions live in <span class="mono">data/argb/devices/&lt;id&gt;.yaml</span> — one shape
+          per LED (list order = chain index); decor draws beneath the LEDs.
         </div>
       </div>
 
-      <div class="foot dim">
-        Definitions live in <span class="mono">data/argb/devices/&lt;id&gt;.yaml</span> — one shape
-        per LED (list order = chain index); decor draws beneath the LEDs.
-      </div>
+      <DeviceDesignerModal v-if="designerOpen" @close="onDesignerClosed" />
     </div>
-
-    <DeviceDesignerModal v-if="designerOpen" @close="onDesignerClosed" />
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>

@@ -289,176 +289,178 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="editor-overlay">
-    <div class="editor-modal">
-      <div class="toolbar">
-        <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes""></span>
-        <input
-          class="scene-name"
-          type="text"
-          maxlength="100"
-          placeholder="Scene name"
-          :value="state.name"
-          @input="editor.setName(($event.target as HTMLInputElement).value)"
-        />
-        <div class="seg">
-          <button
-            v-for="mode in VIEW_MODES"
-            :key="mode.id"
-            class="seg-btn"
-            :class="{ on: state.viewMode === mode.id }"
-            :title="mode.title"
-            @click="editor.setViewMode(mode.id)"
-          >
-            {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
-          </button>
-        </div>
-        <div class="seg add-seg">
-          <button
-            v-for="btn in ADD_BUTTONS"
-            :key="btn.type"
-            class="seg-btn add-btn"
-            :title="btn.title"
-            @click="addWidget(btn.type)"
-          >
-            {{ btn.label }}
-          </button>
-          <span class="seg-divider"></span>
-          <button
-            v-for="tool in DRAW_TOOLS"
-            :key="tool.kind"
-            class="seg-btn add-btn"
-            :class="{ on: drawTool === tool.kind }"
-            :title="tool.title"
-            @click="toggleDrawTool(tool.kind)"
-          >
-            {{ tool.label }}
-          </button>
-        </div>
-        <span class="spacer"></span>
-        <button
-          :disabled="!editor.canUndo()"
-          class="icon-btn"
-          title="Undo (Ctrl+Z)"
-          @click="editor.undo()"
-        >
-          ⟲
-        </button>
-        <button
-          :disabled="!editor.canRedo()"
-          class="icon-btn"
-          title="Redo (Ctrl+Shift+Z)"
-          @click="editor.redo()"
-        >
-          ⟳
-        </button>
-        <button :disabled="checking || loading" @click="checkFrame">
-          {{ checking ? 'Rendering…' : 'Check frame' }}
-        </button>
-        <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
-          ?
-        </button>
-        <button
-          class="primary"
-          :disabled="saving || loading || state.syntaxError !== null"
-          @click="save"
-        >
-          {{ saving ? 'Saving…' : 'Save' }}
-        </button>
-        <button
-          class="primary"
-          :disabled="!appState.connected || loading"
-          title="Save if needed, then start this scene on the display"
-          @click="apply"
-        >
-          Apply
-        </button>
-        <button class="danger" @click="requestClose">Close</button>
-      </div>
-
-      <div v-if="loading" class="loading">Loading scene…</div>
-
-      <div v-else class="body">
-        <aside class="left">
-          <SceneLayersPanel />
-        </aside>
-
-        <div class="center">
-          <div class="center-area" :class="{ split: state.viewMode === 'split' }">
-            <div
-              v-if="state.viewMode === 'design' || state.viewMode === 'split'"
-              class="viewport-wrap"
+  <Teleport to="body">
+    <div class="editor-overlay">
+      <div class="editor-modal">
+        <div class="toolbar">
+          <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes""></span>
+          <input
+            class="scene-name"
+            type="text"
+            maxlength="100"
+            placeholder="Scene name"
+            :value="state.name"
+            @input="editor.setName(($event.target as HTMLInputElement).value)"
+          />
+          <div class="seg">
+            <button
+              v-for="mode in VIEW_MODES"
+              :key="mode.id"
+              class="seg-btn"
+              :class="{ on: state.viewMode === mode.id }"
+              :title="mode.title"
+              @click="editor.setViewMode(mode.id)"
             >
-            <EditorCanvas :draw-shape="drawTool" />
+              {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
+            </button>
+          </div>
+          <div class="seg add-seg">
+            <button
+              v-for="btn in ADD_BUTTONS"
+              :key="btn.type"
+              class="seg-btn add-btn"
+              :title="btn.title"
+              @click="addWidget(btn.type)"
+            >
+              {{ btn.label }}
+            </button>
+            <span class="seg-divider"></span>
+            <button
+              v-for="tool in DRAW_TOOLS"
+              :key="tool.kind"
+              class="seg-btn add-btn"
+              :class="{ on: drawTool === tool.kind }"
+              :title="tool.title"
+              @click="toggleDrawTool(tool.kind)"
+            >
+              {{ tool.label }}
+            </button>
+          </div>
+          <span class="spacer"></span>
+          <button
+            :disabled="!editor.canUndo()"
+            class="icon-btn"
+            title="Undo (Ctrl+Z)"
+            @click="editor.undo()"
+          >
+            ⟲
+          </button>
+          <button
+            :disabled="!editor.canRedo()"
+            class="icon-btn"
+            title="Redo (Ctrl+Shift+Z)"
+            @click="editor.redo()"
+          >
+            ⟳
+          </button>
+          <button :disabled="checking || loading" @click="checkFrame">
+            {{ checking ? 'Rendering…' : 'Check frame' }}
+          </button>
+          <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
+            ?
+          </button>
+          <button
+            class="primary"
+            :disabled="saving || loading || state.syntaxError !== null"
+            @click="save"
+          >
+            {{ saving ? 'Saving…' : 'Save' }}
+          </button>
+          <button
+            class="primary"
+            :disabled="!appState.connected || loading"
+            title="Save if needed, then start this scene on the display"
+            @click="apply"
+          >
+            Apply
+          </button>
+          <button class="danger" @click="requestClose">Close</button>
+        </div>
+
+        <div v-if="loading" class="loading">Loading scene…</div>
+
+        <div v-else class="body">
+          <aside class="left">
+            <SceneLayersPanel />
+          </aside>
+
+          <div class="center">
+            <div class="center-area" :class="{ split: state.viewMode === 'split' }">
               <div
-                v-if="previewUrl !== null"
-                class="frame-preview"
-                title="Server-rendered frame (exact Pillow render)"
+                v-if="state.viewMode === 'design' || state.viewMode === 'split'"
+                class="viewport-wrap"
               >
-                <div class="preview-head">
-                  <span>Server frame</span>
-                  <button class="preview-close" @click="revokePreview">×</button>
+              <EditorCanvas :draw-shape="drawTool" />
+                <div
+                  v-if="previewUrl !== null"
+                  class="frame-preview"
+                  title="Server-rendered frame (exact Pillow render)"
+                >
+                  <div class="preview-head">
+                    <span>Server frame</span>
+                    <button class="preview-close" @click="revokePreview">×</button>
+                  </div>
+                  <img :src="previewUrl" alt="Rendered scene frame" />
                 </div>
-                <img :src="previewUrl" alt="Rendered scene frame" />
+              </div>
+              <div
+                v-if="state.viewMode === 'yaml' || state.viewMode === 'split'"
+                class="yaml-wrap"
+              >
+                <YamlPanel />
               </div>
             </div>
-            <div
-              v-if="state.viewMode === 'yaml' || state.viewMode === 'split'"
-              class="yaml-wrap"
-            >
-              <YamlPanel />
+            <div class="statusbar">
+              <select
+                class="res-select"
+                :value="resolutionKey"
+                title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
+                @change="onResolutionChange"
+              >
+                <option value="auto">
+                  Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
+                </option>
+                <option value="480x480">480×480</option>
+                <option value="1600x720">1600×720</option>
+                <option value="1920x462">1920×462</option>
+              </select>
+              <span>{{ widgetCount() }} widgets</span>
+              <span
+                v-if="state.errors.length > 0 || state.syntaxError !== null"
+                class="status-errors"
+              >
+                {{ state.errors.length + (state.syntaxError !== null ? 1 : 0) }} issues
+              </span>
+              <span v-if="!appState.connected" class="status-dim">device not connected</span>
             </div>
           </div>
-          <div class="statusbar">
-            <select
-              class="res-select"
-              :value="resolutionKey"
-              title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
-              @change="onResolutionChange"
-            >
-              <option value="auto">
-                Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
-              </option>
-              <option value="480x480">480×480</option>
-              <option value="1600x720">1600×720</option>
-              <option value="1920x462">1920×462</option>
-            </select>
-            <span>{{ widgetCount() }} widgets</span>
-            <span
-              v-if="state.errors.length > 0 || state.syntaxError !== null"
-              class="status-errors"
-            >
-              {{ state.errors.length + (state.syntaxError !== null ? 1 : 0) }} issues
-            </span>
-            <span v-if="!appState.connected" class="status-dim">device not connected</span>
+
+          <aside class="right">
+            <InspectorPanel />
+          </aside>
+        </div>
+
+        <TimelinePanel />
+      </div>
+
+      <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
+        <div class="help-card">
+          <div class="help-head">
+            <span>Keyboard &amp; mouse</span>
+            <button class="preview-close" @click="helpVisible = false">×</button>
           </div>
+          <table class="help-table">
+            <tbody>
+              <tr v-for="[keys, action] in SHORTCUTS" :key="keys">
+                <td class="keys">{{ keys }}</td>
+                <td>{{ action }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-
-        <aside class="right">
-          <InspectorPanel />
-        </aside>
-      </div>
-
-      <TimelinePanel />
-    </div>
-
-    <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
-      <div class="help-card">
-        <div class="help-head">
-          <span>Keyboard &amp; mouse</span>
-          <button class="preview-close" @click="helpVisible = false">×</button>
-        </div>
-        <table class="help-table">
-          <tbody>
-            <tr v-for="[keys, action] in SHORTCUTS" :key="keys">
-              <td class="keys">{{ keys }}</td>
-              <td>{{ action }}</td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>

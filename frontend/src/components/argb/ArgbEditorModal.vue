@@ -118,128 +118,130 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="editor-overlay">
-    <div class="editor-modal">
-      <div class="toolbar">
-        <span
-          class="dirty-dot"
-          :class="{ on: state.dirty }"
-          :title="state.dirty ? 'Unsaved changes' : 'All changes saved'"
-        />
-        <div ref="addWrapEl" class="add-wrap">
-          <button class="add-btn" @click="addMenuOpen = !addMenuOpen">+ Device ▾</button>
-          <div v-if="addMenuOpen" class="add-menu" @click.stop>
-            <button
-              v-for="item in state.library"
-              :key="item.id"
-              class="add-item"
-              :title="`${item.name} — ${item.leds} LEDs (${item.id}.yaml)`"
-              @click="addFromLibrary(item.id)"
-            >
-              <span class="add-name">{{ item.name }}</span>
-              <span class="add-leds">{{ item.leds }} LED</span>
-            </button>
-            <div v-if="state.library.length === 0" class="add-empty">
-              Library is empty
+  <Teleport to="body">
+    <div class="editor-overlay">
+      <div class="editor-modal">
+        <div class="toolbar">
+          <span
+            class="dirty-dot"
+            :class="{ on: state.dirty }"
+            :title="state.dirty ? 'Unsaved changes' : 'All changes saved'"
+          />
+          <div ref="addWrapEl" class="add-wrap">
+            <button class="add-btn" @click="addMenuOpen = !addMenuOpen">+ Device ▾</button>
+            <div v-if="addMenuOpen" class="add-menu" @click.stop>
+              <button
+                v-for="item in state.library"
+                :key="item.id"
+                class="add-item"
+                :title="`${item.name} — ${item.leds} LEDs (${item.id}.yaml)`"
+                @click="addFromLibrary(item.id)"
+              >
+                <span class="add-name">{{ item.name }}</span>
+                <span class="add-leds">{{ item.leds }} LED</span>
+              </button>
+              <div v-if="state.library.length === 0" class="add-empty">
+                Library is empty
+              </div>
+              <button class="add-manage" @click="addMenuOpen = false; libraryOpen = true">
+                Manage library…
+              </button>
             </div>
-            <button class="add-manage" @click="addMenuOpen = false; libraryOpen = true">
-              Manage library…
+          </div>
+
+          <span class="spacer" />
+
+          <div class="seg">
+            <button class="seg-btn" :class="{ on: viewMode === 'design' }" @click="viewMode = 'design'">
+              Design
+            </button>
+            <button class="seg-btn" :class="{ on: viewMode === 'yaml' }" @click="viewMode = 'yaml'">
+              YAML
             </button>
           </div>
+          <button class="icon-btn" :disabled="!store.canUndo()" title="Undo (Ctrl+Z)" @click="store.undo()">⟲</button>
+          <button class="icon-btn" :disabled="!store.canRedo()" title="Redo (Ctrl+Shift+Z)" @click="store.redo()">⟳</button>
+          <button title="Save layout (Ctrl+S)" @click="save()">Save</button>
+          <button class="primary" title="Save and run the engine" @click="store.actions.apply()">▶ Apply</button>
+          <button :disabled="!state.status.running" @click="store.actions.stop()">Stop</button>
+          <button class="danger" @click="requestClose()">Close</button>
+          <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">?</button>
         </div>
 
-        <span class="spacer" />
+        <div class="body">
+          <aside class="left">
+            <div class="side-tabs">
+              <button :class="{ on: sideTab === 'effects' }" @click="sideTab = 'effects'">Effects</button>
+              <button :class="{ on: sideTab === 'hardware' }" @click="sideTab = 'hardware'">Hardware</button>
+            </div>
+            <div class="side-content">
+              <ArgbLayersPanel v-show="sideTab === 'effects'" />
+              <ArgbHeaders v-show="sideTab === 'hardware'" />
+            </div>
+          </aside>
 
-        <div class="seg">
-          <button class="seg-btn" :class="{ on: viewMode === 'design' }" @click="viewMode = 'design'">
-            Design
-          </button>
-          <button class="seg-btn" :class="{ on: viewMode === 'yaml' }" @click="viewMode = 'yaml'">
-            YAML
-          </button>
+          <div class="center">
+            <div class="center-area">
+              <ArgbCanvas v-if="viewMode === 'design'" />
+              <ArgbYaml v-else />
+            </div>
+            <div class="statusbar">
+              <span
+                class="dot"
+                :class="{ on: state.status.connected, run: state.status.running }"
+                :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
+              />
+              <span>{{ statusText }}</span>
+              <span v-if="state.status.running">
+                running @ {{ state.status.fps }} fps · {{ state.status.frames_sent }} frames sent
+              </span>
+              <button
+                v-if="!state.status.connected"
+                class="small"
+                @click="store.actions.connect()"
+              >
+                Connect
+              </button>
+              <button v-else class="small" @click="store.actions.disconnect()">Disconnect</button>
+              <span class="grow" />
+              <span v-if="chainInfo !== null" class="mono">
+                Chain {{ chainInfo.used }}<template v-if="chainInfo.capacity !== null">/{{ chainInfo.capacity }}</template> LEDs
+              </span>
+              <span class="dim">Drag to move · Wheel to zoom · Del to delete</span>
+            </div>
+          </div>
+
+          <aside class="right">
+            <ArgbInspector />
+          </aside>
         </div>
-        <button class="icon-btn" :disabled="!store.canUndo()" title="Undo (Ctrl+Z)" @click="store.undo()">⟲</button>
-        <button class="icon-btn" :disabled="!store.canRedo()" title="Redo (Ctrl+Shift+Z)" @click="store.redo()">⟳</button>
-        <button title="Save layout (Ctrl+S)" @click="save()">Save</button>
-        <button class="primary" title="Save and run the engine" @click="store.actions.apply()">▶ Apply</button>
-        <button :disabled="!state.status.running" @click="store.actions.stop()">Stop</button>
-        <button class="danger" @click="requestClose()">Close</button>
-        <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">?</button>
+
+        <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
+          <div class="help-card">
+            <div class="help-head">
+              <span>Keyboard shortcuts</span>
+              <button class="icon-btn" @click="helpVisible = false">×</button>
+            </div>
+            <table class="help-table">
+              <tbody>
+                <tr><td class="keys">Del / Backspace</td><td>Delete selection</td></tr>
+                <tr><td class="keys">Ctrl+C / X / V / D</td><td>Copy / cut / paste / duplicate devices</td></tr>
+                <tr><td class="keys">Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
+                <tr><td class="keys">Ctrl+S</td><td>Save layout</td></tr>
+                <tr><td class="keys">Arrow keys</td><td>Nudge selection 1 px (Shift = 10 px)</td></tr>
+                <tr><td class="keys">Wheel</td><td>Zoom canvas</td></tr>
+                <tr><td class="keys">Space + drag</td><td>Pan canvas</td></tr>
+                <tr><td class="keys">Escape</td><td>Deselect; again — close the designer</td></tr>
+                <tr><td class="keys">?</td><td>This help</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <DeviceLibraryModal v-if="libraryOpen" @close="libraryOpen = false" />
       </div>
-
-      <div class="body">
-        <aside class="left">
-          <div class="side-tabs">
-            <button :class="{ on: sideTab === 'effects' }" @click="sideTab = 'effects'">Effects</button>
-            <button :class="{ on: sideTab === 'hardware' }" @click="sideTab = 'hardware'">Hardware</button>
-          </div>
-          <div class="side-content">
-            <ArgbLayersPanel v-show="sideTab === 'effects'" />
-            <ArgbHeaders v-show="sideTab === 'hardware'" />
-          </div>
-        </aside>
-
-        <div class="center">
-          <div class="center-area">
-            <ArgbCanvas v-if="viewMode === 'design'" />
-            <ArgbYaml v-else />
-          </div>
-          <div class="statusbar">
-            <span
-              class="dot"
-              :class="{ on: state.status.connected, run: state.status.running }"
-              :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
-            />
-            <span>{{ statusText }}</span>
-            <span v-if="state.status.running">
-              running @ {{ state.status.fps }} fps · {{ state.status.frames_sent }} frames sent
-            </span>
-            <button
-              v-if="!state.status.connected"
-              class="small"
-              @click="store.actions.connect()"
-            >
-              Connect
-            </button>
-            <button v-else class="small" @click="store.actions.disconnect()">Disconnect</button>
-            <span class="grow" />
-            <span v-if="chainInfo !== null" class="mono">
-              Chain {{ chainInfo.used }}<template v-if="chainInfo.capacity !== null">/{{ chainInfo.capacity }}</template> LEDs
-            </span>
-            <span class="dim">Drag to move · Wheel to zoom · Del to delete</span>
-          </div>
-        </div>
-
-        <aside class="right">
-          <ArgbInspector />
-        </aside>
-      </div>
-
-      <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
-        <div class="help-card">
-          <div class="help-head">
-            <span>Keyboard shortcuts</span>
-            <button class="icon-btn" @click="helpVisible = false">×</button>
-          </div>
-          <table class="help-table">
-            <tbody>
-              <tr><td class="keys">Del / Backspace</td><td>Delete selection</td></tr>
-              <tr><td class="keys">Ctrl+C / X / V / D</td><td>Copy / cut / paste / duplicate devices</td></tr>
-              <tr><td class="keys">Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
-              <tr><td class="keys">Ctrl+S</td><td>Save layout</td></tr>
-              <tr><td class="keys">Arrow keys</td><td>Nudge selection 1 px (Shift = 10 px)</td></tr>
-              <tr><td class="keys">Wheel</td><td>Zoom canvas</td></tr>
-              <tr><td class="keys">Space + drag</td><td>Pan canvas</td></tr>
-              <tr><td class="keys">Escape</td><td>Deselect; again — close the designer</td></tr>
-              <tr><td class="keys">?</td><td>This help</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <DeviceLibraryModal v-if="libraryOpen" @close="libraryOpen = false" />
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
