@@ -2,8 +2,8 @@
 File:   devices.py
 Brief:  ARGB device definitions: YAML shape library, validation, seeds.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.6.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

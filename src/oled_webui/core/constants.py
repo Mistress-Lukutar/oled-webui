@@ -2,8 +2,8 @@
 File:   constants.py
 Brief:  USB protocol constants and resolution profiles for 87AD:70DB.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.5.2
 
 Protocol layout ported from the reverse-engineered CLI project; the byte
 offsets below are verified against a real wire capture.

@@ -2,15 +2,20 @@
 File:   device.py
 Brief:  Device connection, status and display settings endpoints.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from oled_webui.dependencies import DisplayDep, ScenesDep, SettingsDep
+from oled_webui.dependencies import (
+    DisplayDep,
+    SceneRuntimeDep,
+    ScenesDep,
+    SettingsDep,
+)
 from oled_webui.models.schemas import DisplaySettingsRequest, StatusResponse
 from oled_webui.services.content_state import restore_last_content
 
@@ -25,11 +30,14 @@ async def get_status(display: DisplayDep) -> StatusResponse:
 
 @router.post("/connect", response_model=StatusResponse)
 async def connect(
-    display: DisplayDep, scenes: ScenesDep, settings: SettingsDep
+    display: DisplayDep,
+    runtime: SceneRuntimeDep,
+    scenes: ScenesDep,
+    settings: SettingsDep,
 ) -> StatusResponse:
     """Open the USB device, perform the handshake and restore the last screen."""
     result = await display.connect()
-    await restore_last_content(display, scenes, settings)
+    await restore_last_content(runtime, scenes, settings)
     return StatusResponse(data=result.model_dump())
 
 
@@ -70,10 +78,13 @@ async def get_info(display: DisplayDep) -> StatusResponse:
 
 @router.post("/reconnect", response_model=StatusResponse)
 async def reconnect(
-    display: DisplayDep, scenes: ScenesDep, settings: SettingsDep
+    display: DisplayDep,
+    runtime: SceneRuntimeDep,
+    scenes: ScenesDep,
+    settings: SettingsDep,
 ) -> StatusResponse:
     """Re-establish the USB connection and restore the last screen."""
     await display.disconnect()
     result = await display.connect()
-    await restore_last_content(display, scenes, settings)
+    await restore_last_content(runtime, scenes, settings)
     return StatusResponse(data=result.model_dump())

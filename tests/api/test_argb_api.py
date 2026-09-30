@@ -1,9 +1,9 @@
 """
 File:   test_argb_api.py
-Brief:  API tests for ARGB status, layout, device library and engine.
+Brief:  API tests for ARGB status, scene-driven layouts and the library.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 # A tiny three-LED definition so previews and buffers stay small.
@@ -31,7 +33,7 @@ def _install_tiny(client: TestClient) -> None:
     assert response.status_code == 200, response.text
 
 
-VALID_LAYOUT: dict[str, Any] = {
+VALID_ARGB: dict[str, Any] = {
     "fps": 30,
     "brightness": 100,
     "headers": [{"id": "h1", "name": "ARGB 1", "zone_index": 0, "devices": ["d1"]}],
@@ -51,6 +53,17 @@ VALID_LAYOUT: dict[str, Any] = {
 }
 
 
+def _create_argb_scene(client: TestClient, argb: dict[str, Any]) -> str:
+    """Store a scene whose only section is the given argb layout."""
+    scene_yaml = yaml.safe_dump({"argb": argb}, sort_keys=False)
+    created = client.post("/api/scenes", data={"name": "Lights"})
+    assert created.status_code == 200, created.text
+    scene_id = created.json()["data"]["scene"]["id"]
+    saved = client.put(f"/api/scenes/{scene_id}", json={"yaml": scene_yaml})
+    assert saved.status_code == 200, saved.text
+    return scene_id
+
+
 def test_argb_status_defaults(client: TestClient) -> None:
     """A fresh server reports a disconnected, stopped ARGB subsystem."""
     response = client.get("/api/argb/status")
@@ -61,25 +74,37 @@ def test_argb_status_defaults(client: TestClient) -> None:
     assert data["zones"] == []
 
 
-def test_argb_layout_roundtrip(client: TestClient) -> None:
-    """A stored layout is returned by GET and survives re-validation."""
-    _install_tiny(client)
-    response = client.put("/api/argb/layout", json=VALID_LAYOUT)
+def test_argb_active_endpoint_defaults(client: TestClient) -> None:
+    """Without an applied scene the active layout is empty and stopped."""
+    response = client.get("/api/argb/active")
     assert response.status_code == 200
-    assert response.json()["success"] is True
-    stored = client.get("/api/argb/layout").json()["data"]["layout"]
-    assert stored["devices"][0]["id"] == "d1"
-    assert stored["devices"][0]["device"] == "tiny"
-    assert stored["layers"][0]["effect"]["type"] == "fill"
+    data = response.json()["data"]
+    assert data["running"] is False
+    assert data["layout"]["headers"] == []
 
 
-def test_argb_layout_unknown_definition_rejected(client: TestClient) -> None:
-    """A layout referencing a missing definition is rejected with 422."""
-    response = client.put("/api/argb/layout", json=VALID_LAYOUT)
-    assert response.status_code == 422
-    body = response.json()
-    assert body["success"] is False
-    assert "unknown device definitions" in body["error"]
+def test_argb_layout_roundtrip_through_scene(client: TestClient) -> None:
+    """A scene's argb section validates, applies and feeds GET /active."""
+    _install_tiny(client)
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    applied = client.post(f"/api/scenes/{scene_id}/apply")
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["data"]["devices"]["argb"] == "started"
+
+    active = client.get("/api/argb/active").json()["data"]
+    assert active["running"] is True
+    assert active["layout"]["devices"][0]["id"] == "d1"
+    assert active["layout"]["devices"][0]["device"] == "tiny"
+    assert active["layout"]["layers"][0]["effect"]["type"] == "fill"
+
+
+def test_argb_unknown_definition_fails_scene_apply(client: TestClient) -> None:
+    """A layout referencing a missing definition reports a device error."""
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    applied = client.post(f"/api/scenes/{scene_id}/apply")
+    assert applied.status_code == 200
+    devices = applied.json()["data"]["devices"]
+    assert devices["argb"].startswith("error:")
 
 
 def test_argb_device_library_crud(client: TestClient) -> None:
@@ -108,9 +133,13 @@ def test_argb_device_library_crud(client: TestClient) -> None:
 
 
 def test_argb_device_used_definition_delete_rejected(client: TestClient) -> None:
-    """A definition referenced by the stored layout cannot be deleted."""
+    """A definition referenced by the applied layout cannot be deleted."""
     _install_tiny(client)
-    client.put("/api/argb/layout", json=VALID_LAYOUT)
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    applied = client.post(f"/api/scenes/{scene_id}/apply")
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["data"]["devices"]["argb"] == "started"
+
     response = client.delete("/api/argb/devices/tiny")
     assert response.status_code == 422
     assert "d1" in response.json()["error"]
@@ -126,7 +155,7 @@ def test_argb_device_invalid_yaml_rejected(client: TestClient) -> None:
 def test_argb_render_preview_is_deterministic(client: TestClient) -> None:
     """Fixed-time previews render identical buffers without hardware."""
     _install_tiny(client)
-    payload = dict(VALID_LAYOUT)
+    payload = dict(VALID_ARGB)
     first = client.post("/api/argb/render_preview", json=payload, params={"t": 1.0})
     second = client.post("/api/argb/render_preview", json=payload, params={"t": 1.0})
     assert first.status_code == 200
@@ -135,30 +164,13 @@ def test_argb_render_preview_is_deterministic(client: TestClient) -> None:
     assert buffers["h1"] == "ff0000ff0000ff0000"
 
 
-def test_argb_connect_discovers_zones(
+def test_argb_scene_apply_sends_zone_buffers(
     client: TestClient, fake_openrgb: list[dict[str, Any]]
 ) -> None:
-    """Connecting reports the controller and syncs header zone sizes."""
+    """Applying a scene starts the engine that drives OpenRGB zones."""
     _install_tiny(client)
-    client.put("/api/argb/layout", json=VALID_LAYOUT)
-    response = client.post("/api/argb/connect")
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["connected"] is True
-    assert data["controller"] == "Fake Motherboard"
-    assert len(data["zones"]) == 2
-    stored = client.get("/api/argb/layout").json()["data"]["layout"]
-    assert stored["headers"][0]["size"] == 64
-
-
-def test_argb_apply_sends_zone_buffers(
-    client: TestClient, fake_openrgb: list[dict[str, Any]]
-) -> None:
-    """Applying a layout starts the engine that drives OpenRGB zones."""
-    _install_tiny(client)
-    client.post("/api/argb/connect")
-    layout = {
-        **VALID_LAYOUT,
+    argb = {
+        **VALID_ARGB,
         "headers": [
             {
                 "id": "h1",
@@ -169,9 +181,9 @@ def test_argb_apply_sends_zone_buffers(
             }
         ],
     }
-    response = client.post("/api/argb/apply", json=layout)
-    assert response.status_code == 200
-    assert response.json()["data"]["running"] is True
+    scene_id = _create_argb_scene(client, argb)
+    response = client.post(f"/api/scenes/{scene_id}/apply")
+    assert response.status_code == 200, response.text
 
     deadline = time.monotonic() + 5.0
     while not fake_openrgb and time.monotonic() < deadline:
@@ -185,19 +197,20 @@ def test_argb_apply_sends_zone_buffers(
     time.sleep(0.15)
     assert len(fake_openrgb) <= stable + 1
 
-    stopped = client.post("/api/argb/stop").json()["data"]
-    assert stopped["running"] is False
+    stopped = client.post("/api/scenes/stop")
+    assert stopped.status_code == 200
+    status = client.get("/api/argb/status").json()["data"]
+    assert status["running"] is False
 
 
-def test_argb_apply_without_connection_still_runs(
+def test_argb_engine_self_heals_transport(
     client: TestClient, fake_openrgb: list[dict[str, Any]]
 ) -> None:
     """The engine self-heals: it opens the transport on its own."""
     _install_tiny(client)
-    response = client.post("/api/argb/apply", json=VALID_LAYOUT)
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["running"] is True
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    response = client.post(f"/api/scenes/{scene_id}/apply")
+    assert response.status_code == 200, response.text
 
     deadline = time.monotonic() + 10.0
     connected = False
@@ -214,8 +227,8 @@ def test_argb_apply_without_connection_still_runs(
         time.sleep(0.05)
     assert fake_openrgb, "recovered engine never sent a zone buffer"
 
-    stopped = client.post("/api/argb/stop").json()["data"]
-    assert stopped["running"] is False
+    stopped = client.post("/api/scenes/stop")
+    assert stopped.status_code == 200
 
 
 def test_argb_disconnect_stops_engine(
@@ -223,8 +236,29 @@ def test_argb_disconnect_stops_engine(
 ) -> None:
     """Disconnecting stops the engine and closes the session."""
     _install_tiny(client)
-    client.post("/api/argb/connect")
-    client.post("/api/argb/apply", json=VALID_LAYOUT)
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    applied = client.post(f"/api/scenes/{scene_id}/apply")
+    assert applied.status_code == 200, applied.text
+
     data = client.post("/api/argb/disconnect").json()["data"]
     assert data["connected"] is False
     assert data["running"] is False
+
+
+@pytest.mark.usefixtures("fake_openrgb")
+def test_argb_scene_apply_syncs_header_sizes(client: TestClient) -> None:
+    """Applying adopts missing zone capacities into the runtime layout."""
+    _install_tiny(client)
+    scene_id = _create_argb_scene(client, VALID_ARGB)
+    applied = client.post(f"/api/scenes/{scene_id}/apply")
+    assert applied.status_code == 200, applied.text
+
+    size: int | None = None
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        active = client.get("/api/argb/active").json()["data"]
+        size = active["layout"]["headers"][0]["size"]
+        if size is not None:
+            break
+        time.sleep(0.05)
+    assert size == 64

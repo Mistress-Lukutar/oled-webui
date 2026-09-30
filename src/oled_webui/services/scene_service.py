@@ -2,8 +2,8 @@
 File:   scene_service.py
 Brief:  File-backed scene storage: YAML sources, metadata and assets.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -28,33 +28,61 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# Default template offered when a scene is created without YAML content.
+# Default template offered when a scene is created without YAML content:
+# a screen section with live widgets plus a commented ARGB example.
 SCENE_TEMPLATE: str = """\
-# Scene: background collage plus live widgets driven by system metrics.
-# Sources: cpu.percent, ram.percent, disk.percent, net.kbps, temp.cpu,
-# gpu.percent, time.hms, time.date
+# Scene: the appearance of the whole computer, one section per device.
+# Screen sources: cpu.percent, ram.percent, disk.percent, net.kbps,
+# temp.cpu, gpu.percent, time.hms, time.date
 
-refresh: 1.0            # data polling rate (Hz)
-max_fps: 20             # animation frame rate cap
-keepalive_interval: 2.0 # resend interval for unchanged frames
-# Brightness and JPEG quality are global display settings
-# (Settings dialog in the web UI), not per-scene values.
+screen:
+  refresh: 1.0            # data polling rate (Hz)
+  max_fps: 20             # animation frame rate cap
+  keepalive_interval: 2.0 # resend interval for unchanged frames
+  # Brightness and JPEG quality are global display settings
+  # (Settings dialog in the web UI), not per-scene values.
 
-widgets:
-  - type: text
-    source: time.hms
-    rect: [40, 40, 400, 80]
-    align: center
-    style:
-      size: 56
-      fill_color: "#FFFFFF"
-  - type: bar
-    source: cpu
-    rect: [40, 160, 400, 24]
-    style:
-      progress_color: "#7CFC00"
-      fill_color: "#1a1a1a"
-      radius: 6
+  widgets:
+    - type: text
+      source: time.hms
+      rect: [40, 40, 400, 80]
+      align: center
+      style:
+        size: 56
+        fill_color: "#FFFFFF"
+    - type: bar
+      source: cpu
+      rect: [40, 160, 400, 24]
+      style:
+        progress_color: "#7CFC00"
+        fill_color: "#1a1a1a"
+        radius: 6
+
+# Uncomment to drive ARGB lighting from this scene. Headers map OpenRGB
+# zones; devices reference definitions from the device library; layers
+# stack effects bottom-first. A scene without an "argb:" section stops
+# the lighting engine when applied.
+# argb:
+#   fps: 30
+#   brightness: 100
+#   headers:
+#     - id: h1
+#       name: ARGB 1
+#       zone_index: 0
+#       devices: [d1]
+#   devices:
+#     - id: d1
+#       name: Strip 1
+#       device: strip
+#       header_id: h1
+#       x: 200
+#       y: 250
+#   layers:
+#     - id: l1
+#       name: Fill
+#       effect:
+#         type: fill
+#         color: "#2244CC"
 """
 
 
@@ -197,11 +225,15 @@ class SceneService:
         )
         self._write_yaml(scene_id, yaml_text)
         meta.updated_at = time.time()
-        meta.widget_count = len(document.widgets)
+        meta.widget_count = len(document.screen.widgets) if document.screen else 0
         if name is not None:
             meta.name = name
         self._write_meta(meta)
-        logger.info("scene_saved", id=scene_id, widgets=len(document.widgets))
+        logger.info(
+            "scene_saved",
+            id=scene_id,
+            widgets=meta.widget_count,
+        )
         return meta
 
     def load_document(self, scene_id: str) -> SceneDocument:
@@ -211,7 +243,8 @@ class SceneService:
             scene_id: Unique scene identifier.
 
         Returns:
-            Validated scene document with resolved asset paths.
+            Validated scene document (one section per device) with
+            resolved asset paths.
 
         Raises:
             SceneNotFoundError: If the scene does not exist.
@@ -460,6 +493,8 @@ def _widget_count(yaml_path: Path) -> int:
     except (OSError, yaml.YAMLError):
         return 0
     if isinstance(document, dict):
-        widgets = document.get("widgets")
-        return len(widgets) if isinstance(widgets, list) else 0
+        screen = document.get("screen")
+        if isinstance(screen, dict):
+            widgets = screen.get("widgets")
+            return len(widgets) if isinstance(widgets, list) else 0
     return 0

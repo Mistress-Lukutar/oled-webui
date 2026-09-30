@@ -2,8 +2,8 @@
 File:   test_frame_builder.py
 Brief:  Unit tests for the render pipeline and text rendering.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

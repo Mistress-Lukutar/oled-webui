@@ -3,7 +3,7 @@ File:   system.py
 Brief:  System-level endpoints: the device registry backing the dashboard.
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.1.0
+Version: v0.5.2
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@ File:   test_api.py
 Brief:  API smoke tests over the full FastAPI app with a fake LCD.
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.4.0
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -14,10 +14,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 STATIC_SCENE_YAML = """\
-widgets:
-  - type: text
-    value: "Hello"
-    rect: [10, 10, 200, 60]
+screen:
+  widgets:
+    - type: text
+      value: "Hello"
+      rect: [10, 10, 200, 60]
 """
 
 

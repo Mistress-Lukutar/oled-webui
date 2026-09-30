@@ -1,8 +1,8 @@
 """File:   test_expr_eval_port.py
 Brief:  Cross-check the TS expression port against the Python evaluator.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.1.0
+Date:   2026-09-30
+Version: v0.5.2
 
 Bundles the TS module with esbuild (via its JS API) and runs it under
 node, comparing results with this file's Python reference values.

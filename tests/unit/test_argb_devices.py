@@ -2,8 +2,8 @@
 File:   test_argb_devices.py
 Brief:  Tests for the ARGB device definition library and layout checks.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.1.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

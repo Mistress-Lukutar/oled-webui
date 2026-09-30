@@ -182,6 +182,18 @@ export interface SceneDocumentRaw {
   [key: string]: unknown
 }
 
+/**
+ * Root of a scene file: one section per device. ``screen`` is the OLED
+ * panel content; ``argb`` is the lighting layout (see argb/types.ts).
+ * Adding a device kind means a new section key here, a validator and a
+ * registry entry (sectionSpecs.ts).
+ */
+export interface SceneFileRaw {
+  screen?: SceneDocumentRaw
+  argb?: unknown
+  [key: string]: unknown
+}
+
 export const WIDGET_TYPES = ['text', 'bar', 'ring', 'graph', 'image', 'shape', 'video'] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 

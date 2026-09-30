@@ -204,7 +204,10 @@ export const API = {
       method: 'DELETE',
     }),
   applyScene: (id: string) =>
-    api<SceneState>(`/api/scenes/${id}/apply`, { method: 'POST' }),
+    api<{ devices: Record<string, string>; scene_id: string }>(
+      `/api/scenes/${id}/apply`,
+      { method: 'POST' },
+    ),
   sceneAssetUrl,
   libraryFontUrl,
   stopScene: () => api<SceneState>('/api/scenes/stop', { method: 'POST' }),
@@ -235,20 +238,8 @@ export const API = {
 
   connectArgb: () => api<ArgbStatus>('/api/argb/connect', { method: 'POST' }),
   disconnectArgb: () => api<ArgbStatus>('/api/argb/disconnect', { method: 'POST' }),
-  getArgbLayout: () => api<{ layout: ArgbLayout }>('/api/argb/layout'),
-  saveArgbLayout: (layout: ArgbLayout, apply = false) =>
-    api<{ layout?: ArgbLayout }>(`/api/argb/layout?apply=${apply}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(layout),
-    }),
-  applyArgb: (layout: ArgbLayout) =>
-    api<ArgbStatus>('/api/argb/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(layout),
-    }),
-  stopArgb: () => api<ArgbStatus>('/api/argb/stop', { method: 'POST' }),
+  /** The currently applied layout (runtime copy of the active scene's section). */
+  getActiveArgbLayout: () => api<{ layout: ArgbLayout; running: boolean }>('/api/argb/active'),
   listArgbDevices: () => api<{ devices: DeviceSummary[] }>('/api/argb/devices'),
   getArgbDevice: (id: string) =>
     api<{ yaml: string; definition: DeviceDefinition }>(`/api/argb/devices/${id}`),

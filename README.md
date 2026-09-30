@@ -20,14 +20,18 @@ from a browser. Protocol and transport are ported from the original
   blanks the panel when the Windows display powers off and restores the
   content when it turns back on. Settings persist across restarts and
   apply to every content type.
-- **Scenes** — declarative YAML layouts: a static background collage plus
-  live widgets (text, bar, ring, graph, image) driven by system metrics
-  (CPU, RAM, disk, network, temps, clock; GPU via NVML when available).
-  Reusable components, value-transition animations with named easing
-  curves and sandboxed procedural expressions (`t`, `dt`, `v`). Scenes are
-  stored under `data/scenes/<id>/` with their assets; the tab offers a
-  YAML editor with validation, a hardware-free frame preview and a scene
-  library. A bundled dashboard example can be added with one click.
+- **Scenes** — one declarative YAML file per scene describes the whole
+  computer's appearance, one section per device: `screen:` (background
+  collage plus live widgets driven by system metrics — CPU, RAM, disk,
+  network, temps, clock; GPU via NVML when available) and `argb:` (the
+  lighting layout below). Reusable components, value-transition
+  animations with named easing curves and sandboxed procedural
+  expressions (`t`, `dt`, `v`). Scenes are stored under
+  `data/scenes/<id>/` with their assets. The unified editor offers a
+  tab per device section plus a YAML view of the whole file with
+  validation and a hardware-free frame preview; applying a scene starts
+  every section it describes and stops the devices it does not. A
+  bundled dashboard example can be added with one click.
 - **Keepalive** — the panel reverts to its built-in logo after ~2–3 seconds
   without frames; the server re-sends the last frame in the background.
 - **Presets** — save the currently displayed content (image, color or text
@@ -112,8 +116,12 @@ device and *WinUSB*). On Linux, install `libusb-1.0` and add a udev rule for
 | `/api/scenes` | GET/POST | Scene library (multipart create) |
 | `/api/scenes/{id}` | GET/PUT/DELETE | Scene YAML source management |
 | `/api/scenes/{id}/assets` | POST/DELETE | Scene asset files |
-| `/api/scenes/{id}/apply` `/stop` | POST | Scene playback control |
+| `/api/scenes/{id}/apply` `/stop` | POST | Scene activation (all devices) / stop |
 | `/api/scenes/{id}/preview` `/preview` | POST | Render one frame as JPEG |
+| `/api/argb/status` `/connect` `/disconnect` | GET/POST | OpenRGB status and connection |
+| `/api/argb/active` | GET | Layout applied from the active scene |
+| `/api/argb/devices` | GET/POST/PUT/DELETE | Device definition library |
+| `/api/argb/render_preview` | POST | Hardware-free layout frame |
 | `/api/presets` | GET | List presets |
 | `/api/presets/save-current` | POST | Snapshot last content |
 | `/api/presets/{id}` `/apply` | POST/DELETE | Manage presets |
@@ -148,37 +156,45 @@ cd frontend && npm run dev   # Vite dev server with /api proxy
 
 After code changes run `python scripts/bump-version.py` to bump file headers.
 
-## ARGB lighting (Devices → ARGB tab)
+## ARGB lighting (scene `argb:` section)
 
-The second device tab drives ARGB strips and fans connected to the
-motherboard's 5V 3-pin headers through [OpenRGB](https://openrgb.org):
+ARGB strips and fans connected to the motherboard's 5V 3-pin headers are
+driven through [OpenRGB](https://openrgb.org). The lighting state lives
+in a scene file's `argb:` section, so scenes switch the whole computer
+appearance — panel and LEDs together:
 
 1. Install and start OpenRGB (it detects the board's RGB controller).
    The SDK server must listen on `127.0.0.1:6742` (default when the app
    runs; enable *SDK* in its settings if you changed it).
 2. Close Gigabyte Control Center / RGB Fusion — they fight over the
    controller.
-3. In the WebUI open the **ARGB** tab, press **Connect**, then add your
+3. In the WebUI open the ARGB panel, press **Connect**, then press
+   **Designer**: the unified scene editor opens on the ARGB tab. Add
    strips/fans, arrange them on the workspace to mirror the case, set
    LED counts and the header each device hangs on (chain order matters),
    stack effect layers (fill, gradient, rainbow, breathing, comet,
-   scanner, meter) with per-layer opacity and pixel masks, and press
-   **Apply**.
+   scanner, meter) with per-layer opacity and pixel masks, then
+   **Save** + **Apply** — the scene's `screen:` and `argb:` sections
+   start together.
 
 The workspace preview is rendered by the same engine that feeds the
-LEDs, so it is exactly what the hardware shows. Enable *Run
-automatically on server start* in the inspector (nothing selected) to
-restore the lighting on boot. Host/port can be overridden with
-`OLED_OPENRGB_HOST` / `OLED_OPENRGB_PORT`. The layout persists in
-`data/argb/layout.json`.
+LEDs, so it is exactly what the hardware shows. Applying a scene
+without an `argb:` section stops the lighting engine; the last active
+scene (including its ARGB state) is restored after a restart. Header
+zone sizes are pushed into OpenRGB on connect (ITE-style zones report 0
+LEDs until resized). Host/port can be overridden with
+`OLED_OPENRGB_HOST` / `OLED_OPENRGB_PORT`. Device shapes are templates
+in the definition library `data/argb/devices/*.yaml`, shared by scenes.
 
 ## Tests
 
-186 pytest tests cover the wire header layout, resolution profile lookup,
+209 pytest tests cover the wire header layout, resolution profile lookup,
 the render pipeline (fit/rotation/brightness/text), preset storage and a
 full API smoke suite with a fake USB device. The real hardware is not
 required. Scene engine tests cover the expression sandbox, easing curves,
 widget renderers, component expansion, the rendering state machine
-(dirty-detection, keepalive re-yield) and the scenes API. ARGB tests
-cover the effect engine math (masks, alpha blending, chain mapping), the
-layout schema validation and the API with a fake OpenRGB transport.
+(dirty-detection, keepalive re-yield), the unified scene-file format
+(screen + argb sections) and the scenes API. ARGB tests cover the
+effect engine math (masks, alpha blending, chain mapping), the layout
+schema validation, scene-driven activation and the API with a fake
+OpenRGB transport.

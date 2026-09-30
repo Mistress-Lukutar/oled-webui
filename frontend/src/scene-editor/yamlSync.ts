@@ -1,7 +1,7 @@
 /**
- * YAML parse/serialize for scene documents plus client-side validation
- * mirroring schema.py. The server stays authoritative on save; these
- * checks give instant feedback while typing.
+ * YAML parse/serialize for scene files (one section per device) plus
+ * client-side validation mirroring schema.py. The server stays
+ * authoritative on save; these checks give instant feedback while typing.
  */
 
 import { Document, parse, parseDocument, stringify, YAMLMap, YAMLSeq } from 'yaml'
@@ -16,11 +16,17 @@ import {
   unknownWidgetKeys,
   widgetType,
 } from './types'
-import type { EntryRaw, SceneDocumentRaw, WidgetRaw } from './types'
+import type { EntryRaw, SceneDocumentRaw, SceneFileRaw, WidgetRaw } from './types'
 
-export interface ParseResult {
-  doc: SceneDocumentRaw | null
+export interface ParseFileResult {
+  file: SceneFileRaw | null
   errors: string[]
+}
+
+/** One registered device section: key plus its client-side validator. */
+export interface SectionSpecData {
+  key: string
+  validate(section: unknown): string[]
 }
 
 function fmt(value: unknown): string {
@@ -238,32 +244,59 @@ function checkDocument(errors: string[], doc: SceneDocumentRaw): void {
   }
 }
 
-/** Re-validate an already-parsed document (used after mutations). */
+/** Validate the screen section of an already-parsed scene file. */
+export function validateScreenSection(section: unknown): string[] {
+  const errors: string[] = []
+  if (!isObject(section)) {
+    errors.push('screen: section must be a mapping')
+    return errors
+  }
+  checkDocument(errors, section as SceneDocumentRaw)
+  return errors
+}
+
+/** Re-validate an already-parsed screen section (used after mutations). */
 export function validateSceneDoc(doc: SceneDocumentRaw): string[] {
   const errors: string[] = []
   checkDocument(errors, doc)
   return errors
 }
 
-/** Parse scene YAML text; null doc means a syntax error. */
-export function parseSceneYaml(text: string): ParseResult {
+/**
+ * Parse a scene file: the root holds one section per device, validated
+ * by the registered section specs. A null file means a syntax error.
+ */
+export function parseSceneFile(text: string, specs: SectionSpecData[]): ParseFileResult {
   let raw: unknown
   try {
     raw = parse(text)
   } catch (err) {
     const message = err instanceof Error ? err.message.split('\n')[0] : String(err)
-    return { doc: null, errors: [`YAML syntax: ${message}`] }
+    return { file: null, errors: [`YAML syntax: ${message}`] }
   }
-  if (raw === undefined || raw === null) {
-    return { doc: { widgets: [] }, errors: [] }
-  }
+  if (raw === undefined || raw === null) raw = {}
   if (!isObject(raw)) {
-    return { doc: null, errors: ['Scene root must be a YAML mapping'] }
+    return { file: null, errors: ['Scene root must be a YAML mapping'] }
   }
-  const doc = raw as SceneDocumentRaw
+  const file = raw as SceneFileRaw
+  const known = specs.map((spec) => spec.key)
   const errors: string[] = []
-  checkDocument(errors, doc)
-  return { doc, errors }
+  for (const key of Object.keys(file)) {
+    if (!known.includes(key)) {
+      errors.push(`Unknown device section "${key}" (known: ${known.join(', ')})`)
+    }
+  }
+  for (const spec of specs) {
+    const value = file[spec.key]
+    if (value === undefined) continue
+    errors.push(...spec.validate(value))
+  }
+  if (!known.some((key) => file[key] !== undefined)) {
+    errors.push(
+      `Scene must define at least one device section (known: ${known.join(', ')})`,
+    )
+  }
+  return { file, errors }
 }
 
 /**
@@ -272,15 +305,6 @@ export function parseSceneYaml(text: string): ParseResult {
  * hand-written scene conventions. When the previous YAML text is given,
  * comments are grafted from it (matched structurally by key/index), so
  * header, section and trailing comments survive graphical edits.
- */
-export function stringifySceneYaml(doc: SceneDocumentRaw, previousText?: string): string {
-  return stringifyYamlWithComments(doc, previousText)
-}
-
-/**
- * Generic variant of the scene stringifier, shared with the ARGB device
- * designer: short scalar sequences go flow style, comments are grafted
- * from the previous text when given.
  */
 export function stringifyYamlWithComments(doc: unknown, previousText?: string): string {
   const yamlDoc = new Document(doc as Record<string, unknown>)

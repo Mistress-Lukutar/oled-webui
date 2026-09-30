@@ -222,8 +222,17 @@ const actions = {
 
   async applyScene(id: string): Promise<boolean> {
     return wrap(async () => {
-      state.scene = await API.applyScene(id)
+      const result = await API.applyScene(id)
       await refreshStatus()
+      // Per-device failures arrive as a success payload with "error:" marks.
+      const failed = Object.entries(result.devices).filter(([, mark]) =>
+        mark.startsWith('error:'),
+      )
+      if (failed.length > 0) {
+        throw new Error(
+          failed.map(([key, mark]) => `${key}: ${mark.slice('error: '.length)}`).join('; '),
+        )
+      }
     })
   },
 

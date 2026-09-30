@@ -2,8 +2,8 @@
 File:   test_display_power_watcher.py
 Brief:  Unit tests for the Win32 display power notification parser.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

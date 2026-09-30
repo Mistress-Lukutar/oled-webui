@@ -2,8 +2,8 @@
 File:   test_argb_schema.py
 Brief:  Validation tests for the ARGB layout schema.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from oled_webui.argb.schema import (
     ArgbLayer,
     ArgbLayout,
     MaskSpec,
-    default_layout,
 )
 
 
@@ -34,11 +33,12 @@ def _layout(**overrides: object) -> ArgbLayout:
     return ArgbLayout(**payload)  # type: ignore[arg-type]
 
 
-def test_default_layout_is_valid() -> None:
-    """The starter layout validates and references the strip definition."""
-    layout = default_layout()
-    assert layout.devices[0].device == "strip"
-    assert layout.headers[0].devices == ["d1"]
+def test_version_and_autostart_removed() -> None:
+    """The layout is a scene section: no standalone version/autostart."""
+    with pytest.raises(ValidationError):
+        ArgbLayout(version=1)  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        ArgbLayout(autostart=True)  # type: ignore[call-arg]
 
 
 def test_unknown_keys_are_rejected() -> None:

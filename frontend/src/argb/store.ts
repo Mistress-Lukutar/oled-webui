@@ -1,10 +1,18 @@
 /**
- * Singleton reactive store for the ARGB editor: draft layout, status,
- * selection, mask painting and live preview buffers.
+ * Singleton reactive store for the ARGB tooling: connection status,
+ * device library, selection, mask painting and live preview buffers.
+ *
+ * The working layout (``state.layout``) is a projection: inside the
+ * scene editor it aliases the scene file's ``argb`` section (bind via
+ * :func:`bindSceneSection`), everywhere else it mirrors the active
+ * engine layout from the server (refreshActiveLayout). Layout mutations
+ * always funnel through the scene editor store so YAML text, validation
+ * and undo stay in sync; outside the editor nothing mutates.
  */
 
-import { reactive, ref } from 'vue'
+import { reactive } from 'vue'
 import { API } from '../api'
+import { editor } from '../scene-editor/docStore'
 import {
   cloneLayout,
   defaultLayout,
@@ -30,6 +38,8 @@ interface Selection {
 interface ArgbState {
   status: ArgbStatus
   layout: ArgbLayout
+  /** True while layout aliases the scene file's argb section. */
+  bound: boolean
   loaded: boolean
   dirty: boolean
   /** Installed device definitions (library summaries with full shapes). */
@@ -52,7 +62,6 @@ const EMPTY_STATUS: ArgbStatus = {
   running: false,
   fps: 30,
   brightness: 100,
-  autostart: false,
   frames_sent: 0,
   process: null,
 }
@@ -60,6 +69,7 @@ const EMPTY_STATUS: ArgbStatus = {
 const state = reactive<ArgbState>({
   status: { ...EMPTY_STATUS },
   layout: defaultLayout(),
+  bound: false,
   loaded: false,
   dirty: false,
   library: [],
@@ -69,6 +79,10 @@ const state = reactive<ArgbState>({
   preview: {},
   error: null,
 })
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 /** Resolve the definition a device instance references. */
 function definitionOf(device: ArgbDevice): DeviceDefinition | undefined {
@@ -106,18 +120,6 @@ function stopPreviewPolling(): void {
   }
 }
 
-// ----------------------------------------------------------------------
-// Undo/redo: JSON snapshots of the whole layout. Batches (drag/paint
-// gestures) push exactly one snapshot via beginBatch()/endBatch().
-// ----------------------------------------------------------------------
-
-const MAX_HISTORY = 100
-let undoStack: string[] = []
-let redoStack: string[] = []
-let batchDepth = 0
-/** Bump whenever history contents change, for reactive canUndo/canRedo. */
-const historyVersion = ref(0)
-
 function pruneSelection(): void {
   const ids = new Set(state.layout.devices.map((item) => item.id))
   state.deviceSelection = state.deviceSelection.filter((id) => ids.has(id))
@@ -127,55 +129,20 @@ function pruneSelection(): void {
   ) {
     state.selection = { kind: null, id: null }
   }
-}
-
-function pushHistory(): void {
-  undoStack.push(JSON.stringify(state.layout))
-  if (undoStack.length > MAX_HISTORY) undoStack.shift()
-  redoStack = []
-  historyVersion.value += 1
-}
-
-function restore(snapshotText: string): void {
-  const doc = JSON.parse(snapshotText) as ArgbLayout
-  for (const key of Object.keys(state.layout)) {
-    delete (state.layout as Record<string, unknown>)[key]
+  if (
+    state.selection.kind !== null &&
+    state.selection.id !== null &&
+    !poolFor(state.selection.kind).some((item) => item.id === state.selection.id)
+  ) {
+    state.selection = { kind: null, id: null }
   }
-  Object.assign(state.layout, doc)
-  pruneSelection()
-  state.dirty = true
-  historyVersion.value += 1
 }
 
-function beginBatch(): void {
-  if (batchDepth === 0) pushHistory()
-  batchDepth += 1
-}
-
-function endBatch(): void {
-  batchDepth = Math.max(0, batchDepth - 1)
-}
-
-function undo(): void {
-  if (undoStack.length === 0 || batchDepth > 0) return
-  redoStack.push(JSON.stringify(state.layout))
-  restore(undoStack.pop()!)
-}
-
-function redo(): void {
-  if (redoStack.length === 0 || batchDepth > 0) return
-  undoStack.push(JSON.stringify(state.layout))
-  restore(redoStack.pop()!)
-}
-
-function canUndo(): boolean {
-  void historyVersion.value
-  return undoStack.length > 0
-}
-
-function canRedo(): boolean {
-  void historyVersion.value
-  return redoStack.length > 0
+function poolFor(kind: Selection['kind']): Array<{ id: string }> {
+  if (kind === 'device') return state.layout.devices
+  if (kind === 'header') return state.layout.headers
+  if (kind === 'layer') return state.layout.layers
+  return []
 }
 
 function showError(message: string): void {
@@ -196,14 +163,16 @@ async function wrap(action: () => Promise<void>): Promise<boolean> {
 }
 
 /**
- * Every draft edit goes through here: apply fn, then mark dirty.
- * Standalone calls capture one history snapshot automatically; gesture
- * code wraps itself in beginBatch()/endBatch().
+ * Every draft edit goes through here: the mutation is applied to the
+ * scene file's argb section by the editor store, which snapshots undo
+ * history and regenerates the YAML text. Outside the editor (no scene
+ * file) mutations are dropped: the working layout is read-only there.
  */
 function mutate(fn: (layout: ArgbLayout) => void): void {
-  if (batchDepth === 0) pushHistory()
-  fn(state.layout)
-  state.dirty = true
+  editor.mutateSection(
+    'argb',
+    fn as unknown as (section: Record<string, unknown>) => void,
+  )
 }
 
 function nextOrdinal(prefix: string): number {
@@ -222,18 +191,8 @@ const actions = {
     if (state.loaded) return
     await actions.refreshStatus()
     await actions.loadLibrary()
-    try {
-      const { layout } = await API.getArgbLayout()
-      state.layout = layout
-    } catch {
-      state.layout = defaultLayout()
-    }
-    state.dirty = false
+    await actions.refreshActiveLayout()
     state.loaded = true
-    undoStack = []
-    redoStack = []
-    batchDepth = 0
-    historyVersion.value += 1
   },
 
   async refreshStatus(): Promise<void> {
@@ -251,6 +210,39 @@ const actions = {
     } catch {
       // Keep the last known library; the picker will retry on demand.
     }
+  },
+
+  /**
+   * Alias the working layout to the scene editor's argb section. Called
+   * by the editor whenever its document (re)loads; a scene without an
+   * argb section binds a detached default so the tab can offer
+   * "+ Add section" without touching the file.
+   */
+  bindSceneSection(): void {
+    const file = editor.getRawFile()
+    const section = file !== null && isObject(file['argb']) ? file['argb'] : null
+    if (section !== null) {
+      state.layout = section as unknown as ArgbLayout
+      state.bound = true
+    } else {
+      state.layout = defaultLayout()
+      state.bound = false
+    }
+    state.dirty = false
+    pruneSelection()
+  },
+
+  /** Drop the editor binding and mirror the active engine layout. */
+  async refreshActiveLayout(): Promise<void> {
+    state.bound = false
+    try {
+      const { layout } = await API.getActiveArgbLayout()
+      state.layout = cloneLayout(layout)
+    } catch {
+      state.layout = defaultLayout()
+    }
+    state.dirty = false
+    pruneSelection()
   },
 
   async fetchPreview(): Promise<void> {
@@ -282,33 +274,6 @@ const actions = {
     })
   },
 
-  async apply(): Promise<boolean> {
-    return wrap(async () => {
-      state.status = await API.applyArgb(cloneLayout(state.layout))
-      state.dirty = false
-    })
-  },
-
-  async save(): Promise<boolean> {
-    return wrap(async () => {
-      await API.saveArgbLayout(cloneLayout(state.layout))
-      state.dirty = false
-    })
-  },
-
-  async stop(): Promise<boolean> {
-    return wrap(async () => {
-      state.status = await API.stopArgb()
-    })
-  },
-
-  async setAutostart(value: boolean): Promise<boolean> {
-    mutate((layout) => {
-      layout.autostart = value
-    })
-    return actions.save()
-  },
-
   // -----------------------------------------------------------------
   // Devices (CRUD)
   // -----------------------------------------------------------------
@@ -337,7 +302,7 @@ const actions = {
     )
     mutate((layout) => {
       layout.devices.push(device)
-      layout.headers[0].devices.push(device.id)
+      layout.headers[0]?.devices.push(device.id)
     })
     actions.select('device', device.id)
   },
@@ -651,32 +616,6 @@ const actions = {
     })
   },
 
-  /** Replace the whole draft layout (JSON view). One history snapshot. */
-  replaceLayout(doc: ArgbLayout): void {
-    mutate(() => {
-      for (const key of Object.keys(state.layout)) {
-        delete (state.layout as Record<string, unknown>)[key]
-      }
-      Object.assign(state.layout, doc)
-    })
-    pruneSelection()
-    if (
-      state.maskLayerId !== null &&
-      !state.layout.layers.some((item) => item.id === state.maskLayerId)
-    ) {
-      state.maskLayerId = null
-    }
-    if (state.selection.kind === 'layer' || state.selection.kind === 'header') {
-      const pool =
-        state.selection.kind === 'layer'
-          ? state.layout.layers
-          : state.layout.headers
-      if (!pool.some((item) => item.id === state.selection.id)) {
-        state.selection = { kind: null, id: null }
-      }
-    }
-  },
-
   select(kind: Selection['kind'], id: string | null): void {
     if (kind === 'device' && id !== null) {
       state.deviceSelection = [id]
@@ -844,13 +783,13 @@ export function useArgbStore() {
     maskCoverage,
     definitionOf,
     deviceLeds,
-    beginBatch,
-    endBatch,
+    beginBatch: editor.beginBatch,
+    endBatch: editor.endBatch,
     startPreviewPolling,
     stopPreviewPolling,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
+    undo: editor.undo,
+    redo: editor.redo,
+    canUndo: editor.canUndo,
+    canRedo: editor.canRedo,
   }
 }

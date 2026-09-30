@@ -1,16 +1,18 @@
 """
 File:   schema.py
-Brief:  Pydantic schema for scene documents: background, widgets, animation.
+Brief:  Pydantic schema for scene files: one section per device (screen, argb).
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from oled_webui.argb.schema import ArgbLayout
 
 
 class _Strict(BaseModel):
@@ -262,8 +264,8 @@ Widget = Annotated[
 ]
 
 
-class SceneDocument(BaseModel):
-    """Validated scene document: static background plus animated widgets.
+class ScreenDocument(BaseModel):
+    """Validated screen section: static background plus animated widgets.
 
     Brightness and JPEG quality are global display settings managed by the
     application, not per-scene values.
@@ -280,3 +282,35 @@ class SceneDocument(BaseModel):
     keepalive_interval: float = Field(
         2.0, gt=0, description="Resend interval for unchanged frames in seconds"
     )
+
+
+class SceneDocument(BaseModel):
+    """Validated scene file: the appearance of every device, one section each.
+
+    Adding a device kind means adding a section model here (typed, so it
+    validates with the rest of the document) plus a runtime entry in
+    ``services/scene_runtime.py``; unknown sections are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    screen: ScreenDocument | None = Field(
+        None, description="OLED panel content; None stops the panel playback"
+    )
+    argb: ArgbLayout | None = Field(
+        None, description="ARGB lighting state; None stops the lighting engine"
+    )
+
+    @model_validator(mode="after")
+    def _validate_sections(self) -> SceneDocument:
+        """Require at least one device section.
+
+        Raises:
+            ValueError: If no device section is present.
+        """
+        if self.screen is None and self.argb is None:
+            raise ValueError(
+                "Scene must define at least one device section "
+                "(known sections: screen, argb)"
+            )
+        return self

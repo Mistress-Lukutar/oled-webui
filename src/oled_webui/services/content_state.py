@@ -2,8 +2,8 @@
 File:   content_state.py
 Brief:  Persistent last-screen snapshot: save, load and restore panel content.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import structlog
 
 if TYPE_CHECKING:
     from oled_webui.config import Settings
-    from oled_webui.services.display_service import DisplayService
+    from oled_webui.services.scene_runtime import SceneRuntime
     from oled_webui.services.scene_service import SceneService
 
 logger = structlog.get_logger(__name__)
@@ -79,20 +79,22 @@ def save_content_state(path: Path, content: dict[str, Any] | None) -> None:
 
 
 async def restore_last_content(
-    display: DisplayService,
+    runtime: SceneRuntime,
     scenes: SceneService,
     settings: Settings,
 ) -> bool:
     """Reapply the persisted last-screen snapshot after a fresh connect.
 
-    A persisted scene is restarted from its YAML source. Snapshots of
-    removed content types (image/color/text from older versions) are
-    ignored. Any failure (deleted scene, render error) is logged and
-    reported as "not restored", so callers never break startup.
+    A persisted scene is reactivated through the scene runtime, which
+    restarts every device section it describes (screen playback and ARGB
+    lighting). Snapshots of removed content types (image/color/text from
+    older versions) are ignored. Any failure (deleted scene, activation
+    error) is logged and reported as "not restored", so callers never
+    break startup.
 
     Args:
-        display: Connected display service receiving the content.
-        scenes: Scene service used to load a persisted scene document.
+        runtime: Scene runtime driving every registered device.
+        scenes: Scene service used to load the persisted scene document.
         settings: Application settings providing the data directory.
 
     Returns:
@@ -109,9 +111,8 @@ async def restore_last_content(
     try:
         payload = content.get("payload") or {}
         scene_id = str(payload.get("scene_id", ""))
-        meta = scenes.get_meta(scene_id)
-        document = scenes.load_document(scene_id)
-        await display.start_scene(document, scene_id, meta.name)
+        scenes.get_meta(scene_id)
+        await runtime.activate(scene_id)
     # Best-effort restore: any storage or renderer problem must not break
     # the surrounding connect flow or server startup.
     except Exception as exc:

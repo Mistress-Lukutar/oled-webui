@@ -2,8 +2,8 @@
 File:   engine.py
 Brief:  Pure ARGB effect engine: layout + time -> per-header pixel buffers.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

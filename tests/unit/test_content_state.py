@@ -2,8 +2,8 @@
 File:   test_content_state.py
 Brief:  Unit tests for the persisted last-screen snapshot.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from oled_webui.argb.service import ArgbService
 from oled_webui.config import Settings
 from oled_webui.services.content_state import (
     content_state_path,
@@ -20,6 +21,7 @@ from oled_webui.services.content_state import (
 )
 from oled_webui.services.display_service import DisplayService
 from oled_webui.services.event_bus import EventBus
+from oled_webui.services.scene_runtime import SceneRuntime
 from oled_webui.services.scene_service import SceneService
 
 
@@ -33,6 +35,13 @@ async def _connected_display(settings: Settings) -> DisplayService:
     display = DisplayService(settings, EventBus())
     await display.connect()
     return display
+
+
+def _runtime(
+    settings: Settings, display: DisplayService, scenes: SceneService
+) -> SceneRuntime:
+    """Build a scene runtime over the given services."""
+    return SceneRuntime(scenes, display, ArgbService(settings, EventBus()))
 
 
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:
@@ -79,8 +88,11 @@ async def test_restore_legacy_snapshot_returns_false(
         content_state_path(settings), _snapshot("color", {"color": "ff0000"})
     )
     display = await _connected_display(settings)
+    scenes = SceneService(settings)
 
-    restored = await restore_last_content(display, SceneService(settings), settings)
+    restored = await restore_last_content(
+        _runtime(settings, display, scenes), scenes, settings
+    )
     state = display.status()["scene"]
     await display.shutdown()
 
@@ -104,7 +116,9 @@ async def test_restore_scene_restarts_scene(tmp_path: Path, fake_lcd: list) -> N
     )
     display = await _connected_display(settings)
 
-    restored = await restore_last_content(display, scenes, settings)
+    restored = await restore_last_content(
+        _runtime(settings, display, scenes), scenes, settings
+    )
     state = display.status()["scene"]
     await display.shutdown()
 
@@ -124,8 +138,11 @@ async def test_restore_missing_scene_returns_false(
         _snapshot("scene", {"scene_id": "nope", "name": "gone"}),
     )
     display = await _connected_display(settings)
+    scenes = SceneService(settings)
 
-    restored = await restore_last_content(display, SceneService(settings), settings)
+    restored = await restore_last_content(
+        _runtime(settings, display, scenes), scenes, settings
+    )
     await display.shutdown()
 
     assert restored is False
@@ -138,8 +155,11 @@ async def test_restore_without_snapshot_returns_false(
     settings = Settings(data_dir=tmp_path / "data")
     settings.ensure_dirs()
     display = await _connected_display(settings)
+    scenes = SceneService(settings)
 
-    restored = await restore_last_content(display, SceneService(settings), settings)
+    restored = await restore_last_content(
+        _runtime(settings, display, scenes), scenes, settings
+    )
     await display.shutdown()
 
     assert restored is False

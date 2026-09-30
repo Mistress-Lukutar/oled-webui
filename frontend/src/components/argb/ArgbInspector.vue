@@ -580,14 +580,6 @@ function onZoneChange(event: Event): void {
           <input type="number" min="0" max="200" :value="state.layout.brightness" @input="setLayoutBrightness" />
         </label>
       </div>
-      <label class="check">
-        <input
-          type="checkbox"
-          :checked="state.layout.autostart"
-          @change="store.actions.setAutostart(($event.target as HTMLInputElement).checked)"
-        />
-        <span>Run automatically on server start</span>
-      </label>
 
       <p class="hint">
         Click a device on the canvas to edit it, a layer in the Effects tab for

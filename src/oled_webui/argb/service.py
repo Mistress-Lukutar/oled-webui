@@ -1,9 +1,9 @@
 """
 File:   service.py
-Brief:  ARGB orchestration: layout persistence, effect loop, OpenRGB output.
+Brief:  ARGB orchestration: scene-driven effect loop, OpenRGB output.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -14,14 +14,13 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
-import yaml
 
 from oled_webui.argb.devices import (
     DeviceLibrary,
     validate_with_library,
 )
 from oled_webui.argb.engine import apply_brightness, render_layout
-from oled_webui.argb.schema import ArgbLayout, default_layout
+from oled_webui.argb.schema import ArgbLayout
 from oled_webui.exceptions import ArgbError, DeviceNotConnectedError
 from oled_webui.infrastructure.openrgb_transport import OpenRgbClient
 from oled_webui.scene.providers import DataSources
@@ -44,10 +43,13 @@ _RECOVER_INTERVAL: float = 5.0
 class ArgbService:
     """Single owner of the OpenRGB connection and the effect engine loop.
 
-    The engine is hardware-independent: :meth:`render_preview` renders any
-    layout without a device, which is what the web editor previews through.
-    While the engine runs, each tick also pushes changed zone buffers to
-    OpenRGB (when connected) after gamma-corrected brightness scaling.
+    Layouts are not persisted here: the applied layout comes from the
+    active scene's ``argb`` section, and the scene file is the only
+    storage. The engine is hardware-independent: :meth:`render_preview`
+    renders any layout without a device, which is what the web editor
+    previews through. While the engine runs, each tick also pushes
+    changed zone buffers to OpenRGB (when connected) after
+    gamma-corrected brightness scaling.
     """
 
     def __init__(
@@ -61,11 +63,10 @@ class ArgbService:
         self._proc = process_manager
         self._client = OpenRgbClient(settings.openrgb_host, settings.openrgb_port)
         self._lock = asyncio.Lock()
-        self._layout_file = settings.argb_dir / "layout.yaml"
-        # The library is loaded first: stored layout instances reference
-        # device definitions, and seeding must happen before that load.
+        # The library is loaded first: scene layout sections reference
+        # device definitions, and seeding must happen before validation.
         self._library = DeviceLibrary(settings.argb_dir / "devices")
-        self._layout: ArgbLayout = self._load_layout()
+        self._layout: ArgbLayout = ArgbLayout()
         self._run_task: asyncio.Task[None] | None = None
         self._run_layout: ArgbLayout | None = None
         self._run_counts: dict[str, int] = {}
@@ -77,59 +78,13 @@ class ArgbService:
         self._samples: dict[str, float | str] = self._sources.snapshot()
 
     # ------------------------------------------------------------------
-    # Layout access and persistence
+    # Layout access
     # ------------------------------------------------------------------
 
     @property
     def layout(self) -> ArgbLayout:
-        """The stored (last saved/applied) layout."""
+        """The last applied layout (runtime state; scenes are the storage)."""
         return self._layout
-
-    def save_layout(self, layout: ArgbLayout) -> ArgbLayout:
-        """Validate and persist a layout atomically.
-
-        Args:
-            layout: Layout to store.
-
-        Returns:
-            The stored layout.
-
-        Raises:
-            ArgbError: If the layout cannot be written to disk.
-        """
-        try:
-            payload = yaml.safe_dump(
-                layout.model_dump(mode="json"),
-                sort_keys=False,
-                allow_unicode=True,
-                width=100,
-            )
-            tmp = self._layout_file.with_name(self._layout_file.name + ".tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            tmp.replace(self._layout_file)
-        except OSError as exc:
-            raise ArgbError(f"Failed to save ARGB layout: {exc}") from exc
-        self._layout = layout
-        return layout
-
-    def _load_layout(self) -> ArgbLayout:
-        """Load the persisted layout, falling back to the default.
-
-        Returns:
-            The loaded layout, or a starter layout when nothing valid
-            exists on disk.
-        """
-        try:
-            text = self._layout_file.read_text(encoding="utf-8")
-            data = yaml.safe_load(text)
-            if isinstance(data, dict):
-                return ArgbLayout.model_validate(data)
-            logger.warning("argb_layout_load_failed", error="layout is not a mapping")
-        except FileNotFoundError:
-            pass
-        except Exception as exc:
-            logger.warning("argb_layout_load_failed", error=str(exc))
-        return default_layout()
 
     def validate_layout(self, layout: ArgbLayout) -> dict[str, int]:
         """Check the layout against the device definition library.
@@ -299,15 +254,14 @@ class ArgbService:
             zones: Zone snapshots from the last connect.
         """
         by_index = {zone.index: zone for zone in zones}
-        changed = False
         for header in self._layout.headers:
             zone = by_index.get(header.zone_index)
             if zone is None:
                 continue
             if header.size is None:
-                if header.size != zone.leds:
-                    header.size = zone.leds
-                    changed = True
+                # Adopt the discovered capacity for this run only; the
+                # scene file stays the untouched source of truth.
+                header.size = zone.leds
             elif header.size != zone.leds:
                 try:
                     await asyncio.to_thread(
@@ -322,9 +276,6 @@ class ArgbService:
                         error=str(exc),
                     )
                     header.size = zone.leds
-                    changed = True
-        if changed:
-            self.save_layout(self._layout)
 
     # ------------------------------------------------------------------
     # Engine lifecycle
@@ -336,7 +287,10 @@ class ArgbService:
         return self._run_task is not None and not self._run_task.done()
 
     async def apply(self, layout: ArgbLayout) -> dict[str, Any]:
-        """Store a layout and (re)start the effect engine.
+        """Adopt a layout and (re)start the effect engine.
+
+        The layout becomes the runtime state; persisting it is the scene
+        service's job (it lives in the scene's ``argb`` section).
 
         The engine runs even without an OpenRGB connection; zone sends
         simply resume once a connection exists.
@@ -351,7 +305,7 @@ class ArgbService:
             ArgbError: If the layout does not match the device library.
         """
         counts = validate_with_library(layout, self._library)
-        self.save_layout(layout)
+        self._layout = layout
         await self._restart_engine(counts)
         await self._publish_status()
         return self.status()
@@ -532,7 +486,6 @@ class ArgbService:
             "running": self.is_running,
             "fps": self._layout.fps,
             "brightness": self._layout.brightness,
-            "autostart": self._layout.autostart,
             "frames_sent": self._frames_sent,
             "process": self._proc.status() if self._proc is not None else None,
         }

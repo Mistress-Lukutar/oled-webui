@@ -2,8 +2,8 @@
 File:   runner.py
 Brief:  Scene rendering state machine: evaluation, compositing, scheduling.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from oled_webui.scene.schema import (
     ImageLayer,
     ImageWidget,
     RingWidget,
-    SceneDocument,
+    ScreenDocument,
     ShapeWidget,
     TextWidget,
     VideoWidget,
@@ -95,7 +95,7 @@ class SceneRenderer:
 
     def __init__(
         self,
-        scene: SceneDocument,
+        scene: ScreenDocument,
         resolution: Resolution,
         brightness: int = DEFAULT_BRIGHTNESS,
         quality: int = DEFAULT_JPEG_QUALITY,
@@ -104,7 +104,7 @@ class SceneRenderer:
         """Prepare caches, providers and the static layer.
 
         Args:
-            scene: Validated scene document.
+            scene: Validated screen section of a scene.
             resolution: Panel resolution.
             brightness: Global output brightness percent.
             quality: Global JPEG encoding quality.

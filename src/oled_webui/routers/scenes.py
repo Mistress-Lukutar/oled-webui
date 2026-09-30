@@ -2,8 +2,8 @@
 File:   scenes.py
 Brief:  Scene CRUD, asset upload, preview render and playback endpoints.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 import mimetypes
@@ -16,14 +16,15 @@ from fastapi.responses import FileResponse, Response
 
 from oled_webui.core.models import Resolution
 from oled_webui.dependencies import (
-    ConnectedDisplayDep,
     DisplayDep,
+    SceneRuntimeDep,
     ScenesDep,
 )
 from oled_webui.exceptions import ValidationError
 from oled_webui.models.schemas import SaveSceneRequest, StatusResponse
 from oled_webui.scene.loader import load_scene_from_text
 from oled_webui.scene.runner import SceneRenderer
+from oled_webui.scene.schema import SceneDocument
 
 router = APIRouter(prefix="/api/scenes", tags=["scenes"])
 
@@ -74,9 +75,11 @@ async def seed_example(scenes: ScenesDep) -> StatusResponse:
 
 
 @router.post("/stop", response_model=StatusResponse)
-async def stop_scene(display: ConnectedDisplayDep) -> StatusResponse:
-    """Stop the running scene."""
-    await display.stop_scene()
+async def stop_scene(
+    display: DisplayDep, runtime: SceneRuntimeDep
+) -> StatusResponse:
+    """Stop the running scene on every device it drives."""
+    await runtime.deactivate()
     return StatusResponse(data=display.status()["scene"])
 
 
@@ -124,19 +127,19 @@ async def get_asset(
 
 @router.put("/{scene_id}", response_model=StatusResponse)
 async def save_scene(
-    scene_id: str, req: SaveSceneRequest, scenes: ScenesDep, display: DisplayDep
+    scene_id: str,
+    req: SaveSceneRequest,
+    scenes: ScenesDep,
+    runtime: SceneRuntimeDep,
 ) -> StatusResponse:
     """Validate and save the YAML source of a scene.
 
-    When the saved scene is currently running on the display, it is
-    restarted with the fresh document so panel edits show up without a
-    manual re-apply.
+    When the saved scene is currently active, it is re-applied with the
+    fresh document so editor changes show up without a manual re-apply.
     """
     meta = scenes.save_yaml(scene_id, req.yaml, name=req.name)
-    scene_state = display.status()["scene"]
-    if scene_state.get("running") and scene_state.get("scene_id") == scene_id:
-        document = scenes.load_document(scene_id)
-        await display.start_scene(document, scene_id, meta.name)
+    if runtime.active_scene_id == scene_id:
+        await runtime.activate(scene_id)
     return StatusResponse(data={"scene": meta.model_dump()})
 
 
@@ -170,13 +173,11 @@ async def delete_asset(
 
 @router.post("/{scene_id}/apply", response_model=StatusResponse)
 async def apply_scene(
-    scene_id: str, scenes: ScenesDep, display: ConnectedDisplayDep
+    scene_id: str, scenes: ScenesDep, runtime: SceneRuntimeDep
 ) -> StatusResponse:
-    """Start rendering a stored scene on the display."""
-    meta = scenes.get_meta(scene_id)
-    document = scenes.load_document(scene_id)
-    state = await display.start_scene(document, scene_id, meta.name)
-    return StatusResponse(data=state)
+    """Activate a stored scene on every device its sections describe."""
+    devices = await runtime.activate(scene_id)
+    return StatusResponse(data={"devices": devices, "scene_id": scene_id})
 
 
 @router.post("/{scene_id}/preview")
@@ -189,19 +190,25 @@ async def preview_scene(
     return Response(content=payload, media_type="image/jpeg")
 
 
-async def _render_preview(document: Any, display: DisplayDep) -> bytes:
+async def _render_preview(document: SceneDocument, display: DisplayDep) -> bytes:
     """Render a single preview frame off the event loop.
 
     Args:
-        document: Validated scene document.
+        document: Validated scene document (root with device sections).
         display: Display service providing the panel resolution.
 
     Returns:
         Encoded JPEG bytes.
+
+    Raises:
+        ValidationError: If the scene has no screen section to render.
     """
+    screen = document.screen
+    if screen is None:
+        raise ValidationError("Scene has no screen section to preview")
     width, height = display.panel_resolution()
     renderer = SceneRenderer(
-        document,
+        screen,
         Resolution(width=width, height=height),
         brightness=display.brightness,
         quality=display.quality,

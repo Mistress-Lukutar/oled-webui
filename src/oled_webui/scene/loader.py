@@ -2,8 +2,8 @@
 File:   loader.py
 Brief:  YAML scene loading, component instantiation and path resolution.
 Author: Mistress-Lukutar
-Date:   2026-09-28
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -16,7 +16,11 @@ import structlog
 import yaml
 
 from oled_webui.exceptions import SceneError
-from oled_webui.scene.schema import ImageWidget, SceneDocument, VideoWidget
+from oled_webui.scene.schema import (
+    ImageWidget,
+    SceneDocument,
+    VideoWidget,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +58,7 @@ _MAX_COMPONENT_DEPTH: int = 8
 
 
 def load_scene(path: Path, fonts_dir: Path | None = None) -> SceneDocument:
-    """Load, resolve and validate a scene document.
+    """Load, resolve and validate a scene file.
 
     Components (``use:`` blocks) are expanded, relative asset paths are
     resolved against the scene file directory and ``fonts/`` prefixed
@@ -66,7 +70,7 @@ def load_scene(path: Path, fonts_dir: Path | None = None) -> SceneDocument:
             scene-relative resolution for ``fonts/`` paths.
 
     Returns:
-        Validated scene document.
+        Validated scene document with one section per device.
 
     Raises:
         SceneError: If the file cannot be read/parsed or validation fails.
@@ -87,10 +91,10 @@ def load_scene_from_text(
     source_name: str = "scene.yaml",
     fonts_dir: Path | None = None,
 ) -> SceneDocument:
-    """Parse, resolve and validate a scene document from YAML text.
+    """Parse, resolve and validate a scene file from YAML text.
 
     Args:
-        text: Raw YAML scene source.
+        text: Raw YAML scene source (one section per device).
         base_dir: Directory used to resolve relative asset, font and
             component paths.
         source_name: Scene file name used in error messages.
@@ -111,27 +115,37 @@ def load_scene_from_text(
     if not isinstance(raw, dict):
         raise SceneError(f"Scene root must be a mapping, got {type(raw).__name__}")
 
-    raw["widgets"] = _expand_widgets(raw.get("widgets") or [], base_dir, 0)
-    raw["background"] = _expand_background(raw.get("background") or [], base_dir)
+    raw_screen = raw.get("screen")
+    if raw_screen is not None:
+        if not isinstance(raw_screen, dict):
+            raise SceneError("'screen' section must be a mapping")
+        raw_screen["widgets"] = _expand_widgets(
+            raw_screen.get("widgets") or [], base_dir, 0
+        )
+        raw_screen["background"] = _expand_background(
+            raw_screen.get("background") or [], base_dir
+        )
 
     try:
         document = SceneDocument.model_validate(raw)
     except Exception as exc:
         raise SceneError(f"Invalid scene {source_name}:\n{exc}") from exc
 
-    for layer in document.background:
-        layer.path = str((base_dir / layer.path).resolve())
-    for widget in document.widgets:
-        if (
-            isinstance(widget, (ImageWidget, VideoWidget))
-            and not Path(widget.path).is_absolute()
-        ):
-            widget.path = str((base_dir / widget.path).resolve())
-        style = getattr(widget, "style", None)
-        if style is not None:
-            family = getattr(style, "family", None)
-            if isinstance(family, str) and family != "":
-                style.family = _resolve_family(family, base_dir, fonts_dir)
+    screen = document.screen
+    if screen is not None:
+        for layer in screen.background:
+            layer.path = str((base_dir / layer.path).resolve())
+        for widget in screen.widgets:
+            if (
+                isinstance(widget, (ImageWidget, VideoWidget))
+                and not Path(widget.path).is_absolute()
+            ):
+                widget.path = str((base_dir / widget.path).resolve())
+            style = getattr(widget, "style", None)
+            if style is not None:
+                family = getattr(style, "family", None)
+                if isinstance(family, str) and family != "":
+                    style.family = _resolve_family(family, base_dir, fonts_dir)
 
     return document
 

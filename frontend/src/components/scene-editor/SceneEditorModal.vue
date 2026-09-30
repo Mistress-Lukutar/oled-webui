@@ -1,24 +1,28 @@
 <script setup lang="ts">
 /**
- * Near-fullscreen scene editor modal: toolbar, layers, viewport/YAML
- * center area and the inspector. Opens instead of the old inline editor.
+ * Near-fullscreen unified scene editor modal: one scene file describes
+ * every device, one tab per section (registry-driven), plus the shared
+ * YAML view. The toolbar carries per-section tools, shared undo and the
+ * scene-level save/apply actions.
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { API } from '../../api'
 import { isTypingTarget } from '../../canvas/shortcuts'
+import { useArgbStore } from '../../argb/store'
 import { useDisplayStore } from '../../composables/useDisplayStore'
 import { editor } from '../../scene-editor/docStore'
+import { SECTION_SPECS, sectionSpec } from '../../scene-editor/sectionSpecs'
+import { SECTION_VIEWS } from '../../scene-editor/sectionViews'
 import { viewCenter } from '../../scene-editor/viewState'
 import EditorCanvas from './EditorCanvas.vue'
-import InspectorPanel from './InspectorPanel.vue'
-import SceneLayersPanel from './SceneLayersPanel.vue'
 import TimelinePanel from './TimelinePanel.vue'
 import YamlPanel from './YamlPanel.vue'
 
-const props = defineProps<{ sceneId: string }>()
+const props = defineProps<{ sceneId: string; initialSection?: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const { state: appState, actions, showError } = useDisplayStore()
+const argbStore = useArgbStore()
 const { state } = editor
 
 const loading = ref(true)
@@ -31,6 +35,15 @@ const VIEW_MODES = [
   { id: 'split', title: 'Canvas + YAML' },
   { id: 'yaml', title: 'YAML only' },
 ] as const
+
+const activeSpec = computed(() => sectionSpec(state.activeSection))
+const activeView = computed(
+  () => SECTION_VIEWS[state.activeSection] ?? SECTION_VIEWS['screen']!,
+)
+const sectionPresent = computed(
+  () => state.file !== null && state.file[state.activeSection] !== undefined,
+)
+const isScreenActive = computed(() => state.activeSection === 'screen')
 
 const widgetCount = (): number => state.doc?.widgets?.length ?? 0
 
@@ -80,21 +93,20 @@ function toggleDrawTool(kind: 'rect' | 'ellipse' | 'line'): void {
 const helpVisible = ref(false)
 
 const SHORTCUTS: Array<[string, string]> = [
-  ['T / B / R / G / I / S / V', 'Add text / bar / ring / graph / image / shape / video widget'],
-  ['▭ ◯ ╱ tool + drag', 'Draw a shape on the canvas (Shift = square, Esc = off)'],
-  ['Click / Shift+click', 'Select / extend selection'],
-  ['Drag on empty canvas', 'Marquee selection'],
-  ['Drag selection', 'Move (Shift = 45° axes, Alt disables snapping)'],
-  ['Handles', 'Resize · drag just outside a corner to rotate (Shift = 15°)'],
-  ['Ctrl+C / X / V', 'Copy / cut / paste widgets'],
-  ['Arrows', 'Nudge 1 px (Shift = 10 px)'],
+  ['T / B / R / G / I / S / V', 'Screen: add text / bar / ring / graph / image / shape / video widget'],
+  ['▭ ◯ ╱ tool + drag', 'Screen: draw a shape on the canvas (Shift = square, Esc = off)'],
+  ['Ctrl+C / X / V / D', 'Screen: widgets · ARGB: devices'],
+  ['Arrows', 'Nudge selection 1 px (Shift = 10 px)'],
   ['Del', 'Delete selection'],
-  ['Ctrl+D', 'Duplicate selection'],
-  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'],
+  ['Click / Shift+click', 'Select / extend selection'],
+  ['Drag on empty canvas', 'Marquee selection (screen) · pan (ARGB)'],
+  ['Handles', 'Resize · drag just outside a corner to rotate (Shift = 15°)'],
+  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo (all sections)'],
   ['Space + drag / middle drag', 'Pan the viewport'],
   ['Mouse wheel', 'Zoom'],
   ['Ctrl+S', 'Save'],
-  ['Esc', 'Exit draw tool / deselect / close editor'],
+  ['Esc', 'Exit tool / deselect / close editor'],
+  ['?', 'This help'],
 ]
 
 function addWidget(type: string): void {
@@ -106,9 +118,36 @@ function addWidget(type: string): void {
   editor.addWidget(type, viewCenter(panel.width, panel.height))
 }
 
+function selectSection(key: string): void {
+  editor.setActiveSection(key)
+  if (state.viewMode === 'design' || state.viewMode === 'split') {
+    // Keep the mode; the canvas swaps to the section's own view.
+  }
+}
+
+/** Create a missing device section, then bind the ARGB store to it. */
+function addSection(key: string): void {
+  editor.ensureSection(key)
+  if (key === 'argb') argbStore.actions.bindSceneSection()
+}
+
+// Keep the ARGB store's working layout aliased to the file's argb
+// section: rebind on load, YAML edits, undo/redo and "+ Add section".
+watch(
+  () => {
+    const file = editor.getRawFile()
+    return [file, file?.argb]
+  },
+  () => argbStore.actions.bindSceneSection(),
+)
+
 onMounted(async () => {
+  if (props.initialSection !== undefined) {
+    editor.setActiveSection(props.initialSection)
+  }
   try {
     await editor.load(props.sceneId)
+    argbStore.actions.bindSceneSection()
     loading.value = false
   } catch (err) {
     showError(err instanceof Error ? err.message : String(err))
@@ -116,7 +155,12 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(revokePreview)
+onUnmounted(() => {
+  revokePreview()
+  // Release the section alias: the store goes back to mirroring the
+  // active engine layout for the dashboard previews.
+  void argbStore.actions.refreshActiveLayout()
+})
 
 function revokePreview(): void {
   if (previewUrl.value !== null) URL.revokeObjectURL(previewUrl.value)
@@ -191,38 +235,49 @@ function onKeydown(event: KeyboardEvent): void {
     editor.redo()
     return
   }
+  if (isTypingTarget(event.target)) return
+
+  const clipboardShortcut =
+    (mod && event.code === 'KeyC') ||
+    (mod && event.code === 'KeyX') ||
+    (mod && event.code === 'KeyV') ||
+    (mod && event.code === 'KeyD')
+
+  if (isScreenActive.value) {
+    onScreenKeydown(event, mod)
+  } else {
+    onArgbKeydown(event, mod)
+  }
+  if (clipboardShortcut) event.preventDefault()
+}
+
+function onScreenKeydown(event: KeyboardEvent, mod: boolean): void {
   if (mod && event.code === 'KeyC') {
-    if (isTypingTarget(event.target) || state.selection.length === 0) return
-    event.preventDefault()
+    if (state.selection.length === 0) return
     editor.copyEntries([...state.selection])
     return
   }
   if (mod && event.code === 'KeyX') {
-    if (isTypingTarget(event.target) || state.selection.length === 0) return
-    event.preventDefault()
+    if (state.selection.length === 0) return
     editor.cutEntries([...state.selection])
     return
   }
   if (mod && event.code === 'KeyV') {
-    if (isTypingTarget(event.target)) return
-    event.preventDefault()
     editor.pasteEntries()
     return
   }
   if (mod && event.code === 'KeyD') {
-    if (isTypingTarget(event.target) || state.selection.length === 0) return
-    event.preventDefault()
+    if (state.selection.length === 0) return
     editor.duplicateEntries([...state.selection])
     return
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (isTypingTarget(event.target) || state.selection.length === 0) return
+    if (state.selection.length === 0) return
     event.preventDefault()
     editor.deleteEntries([...state.selection])
     return
   }
   if (event.key.startsWith('Arrow') && state.selection.length > 0) {
-    if (isTypingTarget(event.target)) return
     event.preventDefault()
     const step = event.shiftKey ? 10 : 1
     const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
@@ -252,18 +307,14 @@ function onKeydown(event: KeyboardEvent): void {
       drawTool.value = null
       return
     }
-    if (state.selection.length > 0 && !isTypingTarget(event.target)) {
+    if (state.selection.length > 0) {
       editor.setSelection([])
       return
     }
     requestClose()
+    return
   }
-  if (
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.altKey &&
-    !isTypingTarget(event.target)
-  ) {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey) {
     if (event.key === '?') {
       helpVisible.value = !helpVisible.value
       return
@@ -284,6 +335,74 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onArgbKeydown(event: KeyboardEvent, mod: boolean): void {
+  const argb = argbStore
+  if (mod && event.code === 'KeyC') {
+    if (argb.state.deviceSelection.length === 0) return
+    argb.actions.copyDevices([...argb.state.deviceSelection])
+    return
+  }
+  if (mod && event.code === 'KeyX') {
+    if (argb.state.deviceSelection.length === 0) return
+    argb.actions.cutDevices([...argb.state.deviceSelection])
+    return
+  }
+  if (mod && event.code === 'KeyV') {
+    argb.actions.pasteDevices()
+    return
+  }
+  if (mod && event.code === 'KeyD') {
+    if (argb.state.deviceSelection.length === 0) return
+    argb.actions.duplicateDevices([...argb.state.deviceSelection])
+    return
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (argb.state.deviceSelection.length > 0) {
+      event.preventDefault()
+      argb.actions.deleteDevices([...argb.state.deviceSelection])
+    } else if (
+      argb.state.selection.kind !== null &&
+      argb.state.selection.kind !== 'device' &&
+      argb.state.selection.id !== null
+    ) {
+      event.preventDefault()
+      if (argb.state.selection.kind === 'layer') {
+        argb.actions.deleteLayer(argb.state.selection.id)
+      } else if (argb.state.selection.kind === 'header') {
+        argb.actions.deleteHeader(argb.state.selection.id)
+      }
+    }
+    return
+  }
+  if (event.key.startsWith('Arrow') && argb.state.deviceSelection.length > 0) {
+    event.preventDefault()
+    const step = event.shiftKey ? 10 : 1
+    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+    const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+    argbStore.actions.moveDevicesBy([...argbStore.state.deviceSelection], dx, dy)
+    return
+  }
+  if (event.key === 'Escape') {
+    if (argb.state.maskLayerId !== null) {
+      argb.actions.stopMaskPaint()
+      return
+    }
+    if (argb.state.deviceSelection.length > 0) {
+      argb.actions.setDeviceSelection([])
+      return
+    }
+    if (argb.state.selection.kind !== null) {
+      argb.actions.select(null, null)
+      return
+    }
+    requestClose()
+    return
+  }
+  if (!mod && event.key === '?') {
+    helpVisible.value = !helpVisible.value
+  }
+}
+
 window.addEventListener('keydown', onKeydown)
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
@@ -293,7 +412,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <div class="editor-overlay">
       <div class="editor-modal">
         <div class="toolbar">
-          <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes""></span>
+          <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes"></span>
           <input
             class="scene-name"
             type="text"
@@ -302,6 +421,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             :value="state.name"
             @input="editor.setName(($event.target as HTMLInputElement).value)"
           />
+
+          <div class="seg">
+            <button
+              v-for="spec in SECTION_SPECS"
+              :key="spec.key"
+              class="seg-btn section-btn"
+              :class="{ on: state.activeSection === spec.key }"
+              :title="`${spec.label} section`"
+              @click="selectSection(spec.key)"
+            >
+              {{ spec.label }}
+              <span v-if="state.file?.[spec.key] === undefined" class="absent" title="Section not in this scene">·</span>
+            </button>
+          </div>
+
           <div class="seg">
             <button
               v-for="mode in VIEW_MODES"
@@ -314,28 +448,36 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
             </button>
           </div>
-          <div class="seg add-seg">
-            <button
-              v-for="btn in ADD_BUTTONS"
-              :key="btn.type"
-              class="seg-btn add-btn"
-              :title="btn.title"
-              @click="addWidget(btn.type)"
-            >
-              {{ btn.label }}
-            </button>
-            <span class="seg-divider"></span>
-            <button
-              v-for="tool in DRAW_TOOLS"
-              :key="tool.kind"
-              class="seg-btn add-btn"
-              :class="{ on: drawTool === tool.kind }"
-              :title="tool.title"
-              @click="toggleDrawTool(tool.kind)"
-            >
-              {{ tool.label }}
-            </button>
-          </div>
+
+          <template v-if="isScreenActive && sectionPresent">
+            <div class="seg add-seg">
+              <button
+                v-for="btn in ADD_BUTTONS"
+                :key="btn.type"
+                class="seg-btn add-btn"
+                :title="btn.title"
+                @click="addWidget(btn.type)"
+              >
+                {{ btn.label }}
+              </button>
+              <span class="seg-divider"></span>
+              <button
+                v-for="tool in DRAW_TOOLS"
+                :key="tool.kind"
+                class="seg-btn add-btn"
+                :class="{ on: drawTool === tool.kind }"
+                :title="tool.title"
+                @click="toggleDrawTool(tool.kind)"
+              >
+                {{ tool.label }}
+              </button>
+            </div>
+          </template>
+          <component
+            :is="activeView.toolbar"
+            v-else-if="activeView.toolbar !== null && sectionPresent"
+          />
+
           <span class="spacer"></span>
           <button
             :disabled="!editor.canUndo()"
@@ -353,7 +495,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           >
             ⟳
           </button>
-          <button :disabled="checking || loading" @click="checkFrame">
+          <button
+            v-if="isScreenActive"
+            :disabled="checking || loading"
+            title="Render the screen section as JPEG (Pillow)"
+            @click="checkFrame"
+          >
             {{ checking ? 'Rendering…' : 'Check frame' }}
           </button>
           <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
@@ -368,8 +515,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </button>
           <button
             class="primary"
-            :disabled="!appState.connected || loading"
-            title="Save if needed, then start this scene on the display"
+            :disabled="loading"
+            title="Save if needed, then start this scene on every device it describes"
             @click="apply"
           >
             Apply
@@ -380,8 +527,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div v-if="loading" class="loading">Loading scene…</div>
 
         <div v-else class="body">
-          <aside class="left">
-            <SceneLayersPanel />
+          <aside class="left" :style="{ width: activeView.leftWidth }">
+            <template v-if="sectionPresent">
+              <component :is="component" v-for="component in activeView.left" :key="state.activeSection" />
+            </template>
           </aside>
 
           <div class="center">
@@ -390,7 +539,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 v-if="state.viewMode === 'design' || state.viewMode === 'split'"
                 class="viewport-wrap"
               >
-              <EditorCanvas :draw-shape="drawTool" />
+                <div v-if="!sectionPresent" class="empty-section">
+                  <p>
+                    This scene has no
+                    <b>{{ activeSpec?.label ?? state.activeSection }}</b> section —
+                    applying it stops that device.
+                  </p>
+                  <button class="primary" @click="addSection(state.activeSection)">
+                    + Add {{ activeSpec?.label ?? state.activeSection }} section
+                  </button>
+                </div>
+                <template v-else>
+                  <EditorCanvas v-if="isScreenActive" :draw-shape="drawTool" />
+                  <component :is="activeView.canvas" v-else />
+                </template>
                 <div
                   v-if="previewUrl !== null"
                   class="frame-preview"
@@ -411,36 +573,45 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </div>
             </div>
             <div class="statusbar">
-              <select
-                class="res-select"
-                :value="resolutionKey"
-                title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
-                @change="onResolutionChange"
-              >
-                <option value="auto">
-                  Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
-                </option>
-                <option value="480x480">480×480</option>
-                <option value="1600x720">1600×720</option>
-                <option value="1920x462">1920×462</option>
-              </select>
-              <span>{{ widgetCount() }} widgets</span>
+              <template v-if="activeView.status !== null">
+                <component :is="activeView.status" />
+              </template>
+              <template v-else>
+                <select
+                  class="res-select"
+                  :value="resolutionKey"
+                  title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
+                  @change="onResolutionChange"
+                >
+                  <option value="auto">
+                    Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
+                  </option>
+                  <option value="480x480">480×480</option>
+                  <option value="1600x720">1600×720</option>
+                  <option value="1920x462">1920×462</option>
+                </select>
+                <span>{{ widgetCount() }} widgets</span>
+              </template>
               <span
                 v-if="state.errors.length > 0 || state.syntaxError !== null"
                 class="status-errors"
               >
                 {{ state.errors.length + (state.syntaxError !== null ? 1 : 0) }} issues
               </span>
-              <span v-if="!appState.connected" class="status-dim">device not connected</span>
+              <span v-if="!appState.connected && isScreenActive" class="status-dim">
+                panel not connected
+              </span>
             </div>
           </div>
 
-          <aside class="right">
-            <InspectorPanel />
+          <aside class="right" :style="{ width: activeView.rightWidth }">
+            <template v-if="sectionPresent">
+              <component :is="component" v-for="component in activeView.right" :key="state.activeSection" />
+            </template>
           </aside>
         </div>
 
-        <TimelinePanel />
+        <TimelinePanel v-if="isScreenActive && sectionPresent" />
       </div>
 
       <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
@@ -494,6 +665,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
   flex: none;
+  flex-wrap: wrap;
 }
 
 .dirty-dot {
@@ -509,7 +681,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .scene-name {
-  width: 220px;
+  width: 200px;
   flex: none;
 }
 
@@ -535,6 +707,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .seg-btn.on {
   background: var(--accent-dim);
   color: #fff;
+}
+
+.section-btn .absent {
+  color: var(--text-dim);
+  font-weight: 700;
 }
 
 .add-seg .add-btn {
@@ -574,7 +751,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .left,
 .right {
-  width: 210px;
   flex: none;
   background: var(--bg-panel);
   min-height: 0;
@@ -585,8 +761,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .right {
-  width: 250px;
   border-left: 1px solid var(--border);
+  padding: 10px;
+  overflow-y: auto;
 }
 
 .center {
@@ -613,6 +790,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.empty-section {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 20px;
 }
 
 .yaml-wrap {
@@ -671,6 +861,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   font-size: 11px;
   color: var(--text-dim);
   flex: none;
+  flex-wrap: wrap;
 }
 
 .res-select {
@@ -695,7 +886,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .help-card {
-  width: 420px;
+  width: 460px;
   max-height: 80%;
   overflow-y: auto;
   background: var(--bg-panel);

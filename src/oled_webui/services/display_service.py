@@ -3,7 +3,7 @@ File:   display_service.py
 Brief:  Central display orchestrator: USB serialization, keepalive, scenes.
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.6.0
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from oled_webui.exceptions import (
     ValidationError,
 )
 from oled_webui.scene.runner import SceneRenderer
-from oled_webui.scene.schema import SceneDocument
+from oled_webui.scene.schema import ScreenDocument
 from oled_webui.services.bulk_device import BulkLcd
 from oled_webui.services.content_state import content_state_path, save_content_state
 from oled_webui.services.display_settings import (
@@ -115,7 +115,7 @@ class DisplayService:
         # the scene instead of showing a frozen frame.
         self._resume_content: dict[str, Any] | None = None
         # Document of the currently running scene, kept for that restart.
-        self._scene_document: SceneDocument | None = None
+        self._scene_document: ScreenDocument | None = None
         self._last_preview_emit: float = 0.0
 
         self._bg_tasks: set[asyncio.Task[Any]] = set()
@@ -335,7 +335,7 @@ class DisplayService:
                 parameters needed to start it again.
         """
         if resume["type"] == "scene":
-            document: SceneDocument = resume["document"]
+            document: ScreenDocument = resume["document"]
             await self.start_scene(
                 document, str(resume["scene_id"]), str(resume["name"])
             )
@@ -532,16 +532,16 @@ class DisplayService:
 
     async def start_scene(
         self,
-        document: SceneDocument,
+        document: ScreenDocument,
         scene_id: str,
         scene_name: str,
     ) -> dict[str, Any]:
-        """Start rendering a scene to the display in the background.
+        """Start rendering a scene's screen section on the display.
 
         Starts a fresh scene, replacing any previously running one.
 
         Args:
-            document: Validated scene document with resolved asset paths.
+            document: Validated screen section with resolved asset paths.
             scene_id: Scene identifier for state tracking.
             scene_name: Human-readable scene name.
 

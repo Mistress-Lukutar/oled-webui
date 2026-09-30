@@ -2,8 +2,8 @@
 File:   dependencies.py
 Brief:  FastAPI dependency providers for services and connection guards.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from fastapi import Depends, Request
 from oled_webui.argb.service import ArgbService
 from oled_webui.config import Settings, get_settings
 from oled_webui.services.display_service import DisplayService
+from oled_webui.services.scene_runtime import SceneRuntime
 from oled_webui.services.scene_service import SceneService
 
 
@@ -54,6 +55,18 @@ def get_argb_service(request: Request) -> ArgbService:
     return cast(ArgbService, request.app.state.argb)
 
 
+def get_scene_runtime(request: Request) -> SceneRuntime:
+    """Fetch the scene runtime created during app lifespan.
+
+    Args:
+        request: Incoming request carrying the app state.
+
+    Returns:
+        The application-wide SceneRuntime instance.
+    """
+    return cast(SceneRuntime, request.app.state.scene_runtime)
+
+
 def require_connection(
     display: Annotated[DisplayService, Depends(get_display_service)],
 ) -> DisplayService:
@@ -73,4 +86,5 @@ DisplayDep = Annotated[DisplayService, Depends(get_display_service)]
 ConnectedDisplayDep = Annotated[DisplayService, Depends(require_connection)]
 ScenesDep = Annotated[SceneService, Depends(get_scene_service)]
 ArgbDep = Annotated[ArgbService, Depends(get_argb_service)]
+SceneRuntimeDep = Annotated[SceneRuntime, Depends(get_scene_runtime)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]

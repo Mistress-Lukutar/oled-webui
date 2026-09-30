@@ -1,14 +1,20 @@
 /**
- * Reactive state store for the scene editor modal. The parsed YAML
- * document (a plain object) is the editing truth; YAML text is derived
- * after graphical mutations and parsed back after text edits.
+ * Reactive state store for the unified scene editor modal. The parsed
+ * scene file (one section per device, a plain object) is the editing
+ * truth; YAML text is derived after graphical mutations and parsed back
+ * after text edits. ``state.file`` is the whole file; ``state.doc`` is
+ * the screen section alias the classic widget tooling works against.
  */
 
 import { reactive, readonly, ref } from 'vue'
 import { API } from '../api'
 import type { SceneDetail } from '../api'
-import { parseSceneYaml, stringifySceneYaml, validateSceneDoc } from './yamlSync'
-import type { EntryRaw, SceneDocumentRaw } from './types'
+import {
+  parseSceneFile,
+  stringifyYamlWithComments,
+} from './yamlSync'
+import { SECTION_SPECS, sectionSpec } from './sectionSpecs'
+import type { EntryRaw, SceneDocumentRaw, SceneFileRaw } from './types'
 
 export type ViewMode = 'design' | 'yaml' | 'split'
 
@@ -16,14 +22,19 @@ interface EditorState {
   sceneId: string
   name: string
   yamlText: string
+  /** Whole scene file (root with one section per device). */
+  file: SceneFileRaw | null
+  /** Screen section alias into ``file`` (widget editing truth). */
   doc: SceneDocumentRaw | null
-  /** Semantic validation problems (schema ranges, unknown keys). */
+  /** Device section the editor is currently showing. */
+  activeSection: string
+  /** Semantic validation problems across all sections. */
   errors: string[]
-  /** Syntax error from the last text edit; doc is stale while set. */
+  /** Syntax error from the last text edit; file is stale while set. */
   syntaxError: string | null
   assets: string[]
   components: Record<string, string>
-  /** Indices into doc.widgets of the selected entries. */
+  /** Indices into doc.widgets of the selected screen entries. */
   selection: number[]
   dirty: boolean
   viewMode: ViewMode
@@ -39,7 +50,9 @@ const state = reactive<EditorState>({
   sceneId: '',
   name: '',
   yamlText: '',
+  file: null,
   doc: null,
+  activeSection: 'screen',
   errors: [],
   syntaxError: null,
   assets: [],
@@ -54,8 +67,8 @@ const state = reactive<EditorState>({
 })
 
 // ----------------------------------------------------------------------
-// Undo/redo: JSON snapshots of the whole document. Batches (drags) push
-// exactly one snapshot via beginBatch()/endBatch().
+// Undo/redo: JSON snapshots of the whole file (every section). Batches
+// (drags) push exactly one snapshot via beginBatch()/endBatch().
 // ----------------------------------------------------------------------
 
 const MAX_HISTORY = 100
@@ -65,21 +78,39 @@ let batchDepth = 0
 /** Bump whenever history contents change, for reactive canUndo/canRedo. */
 const historyVersion = ref(0)
 
+function validateFile(file: SceneFileRaw): string[] {
+  const errors: string[] = []
+  for (const spec of SECTION_SPECS) {
+    const value = file[spec.key]
+    if (value === undefined) continue
+    errors.push(...spec.validate(value))
+  }
+  return errors
+}
+
 function snapshot(): string {
-  return JSON.stringify(state.doc)
+  return JSON.stringify(state.file)
+}
+
+function aliasScreen(): void {
+  const screen = state.file?.screen
+  state.doc = screen !== undefined && screen !== null ? screen : null
 }
 
 function restore(snapshotText: string): void {
-  if (state.doc === null) return
-  const doc = JSON.parse(snapshotText) as SceneDocumentRaw
-  Object.assign(state.doc, doc)
+  if (state.file === null) return
+  const file = JSON.parse(snapshotText) as SceneFileRaw
+  Object.assign(state.file, file)
   // Drop keys that disappeared (Object.assign keeps stale extras).
-  for (const key of Object.keys(state.doc)) {
-    if (!(key in doc)) delete state.doc[key]
+  for (const key of Object.keys(state.file)) {
+    if (!(key in file)) delete state.file[key]
   }
-  state.yamlText = stringifySceneYaml(state.doc, state.yamlText)
-  state.errors = validateSceneDoc(state.doc)
-  state.selection = state.selection.filter((i) => i < (state.doc?.widgets?.length ?? 0))
+  aliasScreen()
+  state.yamlText = stringifyYamlWithComments(state.file, state.yamlText)
+  state.errors = validateFile(state.file)
+  state.selection = state.selection.filter(
+    (i) => i < (state.doc?.widgets?.length ?? 0),
+  )
   state.dirty = true
   historyVersion.value += 1
 }
@@ -123,13 +154,16 @@ function canRedo(): boolean {
 }
 
 function applyText(text: string, markDirty: boolean): void {
-  const result = parseSceneYaml(text)
+  const result = parseSceneFile(text, SECTION_SPECS)
   state.yamlText = text
-  state.doc = result.doc
+  state.file = result.file
+  aliasScreen()
   // A syntax error is already surfaced via syntaxError; avoid duplicating it.
-  state.errors = result.doc === null ? [] : result.errors
-  state.syntaxError = result.doc === null ? (result.errors[0] ?? 'YAML error') : null
-  state.selection = state.selection.filter((i) => i < (result.doc?.widgets?.length ?? 0))
+  state.errors = result.file === null ? [] : result.errors
+  state.syntaxError = result.file === null ? (result.errors[0] ?? 'YAML error') : null
+  state.selection = state.selection.filter(
+    (i) => i < (state.doc?.widgets?.length ?? 0),
+  )
   if (markDirty) state.dirty = true
 }
 
@@ -137,29 +171,61 @@ function setYamlText(text: string): void {
   applyText(text, true)
 }
 
-/** Widgets of the current document in z-order (first = bottom layer). */
+/** Widgets of the screen section in z-order (first = bottom layer). */
 function getWidgets(): readonly EntryRaw[] {
   return (state.doc?.widgets ?? []) as readonly EntryRaw[]
 }
 
 /**
- * Apply a mutation to the raw document and regenerate the YAML text.
+ * Apply a mutation to one device section and regenerate the YAML text.
  * All graphical edits must go through this to keep both views in sync.
  * History: batches capture one snapshot via beginBatch(); standalone
  * calls capture automatically.
  */
-function mutate(fn: (doc: SceneDocumentRaw) => void): void {
-  if (state.doc === null || state.syntaxError !== null) return
+function mutateSection(
+  key: string,
+  fn: (section: Record<string, unknown>) => void,
+): void {
+  if (state.file === null || state.syntaxError !== null) return
+  const section = state.file[key]
+  if (section === undefined || section === null || typeof section !== 'object') return
   if (batchDepth === 0) pushHistory()
-  fn(state.doc)
-  state.yamlText = stringifySceneYaml(state.doc, state.yamlText)
-  state.errors = validateSceneDoc(state.doc)
-  state.selection = state.selection.filter((i) => i < (state.doc?.widgets?.length ?? 0))
+  fn(section as Record<string, unknown>)
+  state.yamlText = stringifyYamlWithComments(state.file, state.yamlText)
+  state.errors = validateFile(state.file)
+  if (key === 'screen') {
+    state.selection = state.selection.filter(
+      (i) => i < (state.doc?.widgets?.length ?? 0),
+    )
+  }
+  state.dirty = true
+}
+
+/** Screen-section mutation helper: every classic widget edit funnels here. */
+function mutate(fn: (doc: SceneDocumentRaw) => void): void {
+  mutateSection('screen', fn as (section: Record<string, unknown>) => void)
+}
+
+/** Create a missing device section from its registry default. */
+function ensureSection(key: string): void {
+  if (state.file === null || state.syntaxError !== null) return
+  if (state.file[key] !== undefined) return
+  const spec = sectionSpec(key)
+  if (spec === undefined) return
+  pushHistory()
+  state.file[key] = spec.createDefault()
+  if (key === 'screen') aliasScreen()
+  state.yamlText = stringifyYamlWithComments(state.file, state.yamlText)
+  state.errors = validateFile(state.file)
   state.dirty = true
 }
 
 function setSelection(indices: number[]): void {
   state.selection = indices
+}
+
+function setActiveSection(key: string): void {
+  state.activeSection = key
 }
 
 function setViewMode(mode: ViewMode): void {
@@ -474,12 +540,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 export const editor = {
   state: readonly(state),
+  /** Raw (non-readonly) scene file for store section bindings. */
+  getRawFile: (): SceneFileRaw | null => state.file,
   load,
   save,
   setYamlText,
   mutate,
+  mutateSection,
+  ensureSection,
   getWidgets,
   setSelection,
+  setActiveSection,
   setViewMode,
   setResolutionOverride,
   setName,

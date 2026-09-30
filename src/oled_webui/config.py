@@ -2,8 +2,8 @@
 File:   config.py
 Brief:  Application settings loaded from environment variables and .env.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.4.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

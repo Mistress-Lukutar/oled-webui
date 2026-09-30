@@ -1,9 +1,9 @@
 """
 File:   test_scene_loader.py
-Brief:  Unit tests for scene loading and component expansion.
+Brief:  Unit tests for scene file loading and component expansion.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -12,9 +12,18 @@ from pathlib import Path
 
 import pytest
 
+from oled_webui.argb.schema import ArgbLayout, FillEffect
 from oled_webui.exceptions import SceneError
 from oled_webui.scene.loader import load_scene
-from oled_webui.scene.schema import BarWidget, RingWidget, ShapeWidget, TextWidget, VideoWidget
+from oled_webui.scene.schema import (
+    BarWidget,
+    RingWidget,
+    SceneDocument,
+    ScreenDocument,
+    ShapeWidget,
+    TextWidget,
+    VideoWidget,
+)
 
 
 def _write(tmp_path: Path, relative: str, content: str) -> Path:
@@ -24,7 +33,82 @@ def _write(tmp_path: Path, relative: str, content: str) -> Path:
     return target
 
 
-def test_load_plain_scene(tmp_path: Path) -> None:
+def test_load_plain_screen_section(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        screen:
+          widgets:
+            - type: bar
+              source: cpu
+              rect: [10, 20, 100, 30]
+          refresh: 2.0
+        """,
+    )
+    document = load_scene(scene_path)
+    screen = document.screen
+    assert screen is not None
+    assert screen.refresh == 2.0
+    assert isinstance(screen.widgets[0], BarWidget)
+    assert screen.widgets[0].rect == (10, 20, 100, 30)
+    assert document.argb is None
+
+
+def test_load_argb_only_scene(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        argb:
+          fps: 45
+          brightness: 80
+          headers: []
+          devices: []
+          layers: []
+        """,
+    )
+    document = load_scene(scene_path)
+    assert document.screen is None
+    argb = document.argb
+    assert argb is not None
+    assert argb.fps == 45
+    assert argb.brightness == 80
+
+
+def test_scene_without_sections_rejected(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        refresh: 2.0
+        """,
+    )
+    with pytest.raises(SceneError):
+        load_scene(scene_path)
+
+
+def test_empty_scene_rejected(tmp_path: Path) -> None:
+    scene_path = _write(tmp_path, "scene.yaml", "{}\n")
+    with pytest.raises(SceneError, match="at least one device section"):
+        load_scene(scene_path)
+
+
+def test_unknown_device_section_rejected(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        holoprojector:
+          power: 1
+        """,
+    )
+    with pytest.raises(SceneError):
+        load_scene(scene_path)
+
+
+def test_legacy_top_level_widgets_rejected(tmp_path: Path) -> None:
+    """Old-format scenes (widgets at the root) fail loudly, no compat shim."""
     scene_path = _write(
         tmp_path,
         "scene.yaml",
@@ -33,13 +117,42 @@ def test_load_plain_scene(tmp_path: Path) -> None:
           - type: bar
             source: cpu
             rect: [10, 20, 100, 30]
-        refresh: 2.0
+        """,
+    )
+    with pytest.raises(SceneError):
+        load_scene(scene_path)
+
+
+def test_mixed_sections_load(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        screen:
+          widgets:
+            - type: text
+              value: hi
+              rect: [0, 0, 100, 30]
+        argb:
+          headers:
+            - id: h1
+              zone_index: 0
+              devices: [d1]
+          devices:
+            - id: d1
+              device: strip
+              header_id: h1
+          layers:
+            - id: l1
+              effect:
+                type: fill
+                color: "#112233"
         """,
     )
     document = load_scene(scene_path)
-    assert document.refresh == 2.0
-    assert isinstance(document.widgets[0], BarWidget)
-    assert document.widgets[0].rect == (10, 20, 100, 30)
+    assert isinstance(document.screen, ScreenDocument)
+    assert isinstance(document.argb, ArgbLayout)
+    assert document.argb.layers[0].effect == FillEffect(type="fill", color="#112233")
 
 
 def test_font_library_prefix_resolution(tmp_path: Path) -> None:
@@ -50,16 +163,17 @@ def test_font_library_prefix_resolution(tmp_path: Path) -> None:
         tmp_path,
         "scenes/demo/scene.yaml",
         """
-        widgets:
-          - type: text
-            source: time.hms
-            rect: [0, 0, 100, 30]
-            style:
-              family: "fonts/Demo.ttf"
+        screen:
+          widgets:
+            - type: text
+              source: time.hms
+              rect: [0, 0, 100, 30]
+              style:
+                family: "fonts/Demo.ttf"
         """,
     )
     document = load_scene(scene_path, fonts_dir=library)
-    widget = document.widgets[0]
+    widget = document.screen.widgets[0]  # type: ignore[union-attr]
     assert isinstance(widget, TextWidget)
     assert widget.style.family == str((library / "Demo.ttf").resolve())
 
@@ -70,16 +184,17 @@ def test_font_asset_stays_scene_relative(tmp_path: Path) -> None:
         tmp_path,
         "scenes/demo/scene.yaml",
         """
-        widgets:
-          - type: text
-            source: time.hms
-            rect: [0, 0, 100, 30]
-            style:
-              family: "assets/Local.ttf"
+        screen:
+          widgets:
+            - type: text
+              source: time.hms
+              rect: [0, 0, 100, 30]
+              style:
+                family: "assets/Local.ttf"
         """,
     )
     document = load_scene(scene_path, fonts_dir=tmp_path / "library")
-    widget = document.widgets[0]
+    widget = document.screen.widgets[0]  # type: ignore[union-attr]
     assert isinstance(widget, TextWidget)
     assert widget.style.family == str(
         (tmp_path / "scenes" / "demo" / "assets" / "Local.ttf").resolve()
@@ -112,14 +227,17 @@ def test_component_expansion_with_params(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        widgets:
-          - use: gauge
-            at: [40, 50]
-            source: ram
-            value: "{value:.0f}%"        """,
+        screen:
+          widgets:
+            - use: gauge
+              at: [40, 50]
+              source: ram
+              value: "{value:.0f}%"
+        """,
     )
     document = load_scene(scene_path)
-    ring, text = document.widgets
+    widgets = document.screen.widgets  # type: ignore[union-attr]
+    ring, text = widgets
     assert isinstance(ring, RingWidget)
     assert ring.rect == (40, 50, 160, 160)
     assert ring.source == "ram"
@@ -145,10 +263,11 @@ def test_component_unknown_param_rejected(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        widgets:
-          - use: gauge
-            at: [0, 0]
-            bogus: 1
+        screen:
+          widgets:
+            - use: gauge
+              at: [0, 0]
+              bogus: 1
         """,
     )
     with pytest.raises(SceneError, match="unknown parameter"):
@@ -160,9 +279,10 @@ def test_component_missing_file_raises(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        widgets:
-          - use: ghost
-            at: [0, 0]
+        screen:
+          widgets:
+            - use: ghost
+              at: [0, 0]
         """,
     )
     with pytest.raises(SceneError, match="ghost"):
@@ -174,21 +294,24 @@ def test_invalid_widget_type_raises(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        widgets:
-          - type: knob
-            rect: [0, 0, 10, 10]
+        screen:
+          widgets:
+            - type: knob
+              rect: [0, 0, 10, 10]
         """,
     )
     with pytest.raises(SceneError):
         load_scene(scene_path)
 
 
-def test_unknown_top_level_key_rejected(tmp_path: Path) -> None:
+def test_unknown_section_key_rejected(tmp_path: Path) -> None:
     scene_path = _write(
         tmp_path,
         "scene.yaml",
         """
-        bogus_setting: true
+        screen:
+          widgets: []
+        argb: []
         """,
     )
     with pytest.raises(SceneError):
@@ -200,17 +323,20 @@ def test_relative_paths_resolved(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        background:
-          - path: assets/wall.png
-        widgets:
-          - type: image
-            path: sprites/dot.png
-            rect: [0, 0, 10, 10]
+        screen:
+          background:
+            - path: assets/wall.png
+          widgets:
+            - type: image
+              path: sprites/dot.png
+              rect: [0, 0, 10, 10]
         """,
     )
     document = load_scene(scene_path)
-    assert document.background[0].path == str(tmp_path / "assets" / "wall.png")
-    image_widget = document.widgets[0]
+    screen = document.screen
+    assert screen is not None
+    assert screen.background[0].path == str(tmp_path / "assets" / "wall.png")
+    image_widget = screen.widgets[0]
     assert image_widget.path == str(tmp_path / "sprites" / "dot.png")  # type: ignore[attr-defined]
 
 
@@ -232,17 +358,18 @@ def test_locked_instance_override_propagates(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        widgets:
-          - use: badge
-            at: [10, 10]
-            label: "hi"
-            locked: true
+        screen:
+          widgets:
+            - use: badge
+              at: [10, 10]
+              label: "hi"
+              locked: true
         """,
         encoding="utf-8",
     )
     document = load_scene(scene_path)
-    assert len(document.widgets) == 1
-    assert document.widgets[0].locked is True
+    assert len(document.screen.widgets) == 1  # type: ignore[union-attr]
+    assert document.screen.widgets[0].locked is True  # type: ignore[union-attr]
 
 
 def test_load_shape_widget(tmp_path: Path) -> None:
@@ -251,19 +378,20 @@ def test_load_shape_widget(tmp_path: Path) -> None:
         tmp_path,
         "scene.yaml",
         """
-        widgets:
-          - type: shape
-            shape: rect
-            rect: [0, 0, 100, 50]
-            style:
-              fill_color: "#FF0000"
-              stroke_color: "#00FF00"
-              stroke_width: 2
-              radius: 4
+        screen:
+          widgets:
+            - type: shape
+              shape: rect
+              rect: [0, 0, 100, 50]
+              style:
+                fill_color: "#FF0000"
+                stroke_color: "#00FF00"
+                stroke_width: 2
+                radius: 4
         """,
     )
     document = load_scene(scene_path)
-    widget = document.widgets[0]
+    widget = document.screen.widgets[0]  # type: ignore[union-attr]
     assert isinstance(widget, ShapeWidget)
     assert widget.shape == "rect"
     assert widget.style.fill_color == "#FF0000"
@@ -276,17 +404,36 @@ def test_load_video_widget_resolves_path(tmp_path: Path) -> None:
         tmp_path,
         "scenes/demo/scene.yaml",
         """
-        widgets:
-          - type: video
-            path: assets/clip.mp4
-            rect: [0, 0, 200, 100]
-            fps: 12
-            loop: false
-            start: 1.5
+        screen:
+          widgets:
+            - type: video
+              path: assets/clip.mp4
+              rect: [0, 0, 200, 100]
+              fps: 12
+              loop: false
+              start: 1.5
         """,
     )
     document = load_scene(scene_path)
-    widget = document.widgets[0]
+    widget = document.screen.widgets[0]  # type: ignore[union-attr]
     assert isinstance(widget, VideoWidget)
     assert widget.fps == 12 and widget.loop is False and widget.start == 1.5
     assert widget.path == str((tmp_path / "scenes/demo/assets/clip.mp4").resolve())
+
+
+def test_screen_section_must_be_mapping(tmp_path: Path) -> None:
+    scene_path = _write(
+        tmp_path,
+        "scene.yaml",
+        """
+        screen: []
+        """,
+    )
+    with pytest.raises(SceneError, match="mapping"):
+        load_scene(scene_path)
+
+
+def test_root_model_direct_validation() -> None:
+    document = SceneDocument(screen=ScreenDocument())
+    assert document.screen is not None
+    assert document.argb is None

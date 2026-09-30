@@ -2,8 +2,8 @@
 File:   usb_transport.py
 Brief:  PyUSB bulk transport adapter for 87AD:70DB.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

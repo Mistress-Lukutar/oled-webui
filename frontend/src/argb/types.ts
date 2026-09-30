@@ -203,10 +203,8 @@ export interface ArgbLayer {
 }
 
 export interface ArgbLayout {
-  version: number
   fps: number
   brightness: number
-  autostart: boolean
   headers: ArgbHeader[]
   devices: ArgbDevice[]
   layers: ArgbLayer[]
@@ -234,7 +232,6 @@ export interface ArgbStatus {
   running: boolean
   fps: number
   brightness: number
-  autostart: boolean
   frames_sent: number
   process: OpenRgbProcessInfo | null
 }
@@ -343,13 +340,11 @@ export function cloneLayout(layout: ArgbLayout): ArgbLayout {
   return JSON.parse(JSON.stringify(layout)) as ArgbLayout
 }
 
-/** Build a minimal starter layout (used when the server has none). */
+/** Build a starter layout used when a scene gains a fresh argb section. */
 export function defaultLayout(): ArgbLayout {
   return {
-    version: 1,
     fps: 30,
     brightness: 100,
-    autostart: false,
     headers: [
       { id: 'h1', name: 'ARGB 1', zone_index: 0, size: null, devices: [] },
     ],

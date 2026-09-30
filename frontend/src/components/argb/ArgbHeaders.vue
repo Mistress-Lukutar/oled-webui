@@ -28,10 +28,45 @@ function onZoneChange(event: Event, headerId: string): void {
     size: zone !== undefined ? zone.leds : (header?.size ?? null),
   })
 }
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 </script>
 
 <template>
   <div class="headers">
+    <div class="engine-fields">
+      <label class="field">
+        <span>Brightness %</span>
+        <input
+          type="number"
+          min="0"
+          max="200"
+          :value="state.layout.brightness"
+          @input="
+            store.mutate((layout) => {
+              layout.brightness = clamp(num($event), 0, 200)
+            })
+          "
+        />
+      </label>
+      <label class="field">
+        <span>Engine fps</span>
+        <input
+          type="number"
+          min="1"
+          max="60"
+          :value="state.layout.fps"
+          @input="
+            store.mutate((layout) => {
+              layout.fps = clamp(num($event), 1, 60)
+            })
+          "
+        />
+      </label>
+    </div>
+
     <div
       v-for="header in state.layout.headers"
       :key="header.id"
@@ -122,6 +157,24 @@ function onZoneChange(event: Event, headerId: string): void {
   gap: 10px;
   overflow-y: auto;
   min-height: 0;
+}
+
+.engine-fields {
+  display: flex;
+  gap: 8px;
+}
+
+.engine-fields .field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.engine-fields input {
+  width: 100%;
 }
 
 .header-card {

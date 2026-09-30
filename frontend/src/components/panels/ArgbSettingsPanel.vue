@@ -1,22 +1,25 @@
 <script setup lang="ts">
 /**
- * ARGB quick settings panel: engine start/stop, brightness/fps/autostart
- * and the effect list. Editing lives in the designer modal opened from
- * here; quick settings push to hardware with a debounce while the engine
- * is running. OpenRGB connection lives in the status panel.
+ * ARGB panel: connection/engine status, the active scene's effect list
+ * and the Designer button. The lighting state lives in the active
+ * scene's ``argb`` section; editing happens in the unified scene editor
+ * opened on the ARGB tab.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
-import ArgbEditorModal from '../argb/ArgbEditorModal.vue'
+import { computed, ref } from 'vue'
+import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
 import { useArgbStore } from '../../argb/store'
-import type { ArgbLayer, EffectType } from '../../argb/types'
+import type { EffectType } from '../../argb/types'
+import { useDisplayStore } from '../../composables/useDisplayStore'
 
 const props = defineProps<{ deviceId?: string | null }>()
 void props
 
 const store = useArgbStore()
 const { state } = store
+const display = useDisplayStore()
 
 const editorOpen = ref(false)
+const editSceneId = ref<string | null>(null)
 
 const EFFECT_LABELS: Record<EffectType, string> = {
   fill: 'Fill',
@@ -31,151 +34,81 @@ const EFFECT_LABELS: Record<EffectType, string> = {
 // Layers composite bottom-up; show the stack top-first like the editor.
 const layersTopFirst = computed(() => [...state.layout.layers].reverse())
 
-// ---------------------------------------------------------------------
-// Quick settings: edits go into the draft; while the engine runs they
-// are pushed to hardware soon after the last change. Slider drags are
-// one undo entry (batch) and one hardware push (debounce).
-// ---------------------------------------------------------------------
+const activeScene = computed(() => display.state.scene)
 
-const LIVE_APPLY_DELAY = 400
-let liveApplyTimer = 0
-let sliding = false
-
-function scheduleLiveApply(): void {
-  if (!state.status.running) return
-  window.clearTimeout(liveApplyTimer)
-  liveApplyTimer = window.setTimeout(() => {
-    if (state.status.running) void store.actions.apply()
-  }, LIVE_APPLY_DELAY)
+function openDesigner(): void {
+  const sceneId = activeScene.value.scene_id
+  if (sceneId === null) {
+    store.showError(
+      'No active scene — apply or create one in the Scenes panel first; the lighting state lives in a scene file',
+    )
+    return
+  }
+  editSceneId.value = sceneId
+  editorOpen.value = true
 }
-
-function beginSlide(): void {
-  if (sliding) return
-  store.beginBatch()
-  sliding = true
-}
-
-function endSlide(): void {
-  if (!sliding) return
-  store.endBatch()
-  sliding = false
-  scheduleLiveApply()
-}
-
-function setBrightness(event: Event): void {
-  const value = Math.round(Number((event.target as HTMLInputElement).value) || 0)
-  store.mutate((layout) => {
-    layout.brightness = Math.min(200, Math.max(0, value))
-  })
-}
-
-function setFps(event: Event): void {
-  const value = Math.round(Number((event.target as HTMLInputElement).value) || 30)
-  store.mutate((layout) => {
-    layout.fps = Math.min(60, Math.max(1, value))
-  })
-}
-
-function toggleLayer(layer: ArgbLayer): void {
-  store.actions.updateLayer(layer.id, { enabled: !layer.enabled })
-  scheduleLiveApply()
-}
-
-onBeforeUnmount(() => {
-  window.clearTimeout(liveApplyTimer)
-})
 </script>
 
 <template>
   <div class="quick">
-    <div class="engine">
+    <div class="status">
+      <span
+        class="dot"
+        :class="{ on: state.status.connected, run: state.status.running }"
+        :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
+      />
+      <span class="status-text">
+        <template v-if="state.status.running">
+          Engine running @ {{ state.status.fps }} fps · {{ state.status.frames_sent }} frames
+        </template>
+        <template v-else-if="state.status.connected">
+          OpenRGB connected · {{ state.status.zones.length }} zones · engine stopped
+        </template>
+        <template v-else>OpenRGB not connected</template>
+      </span>
       <button
-        class="primary"
-        :disabled="state.status.running"
-        title="Save the layout and run the engine"
-        @click="store.actions.apply()"
+        v-if="state.status.connected"
+        class="small"
+        @click="store.actions.disconnect()"
       >
-        ▶ Start
+        Disconnect
       </button>
-      <button :disabled="!state.status.running" @click="store.actions.stop()">
-        Stop
-      </button>
-      <button class="designer" @click="editorOpen = true">✏ Designer</button>
+      <button v-else class="small" @click="store.actions.connect()">Connect</button>
     </div>
 
-    <label class="field">
-      <span class="label">
-        Brightness <b class="mono">{{ state.layout.brightness }}%</b>
-      </span>
-      <input
-        type="range"
-        min="0"
-        max="200"
-        :value="state.layout.brightness"
-        @input="beginSlide(); setBrightness($event)"
-        @change="endSlide"
-        @pointerup="endSlide"
-        @blur="endSlide"
-      />
-    </label>
+    <p v-if="activeScene.running" class="hint">
+      Active scene: <b>{{ activeScene.name }}</b> — its <code>argb:</code> section
+      drives the lighting.
+    </p>
+    <p v-else class="hint">
+      No active scene. Apply a scene with an <code>argb:</code> section to start
+      the lighting engine.
+    </p>
 
-    <label class="field">
-      <span class="label">
-        Frame rate <b class="mono">{{ state.layout.fps }} fps</b>
-      </span>
-      <input
-        type="range"
-        min="1"
-        max="60"
-        :value="state.layout.fps"
-        @input="beginSlide(); setFps($event)"
-        @change="endSlide"
-        @pointerup="endSlide"
-        @blur="endSlide"
-      />
-    </label>
+    <button class="designer" @click="openDesigner">✏ Designer</button>
 
-    <label class="check">
-      <input
-        type="checkbox"
-        :checked="state.layout.autostart"
-        @change="store.actions.setAutostart(($event.target as HTMLInputElement).checked)"
-      />
-      <span>Run automatically on server start</span>
-    </label>
-
-    <h4>Effects</h4>
+    <h4>Effects (active layout)</h4>
     <div
       v-for="layer in layersTopFirst"
       :key="layer.id"
       class="fx-row"
       :class="{ disabled: !layer.enabled }"
     >
-      <button
-        class="icon"
-        :title="layer.enabled ? 'Disable' : 'Enable'"
-        @click="toggleLayer(layer)"
-      >
-        {{ layer.enabled ? '◉' : '○' }}
-      </button>
+      <span class="icon">{{ layer.enabled ? '◉' : '○' }}</span>
       <span class="name">{{ layer.name }}</span>
       <span class="chip">{{ EFFECT_LABELS[layer.effect.type] }}</span>
     </div>
     <p v-if="state.layout.layers.length === 0" class="hint">
-      No effects yet — open the designer to add some.
+      No effects in the active layout — open the designer to add some.
     </p>
 
-    <p class="hint live-hint">
-      While the engine is running, these settings reach the hardware
-      immediately after you release the control.
-    </p>
-
-    <div class="actions">
-      <span class="grow" />
-      <button :disabled="!state.dirty" @click="store.actions.save()">Save</button>
-    </div>
-
-    <ArgbEditorModal v-if="editorOpen" @close="editorOpen = false" />
+    <SceneEditorModal
+      v-if="editorOpen && editSceneId !== null"
+      :scene-id="editSceneId"
+      initial-section="argb"
+      @close="editorOpen = false"
+      @saved="store.actions.refreshStatus()"
+    />
     <div v-if="state.error !== null" class="error-toast">{{ state.error }}</div>
   </div>
 </template>
@@ -187,18 +120,40 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.engine {
+.status {
   display: flex;
+  align-items: center;
   gap: 8px;
-}
-
-.engine button {
-  flex: 1;
   font-size: 12px;
-  padding: 6px 8px;
 }
 
-.engine .designer {
+.status-text {
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.status .small {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex: none;
+}
+
+.dot.on {
+  background: var(--accent);
+}
+
+.dot.run {
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.designer {
   border-color: var(--accent-dim);
   color: var(--accent);
 }
@@ -211,29 +166,6 @@ h4 {
   color: var(--text-dim);
   border-top: 1px solid var(--border);
   padding-top: 10px;
-}
-
-.field span.label {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.mono {
-  font-variant-numeric: tabular-nums;
-  font-weight: 400;
-  color: var(--text-dim);
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 .fx-row {
@@ -266,9 +198,8 @@ h4 {
 }
 
 .fx-row .icon {
-  padding: 1px 5px;
   font-size: 11px;
-  line-height: 1.2;
+  color: var(--text-dim);
 }
 
 .hint {
@@ -277,18 +208,22 @@ h4 {
   margin: 0;
 }
 
-.live-hint {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
 }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.grow {
-  flex: 1;
+.error-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 60;
+  background: var(--bg-panel);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+  padding: 10px 14px;
+  font-size: 12px;
+  max-width: 380px;
 }
 </style>

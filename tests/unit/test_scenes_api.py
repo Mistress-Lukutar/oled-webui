@@ -2,8 +2,8 @@
 File:   test_scenes_api.py
 Brief:  API tests for the scene CRUD, preview and status endpoints.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -14,10 +14,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 VALID_YAML = """\
-widgets:
-  - type: text
-    value: "hello"
-    rect: [10, 10, 200, 60]
+screen:
+  widgets:
+    - type: text
+      value: "hello"
+      rect: [10, 10, 200, 60]
 """
 
 
@@ -91,11 +92,15 @@ def test_preview_renders_jpeg(client: TestClient) -> None:
     assert yaml_response.content[:2] == b"\xff\xd8"
 
 
-def test_apply_requires_connection(client: TestClient) -> None:
+def test_apply_without_connection_reports_device_error(client: TestClient) -> None:
+    """Applying without a connected panel reports the screen device error."""
     scene_id = _create_scene(client)
     client.put(f"/api/scenes/{scene_id}", json={"yaml": VALID_YAML})
     response = client.post(f"/api/scenes/{scene_id}/apply")
-    assert response.status_code == 409
+    assert response.status_code == 200
+    devices = response.json()["data"]["devices"]
+    assert devices["screen"].startswith("error:")
+    assert devices["argb"] == "stopped"
 
 
 def test_asset_serving(client: TestClient) -> None:

@@ -3,7 +3,7 @@ File:   video_cache.py
 Brief:  Per-widget video frame cache: extract once, reuse across restarts.
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.1.0
+Version: v0.5.2
 """
 
 from __future__ import annotations

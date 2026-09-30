@@ -1,9 +1,9 @@
 """
 File:   argb.py
-Brief:  ARGB status, layout persistence, apply and preview endpoints.
+Brief:  ARGB status, active scene layout, device library and preview endpoints.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -36,36 +36,19 @@ async def disconnect(argb: ArgbDep) -> StatusResponse:
     return StatusResponse(data=await argb.disconnect())
 
 
-@router.get("/layout", response_model=StatusResponse)
-async def get_layout(argb: ArgbDep) -> StatusResponse:
-    """Return the stored ARGB layout."""
-    return StatusResponse(data={"layout": argb.layout.model_dump()})
+@router.get("/active", response_model=StatusResponse)
+async def get_active(argb: ArgbDep) -> StatusResponse:
+    """Return the currently applied layout and engine state.
 
-
-@router.put("/layout", response_model=StatusResponse)
-async def put_layout(
-    layout: ArgbLayout, argb: ArgbDep, apply: bool = False
-) -> StatusResponse:
-    """Validate and store a layout; optionally start the engine with it."""
-    argb.validate_layout(layout)
-    if apply:
-        return StatusResponse(data=await argb.apply(layout))
-    argb.save_layout(layout)
-    return StatusResponse(data={"layout": argb.layout.model_dump()})
-
-
-@router.post("/apply", response_model=StatusResponse)
-async def apply_layout(
-    argb: ArgbDep, layout: ArgbLayout | None = None
-) -> StatusResponse:
-    """Start the engine on the stored layout, or the given one."""
-    return StatusResponse(data=await argb.apply(layout if layout else argb.layout))
-
-
-@router.post("/stop", response_model=StatusResponse)
-async def stop(argb: ArgbDep) -> StatusResponse:
-    """Stop the running effect engine."""
-    return StatusResponse(data=await argb.stop())
+    Layouts live in scene files (the ``argb`` section); this endpoint
+    exposes the runtime copy for previews and status displays.
+    """
+    return StatusResponse(
+        data={
+            "layout": argb.layout.model_dump(),
+            "running": argb.is_running,
+        }
+    )
 
 
 @router.get("/devices", response_model=StatusResponse)

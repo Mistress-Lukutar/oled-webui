@@ -2,8 +2,8 @@
 File:   main.py
 Brief:  FastAPI application factory, lifespan and entry point.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from oled_webui.routers import ui as ui_router
 from oled_webui.services.content_state import restore_last_content
 from oled_webui.services.display_service import DisplayService
 from oled_webui.services.event_bus import EventBus
+from oled_webui.services.scene_runtime import SceneRuntime
 from oled_webui.services.scene_service import SceneService
 from oled_webui.services.sse_manager import sse_manager
 
@@ -100,6 +101,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.openrgb_process = openrgb_process
     argb = ArgbService(settings, bus, openrgb_process)
     app.state.argb = argb
+    # One scene describes every device; the runtime drives each device
+    # from its scene section (missing section = device stopped).
+    app.state.scene_runtime = SceneRuntime(app.state.scenes, display, argb)
     await openrgb_process.start()
 
     watcher = _start_power_watcher(display)
@@ -111,20 +115,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Startup must not fail without hardware; the UI offers Connect.
             logger.warning("auto_connect_failed", error=str(exc))
         else:
-            # Show the screen the panel had before the previous shutdown.
-            await restore_last_content(display, app.state.scenes, settings)
-
-    if argb.layout.autostart:
-        # Restore ARGB output from the persisted layout; failures must not
-        # block the server - the UI surfaces the actual state.
-        try:
-            await argb.connect()
-        except OledWebUIError as exc:
-            logger.warning("argb_autostart_connect_failed", error=str(exc))
-        try:
-            await argb.apply(argb.layout)
-        except OledWebUIError as exc:
-            logger.warning("argb_autostart_apply_failed", error=str(exc))
+            # Restore the whole computer appearance the panel had before
+            # the previous shutdown (screen playback and ARGB lighting).
+            await restore_last_content(
+                app.state.scene_runtime, app.state.scenes, settings
+            )
 
     if watcher is not None and watcher.last_state is False:
         # The console display was already off at startup (idle timeout or

@@ -2,8 +2,8 @@
 File:   test_header.py
 Brief:  Unit tests for the 64-byte frame header layout.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

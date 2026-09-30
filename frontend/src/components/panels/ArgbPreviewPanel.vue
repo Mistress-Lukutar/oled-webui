@@ -13,6 +13,9 @@ const store = useArgbStore()
 
 onMounted(() => {
   void store.actions.init()
+  // Always re-mirror the active layout: another panel (or the editor)
+  // may have applied a different scene since the last mount.
+  void store.actions.refreshActiveLayout()
 })
 </script>
 

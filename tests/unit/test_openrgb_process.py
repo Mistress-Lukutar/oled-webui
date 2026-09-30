@@ -3,7 +3,7 @@ File:   test_openrgb_process.py
 Brief:  Tests for the OpenRGB process manager (spawn, adopt, monitor, stop).
 Author: Mistress-Lukutar
 Date:   2026-09-30
-Version: v0.1.0
+Version: v0.5.2
 """
 
 from __future__ import annotations

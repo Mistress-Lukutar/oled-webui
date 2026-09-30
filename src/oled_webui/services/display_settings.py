@@ -2,8 +2,8 @@
 File:   display_settings.py
 Brief:  Persistent display settings: keepalive, brightness, quality, power.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.3.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

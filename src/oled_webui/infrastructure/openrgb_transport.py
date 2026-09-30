@@ -2,8 +2,8 @@
 File:   openrgb_transport.py
 Brief:  Synchronous OpenRGB SDK client wrapper for ARGB header output.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations

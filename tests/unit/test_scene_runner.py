@@ -2,8 +2,8 @@
 File:   test_scene_runner.py
 Brief:  Integration tests for SceneRenderer rendering without a device.
 Author: Mistress-Lukutar
-Date:   2026-09-27
-Version: v0.2.0
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -15,7 +15,14 @@ import pytest
 from oled_webui.core.models import Resolution
 from oled_webui.scene.loader import load_scene
 from oled_webui.scene.runner import SceneRenderer
-from oled_webui.scene.schema import GraphWidget
+from oled_webui.scene.schema import GraphWidget, ScreenDocument
+
+
+def _load(path: Path) -> ScreenDocument:
+    """Load a scene file and unwrap its screen section."""
+    document = load_scene(path)
+    assert document.screen is not None
+    return document.screen
 
 
 @pytest.fixture(name="scene_file")
@@ -48,21 +55,22 @@ def scene_file_fixture(tmp_path: Path) -> Path:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        refresh: 10.0
-        max_fps: 30
-        widgets:
-          - use: gauge
-            at: [20, 20]
-            source: cpu
-          - type: bar
-            source: ram
-            rect: [200, 40, 200, 20]
-          - type: graph
-            source: cpu
-            rect: [200, 80, 200, 60]
-          - type: text
-            source: time.hms
-            rect: [20, 180, 160, 40]
+        screen:
+          refresh: 10.0
+          max_fps: 30
+          widgets:
+            - use: gauge
+              at: [20, 20]
+              source: cpu
+            - type: bar
+              source: ram
+              rect: [200, 40, 200, 20]
+            - type: graph
+              source: cpu
+              rect: [200, 80, 200, 60]
+            - type: text
+              source: time.hms
+              rect: [20, 180, 160, 40]
         """,
         encoding="utf-8",
     )
@@ -70,7 +78,7 @@ def scene_file_fixture(tmp_path: Path) -> Path:
 
 
 def test_scene_renderer_yields_initial_frame(scene_file: Path) -> None:
-    document = load_scene(scene_file)
+    document = _load(scene_file)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
 
     # First tick must produce the initial frame.
@@ -87,16 +95,17 @@ def test_scene_renderer_keeps_alive_when_unchanged(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        refresh: 0.1
-        keepalive_interval: 0.5
-        widgets:
-          - type: text
-            value: "static"
-            rect: [20, 20, 120, 40]
+        screen:
+          refresh: 0.1
+          keepalive_interval: 0.5
+          widgets:
+            - type: text
+              value: "static"
+              rect: [20, 20, 120, 40]
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     renderer.tick(now=0.0)
 
@@ -110,7 +119,7 @@ def test_scene_renderer_keeps_alive_when_unchanged(tmp_path: Path) -> None:
 
 
 def test_scene_renderer_yields_on_change(scene_file: Path) -> None:
-    document = load_scene(scene_file)
+    document = _load(scene_file)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     renderer.tick(now=0.0)
 
@@ -122,7 +131,7 @@ def test_scene_renderer_yields_on_change(scene_file: Path) -> None:
 
 def test_scene_renderer_grows_graph_history(scene_file: Path) -> None:
     """Each data poll appends a sample so the graph accumulates history."""
-    document = load_scene(scene_file)
+    document = _load(scene_file)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     graph_widget = next(
         w for w in document.widgets if isinstance(w, GraphWidget)
@@ -146,13 +155,14 @@ def test_scene_renderer_background_layer(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         f"""
-        background:
-          - path: {image_path.as_posix()}
-        widgets: []
+        screen:
+          background:
+            - path: {image_path.as_posix()}
+          widgets: []
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=64, height=64))
     assert renderer.tick(now=0.0) is not None
 
@@ -162,17 +172,18 @@ def test_missing_sprite_is_skipped(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        widgets:
-          - type: image
-            path: assets/missing.png
-            rect: [10, 10, 60, 60]
-          - type: text
-            value: "alive"
-            rect: [10, 90, 100, 30]
+        screen:
+          widgets:
+            - type: image
+              path: assets/missing.png
+              rect: [10, 10, 60, 60]
+            - type: text
+              value: "alive"
+              rect: [10, 90, 100, 30]
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     payload = renderer.render_frame()
     assert payload[:2] == b"\xff\xd8"
@@ -182,16 +193,17 @@ def test_missing_background_layer_is_skipped(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        background:
-          - path: assets/nope.png
-        widgets:
-          - type: text
-            value: "alive"
-            rect: [10, 10, 100, 30]
+        screen:
+          background:
+            - path: assets/nope.png
+          widgets:
+            - type: text
+              value: "alive"
+              rect: [10, 10, 100, 30]
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     payload = renderer.render_frame()
     assert payload[:2] == b"\xff\xd8"
@@ -202,15 +214,16 @@ def test_preview_fills_graph_history(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        widgets:
-          - type: graph
-            source: cpu
-            history: 60
-            rect: [10, 10, 200, 60]
+        screen:
+          widgets:
+            - type: graph
+              source: cpu
+              history: 60
+              rect: [10, 10, 200, 60]
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     runtime = next(iter(renderer._runtimes.values()))
     payload = renderer.render_frame()
@@ -227,19 +240,20 @@ def test_render_rotates_non_image_widget(tmp_path: Path) -> None:
     scene_path = tmp_path / "scene.yaml"
     scene_path.write_text(
         """
-        widgets:
-          - type: text
-            value: "####"
-            rect: [240, 220, 200, 40]
-            rotation: 90
-            align: center
-            style:
-              size: 28
-              fill_color: "#FFFFFF"
+        screen:
+          widgets:
+            - type: text
+              value: "####"
+              rect: [240, 220, 200, 40]
+              rotation: 90
+              align: center
+              style:
+                size: 28
+                fill_color: "#FFFFFF"
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_path)
+    document = _load(scene_path)
     renderer = SceneRenderer(document, Resolution(width=480, height=480))
     frame = Image.open(io.BytesIO(renderer.render_frame())).convert("RGB")
     points = [
@@ -267,19 +281,20 @@ def test_render_bar_border_align_extends_outside(tmp_path: Path) -> None:
         scene_path = tmp_path / f"scene_{align}.yaml"
         scene_path.write_text(
             f"""
-            widgets:
-              - type: bar
-                source: cpu
-                rect: [20, 20, 100, 40]
-                style:
-                  fill_color: "#000000"
-                  stroke_width: 2
-                  stroke_color: "#FFFFFF"
-                  stroke_align: {align}
+            screen:
+              widgets:
+                - type: bar
+                  source: cpu
+                  rect: [20, 20, 100, 40]
+                  style:
+                    fill_color: "#000000"
+                    stroke_width: 2
+                    stroke_color: "#FFFFFF"
+                    stroke_align: {align}
             """,
             encoding="utf-8",
         )
-        document = load_scene(scene_path)
+        document = _load(scene_path)
         renderer = SceneRenderer(document, Resolution(width=120, height=120))
         frame = Image.open(io.BytesIO(renderer.render_frame())).convert("RGB")
         # The base builder rotates the panel 180°, so scene (x, y) lands at
@@ -323,17 +338,18 @@ def test_video_widget_cycles_frames_and_advances_signature(
     scene_yaml = tmp_path / "scene.yaml"
     scene_yaml.write_text(
         """
-        max_fps: 30
-        widgets:
-          - type: video
-            path: assets/clip.mp4
-            rect: [10, 10, 40, 20]
-            fps: 1
-            loop: true
+        screen:
+          max_fps: 30
+          widgets:
+            - type: video
+              path: assets/clip.mp4
+              rect: [10, 10, 40, 20]
+              fps: 1
+              loop: true
         """,
         encoding="utf-8",
     )
-    document = load_scene(scene_yaml)
+    document = _load(scene_yaml)
     renderer = SceneRenderer(document, Resolution(width=100, height=100))
 
     def pixel_at(payload: bytes, x: int, y: int) -> tuple[int, int, int]:

@@ -2,8 +2,8 @@
 File:   schema.py
 Brief:  Pydantic schema for ARGB layouts: headers, devices, effect layers.
 Author: Mistress-Lukutar
-Date:   2026-09-29
-Version: v0.5.1
+Date:   2026-09-30
+Version: v0.5.2
 """
 
 from __future__ import annotations
@@ -224,17 +224,17 @@ class ArgbLayer(_Strict):
 
 
 class ArgbLayout(BaseModel):
-    """Validated ARGB layout: headers, devices and the effect stack."""
+    """Validated ARGB layout: headers, devices and the effect stack.
+
+    Instances live as the ``argb`` section of a scene file; the scene is
+    the only persistence, so there is no separate layout store.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    version: int = Field(1, ge=1, description="Schema version")
     fps: int = Field(30, ge=1, le=60, description="Engine tick rate")
     brightness: int = Field(
         100, ge=0, le=200, description="Global brightness percent (gamma-corrected)"
-    )
-    autostart: bool = Field(
-        False, description="Start the engine automatically on server startup"
     )
     headers: list[ArgbHeader] = Field(default_factory=list)
     devices: list[ArgbDevice] = Field(default_factory=list)
@@ -293,33 +293,3 @@ class ArgbLayout(BaseModel):
                         f"{device_id!r}"
                     )
         return self
-
-
-def default_layout() -> ArgbLayout:
-    """Build the starter layout: one header, one strip device, blue fill.
-
-    The device references the seeded ``strip`` library definition (24 LEDs).
-
-    Returns:
-        A minimal valid layout to seed the editor and persistence.
-    """
-    return ArgbLayout(
-        headers=[ArgbHeader(id="h1", name="ARGB 1", zone_index=0, devices=["d1"])],
-        devices=[
-            ArgbDevice(
-                id="d1",
-                name="Strip 1",
-                device="strip",
-                header_id="h1",
-                x=200.0,
-                y=250.0,
-            )
-        ],
-        layers=[
-            ArgbLayer(
-                id="l1",
-                name="Fill",
-                effect=FillEffect(type="fill", color="#2244CC"),
-            )
-        ],
-    )
