@@ -110,7 +110,7 @@ async function onImportFile(event: Event): Promise<void> {
         </div>
       </div>
 
-      <DeviceDesignerModal v-if="designerOpen" @close="onDesignerClosed" />
+      <DeviceDesignerModal v-if="designerOpen" :id="designerId" @close="onDesignerClosed" />
     </div>
   </Teleport>
 </template>

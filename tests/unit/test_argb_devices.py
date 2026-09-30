@@ -236,3 +236,30 @@ def test_mask_run_inverted_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ArgbError, match="inverted"):
         validate_with_library(layout, library)
+
+
+def test_per_corner_rect_radius_parses() -> None:
+    """Rect radius accepts one number or a [tl, tr, br, bl] list."""
+    definition = parse_definition(
+        "id: mini\nleds:\n  - type: rect\n    rect: [0, 0, 8, 8]\n"
+        "    radius: [5, 5, 0, 0]\n"
+    )
+    assert definition.leds[0].radius == (5.0, 5.0, 0.0, 0.0)
+    single = parse_definition(
+        "id: mini\nleds:\n  - type: rect\n    rect: [0, 0, 8, 8]\n    radius: 3\n"
+    )
+    assert single.leds[0].radius == 3.0
+
+
+def test_bad_per_corner_radius_rejected() -> None:
+    """Negative radii and lists that are not 4 long fail validation."""
+    with pytest.raises(ArgbError, match="Invalid device definition"):
+        parse_definition(
+            "id: mini\nleds:\n  - type: rect\n    rect: [0, 0, 8, 8]\n"
+            "    radius: [5, 5, 0]\n"
+        )
+    with pytest.raises(ArgbError, match="Invalid device definition"):
+        parse_definition(
+            "id: mini\nleds:\n  - type: rect\n    rect: [0, 0, 8, 8]\n"
+            "    radius: [5, 5, -2, 0]\n"
+        )

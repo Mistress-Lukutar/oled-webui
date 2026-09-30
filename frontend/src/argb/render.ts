@@ -173,6 +173,13 @@ function cssColor(hex: string | undefined): string {
 // Shape painting (under the device transform, definition coordinates).
 // ---------------------------------------------------------------------------
 
+/** Per-corner radii [tl, tr, br, bl] of a rect shape. */
+function cornerRadii(shape: LedShape | DecorShape): [number, number, number, number] {
+  const r = shape.type === 'rect' ? shape.radius : undefined
+  if (typeof r === 'number') return [r, r, r, r]
+  return r ?? [0, 0, 0, 0]
+}
+
 function traceShape(
   ctx: CanvasRenderingContext2D,
   shape: LedShape | DecorShape,
@@ -181,11 +188,8 @@ function traceShape(
   ctx.beginPath()
   if (shape.type === 'rect') {
     const [x, y, w, h] = shape.rect
-    if (inset !== 0) {
-      ctx.roundRect(x + inset, y + inset, w - inset * 2, h - inset * 2, Math.max((shape.radius ?? 0) - inset, 0))
-    } else {
-      ctx.roundRect(x, y, w, h, shape.radius ?? 0)
-    }
+    const radii = cornerRadii(shape).map((r) => Math.max(r - inset, 0))
+    ctx.roundRect(x + inset, y + inset, w - inset * 2, h - inset * 2, radii)
   } else if (shape.type === 'circle') {
     ctx.arc(shape.center[0], shape.center[1], Math.max(shape.radius - inset, 0.1), 0, Math.PI * 2)
   } else {

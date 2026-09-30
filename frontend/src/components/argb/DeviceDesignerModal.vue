@@ -12,6 +12,7 @@ import { defBounds, ledHue, shapeCenter, shapeExtent } from '../../argb/deviceDe
 import { useDeviceDesigner } from '../../argb/designerStore'
 import type { ShapeRef } from '../../argb/designerStore'
 
+const props = defineProps<{ id?: string | null }>()
 const emit = defineEmits<{ close: [] }>()
 
 const designer = useDeviceDesigner()
@@ -260,7 +261,10 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  void designer.open(props.id ?? null)
+  window.addEventListener('keydown', onKeydown)
+})
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 const ledCount = computed(() => state.doc?.leds.length ?? 0)

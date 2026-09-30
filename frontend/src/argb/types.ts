@@ -91,10 +91,13 @@ export type ArgbEffect =
 // the LED index; decor is non-LED artwork drawn underneath the LEDs.
 // ---------------------------------------------------------------------------
 
+/** Rect corner radius: one number or per-corner [tl, tr, br, bl] (CSS order). */
+export type CornerRadii = number | [number, number, number, number]
+
 export interface LedRectShape {
   type: 'rect'
   rect: [number, number, number, number]
-  radius?: number
+  radius?: CornerRadii
   stroke_color?: string | null
   stroke_width?: number
 }
@@ -128,7 +131,7 @@ export interface DecorPaint {
 export interface DecorRectShape extends DecorPaint {
   type: 'rect'
   rect: [number, number, number, number]
-  radius?: number
+  radius?: CornerRadii
 }
 
 export interface DecorCircleShape extends DecorPaint {

@@ -16,7 +16,14 @@ from typing import Annotated, Literal
 
 import structlog
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 from oled_webui.argb.schema import ArgbLayout, COLOR_PATTERN
 from oled_webui.exceptions import ArgbError
@@ -28,6 +35,41 @@ ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 # Directory holding the bundled YAML seeds copied into a fresh library.
 BUILTIN_DIR = Path(__file__).parent / "builtin_devices"
+
+
+def _check_corner_radii(
+    value: float | tuple[float, float, float, float],
+) -> float | tuple[float, float, float, float]:
+    """Validate a rect corner radius (single value or per-corner).
+
+    Args:
+        value: One radius or ``[tl, tr, br, bl]`` (CSS order).
+
+    Returns:
+        The validated value with floats.
+
+    Raises:
+        ValueError: If a radius is negative or the list is not 4 long.
+    """
+    if isinstance(value, (int, float)):
+        if value < 0:
+            raise ValueError(f"radius must be >= 0, got {value}")
+        return float(value)
+    if len(value) != 4:
+        raise ValueError(
+            f"radius list must be [tl, tr, br, bl] (4 values), got {value!r}"
+        )
+    radii = tuple(float(r) for r in value)
+    if any(r < 0 for r in radii):
+        raise ValueError(f"corner radii must be >= 0, got {value!r}")
+    return radii
+
+
+# Rect corner radius: one number or per-corner [tl, tr, br, bl].
+CornerRadii = Annotated[
+    float | tuple[float, float, float, float],
+    AfterValidator(_check_corner_radii),
+]
 
 
 class _Strict(BaseModel):
@@ -59,7 +101,9 @@ class LedRect(_LedStroke):
     rect: tuple[float, float, float, float] = Field(
         ..., description="Shape rect as [x, y, w, h] in definition coordinates"
     )
-    radius: float = Field(0.0, ge=0, description="Corner radius")
+    radius: CornerRadii = Field(
+        0.0, description="Corner radius: one number or [tl, tr, br, bl]"
+    )
 
     @model_validator(mode="after")
     def _validate_rect(self) -> LedRect:
@@ -122,7 +166,9 @@ class DecorRect(DecorPaint):
 
     type: Literal["rect"]
     rect: tuple[float, float, float, float] = Field(..., description="[x, y, w, h]")
-    radius: float = Field(0.0, ge=0, description="Corner radius")
+    radius: CornerRadii = Field(
+        0.0, description="Corner radius: one number or [tl, tr, br, bl]"
+    )
 
     @model_validator(mode="after")
     def _validate_rect(self) -> DecorRect:
