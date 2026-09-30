@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * ARGB quick settings panel: engine start/stop, OpenRGB connection,
- * brightness/fps/autostart and the effect list. Editing lives in the
- * designer modal opened from here; quick settings push to hardware with
- * a debounce while the engine is running.
+ * ARGB quick settings panel: engine start/stop, brightness/fps/autostart
+ * and the effect list. Editing lives in the designer modal opened from
+ * here; quick settings push to hardware with a debounce while the engine
+ * is running. OpenRGB connection lives in the status panel.
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ArgbEditorModal from '../argb/ArgbEditorModal.vue'
@@ -27,26 +27,6 @@ const EFFECT_LABELS: Record<EffectType, string> = {
   scanner: 'Scanner',
   meter: 'Meter',
 }
-
-const engineText = computed(() =>
-  state.status.running
-    ? `Running @ ${state.status.fps} fps · ${state.status.frames_sent} frames sent`
-    : 'Engine stopped',
-)
-
-const processText = computed(() => {
-  const p = state.status.process
-  if (!p?.managed) return null
-  if (p.running) {
-    if (p.owned) {
-      return p.task
-        ? 'OpenRGB supervised · scheduled task'
-        : `OpenRGB supervised · pid ${p.pid}`
-    }
-    return 'OpenRGB: external instance adopted'
-  }
-  return 'OpenRGB starts automatically on connect'
-})
 
 // Layers composite bottom-up; show the stack top-first like the editor.
 const layersTopFirst = computed(() => [...state.layout.layers].reverse())
@@ -121,30 +101,6 @@ onBeforeUnmount(() => {
         Stop
       </button>
       <button class="designer" @click="editorOpen = true">✏ Designer</button>
-    </div>
-
-    <div class="status-row">
-      <span
-        class="dot"
-        :class="{ on: state.status.connected, run: state.status.running }"
-        :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
-      />
-      <div class="status-texts">
-        <span class="main">
-          {{ state.status.connected ? `${state.status.controller ?? 'OpenRGB'} · ${state.status.zones.length} zones` : 'OpenRGB not connected' }}
-        </span>
-        <span class="sub">{{ engineText }}</span>
-        <span v-if="processText" class="sub dim">{{ processText }}</span>
-      </div>
-      <button
-        v-if="!state.status.connected"
-        class="small"
-        :title="state.status.process?.managed ? 'Starts OpenRGB automatically if needed' : 'Connect to a running OpenRGB SDK server'"
-        @click="store.actions.connect()"
-      >
-        Connect
-      </button>
-      <button v-else class="small" @click="store.actions.disconnect()">Disconnect</button>
     </div>
 
     <label class="field">
@@ -255,55 +211,6 @@ h4 {
   color: var(--text-dim);
   border-top: 1px solid var(--border);
   padding-top: 10px;
-}
-
-.status-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--danger);
-  flex: none;
-}
-
-.dot.on {
-  background: var(--accent);
-}
-
-.dot.run {
-  box-shadow: 0 0 6px var(--accent);
-}
-
-.status-texts {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.status-texts .main {
-  font-size: 13px;
-}
-
-.status-texts .sub {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.status-texts .sub.dim {
-  font-size: 11px;
-  opacity: 0.75;
-}
-
-button.small {
-  font-size: 12px;
-  padding: 3px 8px;
-  flex: none;
 }
 
 .field span.label {
