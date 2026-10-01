@@ -44,11 +44,31 @@ keepalive loop; an actual USB power cut is out of scope.
 ## Quick start
 
 ```bat
+setup.bat
 start.bat
 ```
 
-This creates `.venv`, installs the package, builds the frontend (first
-run only) and starts the server at http://127.0.0.1:8090.
+`setup.bat` is a one-time installer for a fresh Windows machine (run it
+from an elevated terminal so scheduled tasks can be registered). It:
+
+- installs Python 3.11+, Node.js LTS, ffmpeg (`Gyan.FFmpeg`), PawnIO and
+  OpenRGB when missing — via winget or a direct download into `tools\`;
+- creates `.venv`, installs the backend package and builds the frontend
+  into `static\dist\`;
+- writes `.env` and wires `LUMINA_OPENRGB_TASK`/`LUMINA_OPENRGB_EXE`;
+- registers two Task Scheduler entries: **LuminaFlowUI** (logon task
+  running `scripts\supervisor.bat`, which restarts the server if it
+  dies) and **LuminaFlowUI OpenRGB** (elevated, on-demand SDK server —
+  the elevation is what lets OpenRGB use PawnIO for SMBus access).
+
+Steps that cannot be automated (missing winget, no internet, declined
+UAC prompt, ...) are printed at the end as manual instructions with
+download URLs — complete them and re-run `setup.bat`. It is safe to
+re-run: finished steps are skipped. Switches: `-SkipTasks` (touch no
+scheduled tasks), `-SkipDownloads` (check and report only).
+
+`start.bat` then starts the server at http://127.0.0.1:8090; it is also
+what the logon task runs, so installing nothing is needed for daily use.
 
 Manual setup:
 

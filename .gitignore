@@ -20,3 +20,5 @@ gui-test-screenshots/
 .env
 .zcode
 .agents
+# Local tool installs made by setup.bat (ffmpeg, OpenRGB)
+tools/

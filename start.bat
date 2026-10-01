@@ -1,28 +1,24 @@
 @echo off
-rem Bootstrap and start LuminaFlowUI on Windows.
+rem File:    start.bat
+rem Brief:   Launch LuminaFlowUI after setup.bat has prepared the machine.
+rem Author:  Mistress-Lukutar
+rem Date:    2026-10-01
+rem Version: v0.5.2
 setlocal
 cd /d "%~dp0"
 
-if not exist .venv (
-    echo Creating virtual environment...
-    py -3.11 -m venv .venv || python -m venv .venv || goto :error
+if not exist .venv\Scripts\python.exe (
+    echo .venv not found - run setup.bat first.
+    exit /b 2
 )
-
-call .venv\Scripts\activate.bat
-pip install --quiet -e ".[dev]" || goto :error
 
 if not exist static\dist\index.html (
-    echo Building frontend...
-    pushd frontend
-    call npm install || goto :error
-    call npm run build || goto :error
-    popd
+    echo static\dist is missing - run setup.bat first.
+    exit /b 2
 )
 
-echo Starting LuminaFlowUI on http://127.0.0.1:8090
-python run.py
-goto :eof
+rem Prefer a locally unpacked ffmpeg (setup.bat fallback) over PATH.
+if exist "%~dp0tools\ffmpeg\bin\ffmpeg.exe" set "PATH=%~dp0tools\ffmpeg\bin;%PATH%"
 
-:error
-echo Startup failed.
-exit /b 1
+echo Starting LuminaFlowUI on http://127.0.0.1:8090
+.venv\Scripts\python.exe run.py
