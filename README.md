@@ -1,70 +1,56 @@
 # LuminaFlowUI
 
-Web interface for controlling ChiZhu Tech USB display panels (VID:PID `87AD:70DB`)
-from a browser. Protocol and transport are ported from the original
-[`oled`](../Oled) CLI project; the web layer is new.
+A browser dashboard for a ChiZhu Tech USB display
+panel (From AIO system, VID:PID `87AD:70DB`) and the motherboard's ARGB lighting, driven
+together from declarative scene files.
 
-## Features
+One YAML scene describes the whole computer's appearance — the panel
+shows a live dashboard of system metrics, and the fans and strips run a
+layered lighting layout. Switching a scene switches everything at once.
 
-- **Device** — connect/disconnect over raw USB bulk transfers, handshake,
-  panel info (PM/SUB, resolution).
-- **Image** — upload an image, tune rotation / fit, live preview before and
-  after sending.
-- **Color** — fill the panel with a solid color, quick swatches.
-- **Text** — multi-line text with size, colors, alignment, padding and
-  optional custom TTF/OTF fonts (drop them into `data/fonts/`).
-- **Video** — upload a video, stream it to the panel via ffmpeg at a chosen
-  FPS, loop, stop anytime.
-- **Display settings** — one global dialog (⚙ in the status bar) for
-  keepalive, brightness and JPEG quality plus an energy-saving option that
-  blanks the panel when the Windows display powers off and restores the
-  content when it turns back on. Settings persist across restarts and
-  apply to every content type.
-- **Scenes** — one declarative YAML file per scene describes the whole
-  computer's appearance, one section per device: `screen:` (background
-  collage plus live widgets driven by system metrics — CPU, RAM, disk,
-  network, temps, clock; GPU via NVML when available) and `argb:` (the
-  lighting layout below). Reusable components, value-transition
-  animations with named easing curves and sandboxed procedural
-  expressions (`t`, `dt`, `v`). Scenes are stored under
-  `data/scenes/<id>/` with their assets. The unified editor offers a
-  tab per device section plus a YAML view of the whole file with
-  validation and a hardware-free frame preview; applying a scene starts
-  every section it describes and stops the devices it does not. A
-  bundled dashboard example can be added with one click.
-- **Keepalive** — the panel reverts to its built-in logo after ~2–3 seconds
-  without frames; the server re-sends the last frame in the background.
-- **Presets** — save the currently displayed content (image, color or text
-  plus all render parameters) as a named preset and re-apply it later.
-- **Live preview** — the UI mirrors the last frame sent to the panel,
-  updated in real time over SSE.
+## Highlights
 
-Brightness is software-only (gamma-correct pixel LUT, 0–200 %, global
-setting) — this panel has no hardware backlight control. The percentage
-targets physical luminance (50 % ≈ half maximum brightness) instead of
-raw pixel values, so dark tones keep their separation at low settings
-instead of collapsing into black. "Off" sends a black frame kept alive
-by the keepalive loop; actual USB power cut is out of scope.
+- **Unified scenes** — one YAML file per scene, one section per device:
+  `screen:` (collage background + widgets: text, bar, ring, graph,
+  image, shape, video) and `argb:` (lighting layout). Widgets are fed by
+  live system metrics (CPU, RAM, disk, network, temps, clock, GPU via
+  NVML), support value-transition animations with named easing curves
+  and sandboxed procedural expressions. Reusable components keep
+  recurring pieces in one place.
+- **Visual editors** — a unified scene editor with a tab per device
+  section plus a raw-YAML view: validation, hardware-free frame
+  preview, and an ARGB designer where strips and fans are laid out on a
+  canvas to mirror the case and stacked into effect layers (fill,
+  gradient, rainbow, breathing, comet, scanner, meter).
+- **Masonry dashboard** — draggable, auto-balanced panels (preview,
+  quick settings, scenes, ARGB); the layout persists across restarts.
+- **Energy saving** — blanks the panel (and dims the lighting) when the
+  Windows display powers off, restores everything on wake.
+- **Live preview** — the UI mirrors the last frame sent to the panel in
+  real time over SSE.
 
-## Stack
+Brightness is software-only (gamma-correct pixel LUT, 0–200 %) — the
+panel has no hardware control. The percentage targets physical
+luminance rather than raw pixel values, so dark tones keep their
+separation at low settings. "Off" sends a black frame kept alive by the
+keepalive loop; an actual USB power cut is out of scope.
 
-- **Backend**: Python 3.11+, FastAPI (async) + Uvicorn, PyUSB, Pillow,
-  psutil, PyYAML, pydantic-settings, structlog. src-layout package
-  `luminaflowui`.
-- **Frontend**: Vue 3 + Vite + TypeScript, hand-written dark theme,
-  SSE for real-time updates. Build output is served by FastAPI itself.
-- **External tool**: `ffmpeg` on PATH (only needed for video playback).
+## Requirements
 
-## Quick start (Windows)
+- Windows (developed and tested there) with Python 3.11+ and Node.js
+- [OpenRGB](https://openrgb.org) for ARGB lighting (optional)
+- `ffmpeg` on PATH for `video:` widgets (optional)
+
+## Quick start
 
 ```bat
 start.bat
 ```
 
-This creates `.venv`, installs the package, builds the frontend (first run
-only) and starts the server at http://127.0.0.1:8090.
+This creates `.venv`, installs the package, builds the frontend (first
+run only) and starts the server at http://127.0.0.1:8090.
 
-### Manual
+Manual setup:
 
 ```bash
 python -m venv .venv
@@ -73,75 +59,114 @@ cd frontend && npm install && npm run build && cd ..
 .venv/Scripts/python run.py
 ```
 
+On Linux, install `libusb-1.0` and add a udev rule for `87AD:70DB`.
+
 ### Configuration
 
 Environment variables (prefix `LUMINA_`, `.env` supported):
 
-| Variable              | Default         | Description                              |
-|-----------------------|-----------------|------------------------------------------|
-| `LUMINA_HOST`           | `127.0.0.1`     | HTTP bind interface                      |
-| `LUMINA_PORT`           | `8090`          | HTTP port                                |
-| `LUMINA_DATA_DIR`       | `./data`        | Presets, scenes, uploads, fonts, last frame |
-| `LUMINA_KEEPALIVE_ENABLED` | `true`       | Keepalive auto-start on connect          |
-| `LUMINA_KEEPALIVE_INTERVAL` | `1.5`       | Keepalive resend interval, seconds       |
-| `LUMINA_BRIGHTNESS`     | `100`           | Initial global brightness percent        |
-| `LUMINA_JPEG_QUALITY`   | `95`            | Initial global JPEG quality              |
-| `LUMINA_BLANK_ON_DISPLAY_OFF` | `false`   | Blank panel when the Windows display powers off |
-| `LUMINA_AUTO_CONNECT`   | `true`          | Connect to USB device on startup         |
+| Variable                       | Default     | Description                                                 |
+|--------------------------------|-------------|-------------------------------------------------------------|
+| `LUMINA_HOST`                  | `127.0.0.1` | HTTP bind interface                                         |
+| `LUMINA_PORT`                  | `8090`      | HTTP port                                                   |
+| `LUMINA_DATA_DIR`              | `./data`    | Scenes, fonts, ARGB state, UI layout, last frame            |
+| `LUMINA_KEEPALIVE_ENABLED`     | `true`      | Keepalive auto-start on connect                             |
+| `LUMINA_KEEPALIVE_INTERVAL`    | `1.5`       | Keepalive resend interval, seconds                          |
+| `LUMINA_BRIGHTNESS`            | `100`       | Initial global brightness percent (0–200)                   |
+| `LUMINA_JPEG_QUALITY`          | `95`        | Initial global JPEG quality                                 |
+| `LUMINA_BLANK_ON_DISPLAY_OFF`  | `false`     | Blank panel + lighting when the Windows display powers off  |
+| `LUMINA_PREVIEW_THROTTLE`      | `0.2`       | Min seconds between video preview SSE events                |
+| `LUMINA_AUTO_CONNECT`          | `true`      | Connect to USB device on startup                            |
+| `LUMINA_OPENRGB_HOST`          | `127.0.0.1` | OpenRGB SDK server host                                     |
+| `LUMINA_OPENRGB_PORT`          | `6742`      | OpenRGB SDK server port                                     |
+| `LUMINA_OPENRGB_EXE`           | *(unset)*   | Path to `OpenRGB.exe`; the server spawns and supervises it itself |
+| `LUMINA_OPENRGB_TASK`          | *(unset)*   | Scheduled task running OpenRGB elevated; started via `schtasks` when the SDK port is not served |
+| `LUMINA_OPENRGB_START_TIMEOUT` | `45`        | Seconds to wait for the spawned OpenRGB SDK port            |
 
 Env vars seed the defaults on first run; values changed in the settings
 dialog are stored in `data/display_settings.json` and take precedence.
 
-## USB driver
+### ARGB lighting
 
-The panel exposes vendor-specific bulk endpoints and needs a WinUSB driver
-on Windows (install once with [Zadig](https://zadig.akeo.ie/), selecting the
-device and *WinUSB*). On Linux, install `libusb-1.0` and add a udev rule for
-`87AD:70DB`.
+ARGB strips and fans on the motherboard's 5V 3-pin headers are driven
+through OpenRGB; the lighting state lives in the scene's `argb:`
+section, so scenes switch the panel and the LEDs together.
+
+1. Install OpenRGB and make sure its SDK server listens on
+   `127.0.0.1:6742` (enable *SDK* in its settings if needed). With
+   `LUMINA_OPENRGB_EXE` (or `LUMINA_OPENRGB_TASK` for an elevated
+   scheduled task) the WebUI server spawns, restarts and stops OpenRGB
+   itself, so you don't have to launch it manually.
+2. Close Gigabyte Control Center / RGB Fusion — they fight over the
+   controller.
+3. Open the ARGB panel, press **Connect**, then **Designer**: add
+   strips/fans, arrange them to mirror the case, set LED counts and the
+   header each device hangs on (chain order matters), stack effect
+   layers with per-layer opacity and pixel masks, then **Save** +
+   **Apply**.
+
+The workspace preview is rendered by the same engine that feeds the
+LEDs, so it is exactly what the hardware shows. Header zone sizes are
+pushed into OpenRGB on connect (ITE-style zones report 0 LEDs until
+resized). Device shapes are templates in the definition library
+`data/argb/devices/*.yaml`, shared by scenes.
+
+## Scene file format
+
+One YAML file per scene in `data/scenes/<id>/scene.yaml`, one top-level
+section per device:
+
+```yaml
+screen:
+  background: {color: "#000000"}
+  widgets:
+    - {type: text, rect: [...], text: "{value}%", source: {type: cpu}}
+    - {type: bar, rect: [...], source: {type: ram}}
+argb:
+  headers: {h1: 300}
+  devices:
+    - {ref: case-strips, ...}
+```
+
+Assets (images, fonts) and reusable components live next to the scene
+file; widgets reference them by relative path. The editor round-trips
+this file through a YAML parser and grafts comments back onto the raw
+source, so hand-written comments survive edits. Applying a scene starts
+every section it describes and stops the devices it does not; the last
+active scene (including its ARGB state) is restored after a restart. A
+bundled dashboard example can be added with one click.
 
 ## API overview
 
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/device/status` | GET | Full status snapshot |
-| `/api/device/connect` `/disconnect` | POST | Connection control |
-| `/api/device/settings` | GET/POST | Read / update display settings `{keepalive_enabled, keepalive_interval, brightness, quality, blank_on_display_off}` |
-| `/api/frame/image` | POST | multipart `file` + render params |
-| `/api/frame/color` | POST | multipart `color` |
-| `/api/frame/text` | POST | JSON `TextRequest` |
+| `/api/device/connect` `/disconnect` `/reconnect` | POST | Connection control |
+| `/api/device/info` | GET | Handshake / panel info |
+| `/api/device/settings` | GET/POST | Display settings `{keepalive_enabled, keepalive_interval, brightness, quality, blank_on_display_off}` |
 | `/api/frame/preview` | GET | Last frame as JPEG |
-| `/api/frame/fonts` | GET | Custom fonts available |
-| `/api/video` `/video/stop` | POST | Playback control |
-| `/api/scenes` | GET/POST | Scene library (multipart create) |
-| `/api/scenes/{id}` | GET/PUT/DELETE | Scene YAML source management |
-| `/api/scenes/{id}/assets` | POST/DELETE | Scene asset files |
-| `/api/scenes/{id}/apply` `/stop` | POST | Scene activation (all devices) / stop |
-| `/api/scenes/{id}/preview` `/preview` | POST | Render one frame as JPEG |
-| `/api/argb/status` `/connect` `/disconnect` | GET/POST | OpenRGB status and connection |
+| `/api/frame/fonts` | GET/POST | Shared font library: list / upload TTF+OTF |
+| `/api/frame/fonts/{name}` | GET/DELETE | Serve / remove one font file |
+| `/api/scenes` | GET/POST | Scene library (multipart create with optional YAML) |
+| `/api/scenes/seed-example` | POST | Create the bundled dashboard example |
+| `/api/scenes/stop` | POST | Stop the running scene on all devices |
+| `/api/scenes/preview` | POST | Render uploaded YAML to JPEG without saving |
+| `/api/scenes/{id}` | GET/PUT/DELETE | Scene detail (meta, YAML, assets, components) / validated save / delete |
+| `/api/scenes/{id}/assets` | POST | Upload scene asset files |
+| `/api/scenes/{id}/assets/{name}` | GET/DELETE | Serve / remove an asset file |
+| `/api/scenes/{id}/apply` | POST | Activate the scene (all sections it describes) |
+| `/api/scenes/{id}/preview` | POST | Render one stored scene frame as JPEG |
+| `/api/argb/status` | GET | OpenRGB connection status |
+| `/api/argb/connect` `/disconnect` | POST | OpenRGB connection control |
+| `/api/argb/settings` | GET/PUT | ARGB quick settings (brightness, power) |
 | `/api/argb/active` | GET | Layout applied from the active scene |
-| `/api/argb/devices` | GET/POST/PUT/DELETE | Device definition library |
+| `/api/argb/devices` | GET/POST | Device definition library: list / create |
+| `/api/argb/devices/{id}` | GET/PUT/DELETE | One device definition |
 | `/api/argb/render_preview` | POST | Hardware-free layout frame |
-| `/api/presets` | GET | List presets |
-| `/api/presets/save-current` | POST | Snapshot last content |
-| `/api/presets/{id}` `/apply` | POST/DELETE | Manage presets |
-| `/events` | GET | SSE stream |
-| `/health` | GET | Liveness probe |
-
-## Preset format
-
-One JSON file per preset in `data/presets/`, binary assets stored alongside:
-
-```json
-{
-  "id": "9f2c41a8b0d3",
-  "name": "Living room",
-  "type": "image",
-  "params": {"rotation": 0, "fit": "contain"},
-  "payload": {"file": "9f2c41a8b0d3.png"},
-  "created_at": 1769500000.0,
-  "has_asset": true
-}
-```
+| `/api/system/devices` | GET | Device registry backing the dashboard panels |
+| `/api/ui/panels` | GET/PUT/DELETE | Dashboard panel layout: load / save / reset |
+| `/events` | GET | SSE stream (`connection`, `frame_updated`, `display_settings`, `scene`, `argb`, `error`) |
+| `/health` | GET | Liveness probe (independent of device state) |
 
 ## Development
 
@@ -153,47 +178,20 @@ pytest
 cd frontend && npm run dev   # Vite dev server with /api proxy
 ```
 
-After code changes run `python scripts/bump-version.py` to bump file headers.
+The backend is Python 3.11+ / FastAPI + Uvicorn in a src-layout package
+`luminaflowui`; the frontend is Vue 3 + Vite + TypeScript (composables
+only, no router/store frameworks) with the build output served by
+FastAPI itself. After code changes run
+`python scripts/bump-version.py` to bump file headers. See
+[AGENTS.md](AGENTS.md) for the architecture map and agent-oriented
+conventions.
 
-## ARGB lighting (scene `argb:` section)
+210 pytest tests run hardware-free (fake USB device, fake OpenRGB
+transport) and cover the wire protocol, the render pipeline, the scene
+engine (expressions, easing, widgets, components, the rendering state
+machine) and the ARGB effect engine (masks, alpha blending, chain
+mapping).
 
-ARGB strips and fans connected to the motherboard's 5V 3-pin headers are
-driven through [OpenRGB](https://openrgb.org). The lighting state lives
-in a scene file's `argb:` section, so scenes switch the whole computer
-appearance — panel and LEDs together:
+## License
 
-1. Install and start OpenRGB (it detects the board's RGB controller).
-   The SDK server must listen on `127.0.0.1:6742` (default when the app
-   runs; enable *SDK* in its settings if you changed it).
-2. Close Gigabyte Control Center / RGB Fusion — they fight over the
-   controller.
-3. In the WebUI open the ARGB panel, press **Connect**, then press
-   **Designer**: the unified scene editor opens on the ARGB tab. Add
-   strips/fans, arrange them on the workspace to mirror the case, set
-   LED counts and the header each device hangs on (chain order matters),
-   stack effect layers (fill, gradient, rainbow, breathing, comet,
-   scanner, meter) with per-layer opacity and pixel masks, then
-   **Save** + **Apply** — the scene's `screen:` and `argb:` sections
-   start together.
-
-The workspace preview is rendered by the same engine that feeds the
-LEDs, so it is exactly what the hardware shows. Applying a scene
-without an `argb:` section stops the lighting engine; the last active
-scene (including its ARGB state) is restored after a restart. Header
-zone sizes are pushed into OpenRGB on connect (ITE-style zones report 0
-LEDs until resized). Host/port can be overridden with
-`LUMINA_OPENRGB_HOST` / `LUMINA_OPENRGB_PORT`. Device shapes are templates
-in the definition library `data/argb/devices/*.yaml`, shared by scenes.
-
-## Tests
-
-209 pytest tests cover the wire header layout, resolution profile lookup,
-the render pipeline (fit/rotation/brightness/text), preset storage and a
-full API smoke suite with a fake USB device. The real hardware is not
-required. Scene engine tests cover the expression sandbox, easing curves,
-widget renderers, component expansion, the rendering state machine
-(dirty-detection, keepalive re-yield), the unified scene-file format
-(screen + argb sections) and the scenes API. ARGB tests cover the
-effect engine math (masks, alpha blending, chain mapping), the layout
-schema validation, scene-driven activation and the API with a fake
-OpenRGB transport.
+MIT
