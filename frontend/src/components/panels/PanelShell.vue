@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * Common dashboard panel shell: masonry tile sized by its content, with
- * header (title/subtitle, remove button) and drag handle. Content comes
- * through the default slot.
+ * header (title/subtitle, remove button) that doubles as the drag handle.
+ * Only the header starts a drag; the whole card is a drop target. Content
+ * comes through the default slot.
  */
 const props = defineProps<{
   title: string
@@ -24,15 +25,17 @@ void props
 <template>
   <section
     class="card panel"
-    :class="{ draggable }"
-    :draggable="draggable ?? false"
-    @dragstart="emit('dragStart')"
     @dragenter.prevent="emit('dragEnter')"
     @dragover.prevent
     @drop.prevent="emit('dropOn')"
-    @dragend="emit('dragEnd')"
   >
-    <header class="head">
+    <header
+      class="head"
+      :class="{ draggable }"
+      :draggable="draggable ?? false"
+      @dragstart="emit('dragStart')"
+      @dragend="emit('dragEnd')"
+    >
       <span class="grip" title="Drag to rearrange">⠿</span>
       <div class="titles">
         <h2>{{ title }}</h2>
@@ -54,11 +57,11 @@ void props
   min-width: 0;
 }
 
-.panel.draggable {
+.head.draggable {
   cursor: grab;
 }
 
-.panel.draggable:active {
+.head.draggable:active {
   cursor: grabbing;
 }
 
