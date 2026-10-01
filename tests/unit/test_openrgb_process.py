@@ -17,7 +17,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from oled_webui.infrastructure.openrgb_process import OpenRgbProcessManager
+from luminaflowui.infrastructure.openrgb_process import OpenRgbProcessManager
 
 # Fake OpenRGB: binds the SDK port, accepts connections, stays alive.
 FAKE_SERVER_SCRIPT = (

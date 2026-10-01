@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from oled_webui.exceptions import VideoError
-from oled_webui.services.video_extract import (
+from luminaflowui.exceptions import VideoError
+from luminaflowui.services.video_extract import (
     build_brightness_filter,
     build_filter_chain,
     build_fit_filter,

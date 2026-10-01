@@ -11,18 +11,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from oled_webui.argb.service import ArgbService
-from oled_webui.config import Settings
-from oled_webui.services.content_state import (
+from luminaflowui.argb.service import ArgbService
+from luminaflowui.config import Settings
+from luminaflowui.services.content_state import (
     content_state_path,
     load_content_state,
     restore_last_content,
     save_content_state,
 )
-from oled_webui.services.display_service import DisplayService
-from oled_webui.services.event_bus import EventBus
-from oled_webui.services.scene_runtime import SceneRuntime
-from oled_webui.services.scene_service import SceneService
+from luminaflowui.services.display_service import DisplayService
+from luminaflowui.services.event_bus import EventBus
+from luminaflowui.services.scene_runtime import SceneRuntime
+from luminaflowui.services.scene_service import SceneService
 
 
 def _snapshot(content_type: str, payload: dict[str, Any]) -> dict[str, Any]:

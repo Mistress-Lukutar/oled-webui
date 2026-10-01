@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from oled_webui.config import Settings
-from oled_webui.exceptions import SceneError, SceneNotFoundError
-from oled_webui.services.scene_service import SceneService
+from luminaflowui.config import Settings
+from luminaflowui.exceptions import SceneError, SceneNotFoundError
+from luminaflowui.services.scene_service import SceneService
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 

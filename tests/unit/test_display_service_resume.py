@@ -14,12 +14,12 @@ from typing import Any
 
 import pytest
 
-from oled_webui.config import get_settings
-from oled_webui.exceptions import OledWebUIError
-from oled_webui.scene.loader import load_scene
-from oled_webui.scene.schema import ScreenDocument
-from oled_webui.services.display_service import DisplayService
-from oled_webui.services.event_bus import EventBus
+from luminaflowui.config import get_settings
+from luminaflowui.exceptions import LuminaFlowUIError
+from luminaflowui.scene.loader import load_scene
+from luminaflowui.scene.schema import ScreenDocument
+from luminaflowui.services.display_service import DisplayService
+from luminaflowui.services.event_bus import EventBus
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ async def test_power_on_falls_back_to_static_frame_when_resume_fails(
     assert service._resume_content is not None
 
     def broken_restart(*_args: Any, **_kwargs: Any) -> None:
-        raise OledWebUIError("scene source vanished")
+        raise LuminaFlowUIError("scene source vanished")
 
     monkeypatch.setattr(service, "start_scene", broken_restart)
     await service.power_on()

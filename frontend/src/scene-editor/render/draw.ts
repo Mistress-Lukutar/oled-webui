@@ -1,6 +1,6 @@
 /**
  * Canvas 2D rendering of scene widgets, approximating the Pillow
- * renderers in src/oled_webui/scene/widgets.py. The server render stays
+ * renderers in src/luminaflowui/scene/widgets.py. The server render stays
  * the pixel-exact reference (Check frame); this mirror exists for
  * interactive editing.
  */

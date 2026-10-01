@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from oled_webui.core.models import Resolution
-from oled_webui.scene.loader import load_scene
-from oled_webui.scene.runner import SceneRenderer
-from oled_webui.scene.schema import GraphWidget, ScreenDocument
+from luminaflowui.core.models import Resolution
+from luminaflowui.scene.loader import load_scene
+from luminaflowui.scene.runner import SceneRenderer
+from luminaflowui.scene.schema import GraphWidget, ScreenDocument
 
 
 def _load(path: Path) -> ScreenDocument:
@@ -323,8 +323,8 @@ def test_video_widget_cycles_frames_and_advances_signature(
     """
     from PIL import Image
 
-    from oled_webui.scene import runner as runner_module
-    from oled_webui.scene.schema import VideoWidget
+    from luminaflowui.scene import runner as runner_module
+    from luminaflowui.scene.schema import VideoWidget
 
     frames = []
     for index, color in enumerate(("#FF0000", "#00FF00")):

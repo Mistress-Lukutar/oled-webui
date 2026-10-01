@@ -12,19 +12,19 @@ from pathlib import Path
 
 import pytest
 
-from oled_webui.argb.devices import (
+from luminaflowui.argb.devices import (
     DeviceLibrary,
     parse_definition,
     validate_with_library,
 )
-from oled_webui.argb.schema import (
+from luminaflowui.argb.schema import (
     ArgbDevice,
     ArgbHeader,
     ArgbLayer,
     ArgbLayout,
     MaskSpec,
 )
-from oled_webui.exceptions import ArgbError
+from luminaflowui.exceptions import ArgbError
 
 MINIMAL_YAML = """\
 id: mini

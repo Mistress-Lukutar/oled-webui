@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from oled_webui.argb.engine import parse_rgba, render_layout
-from oled_webui.argb.schema import (
+from luminaflowui.argb.engine import parse_rgba, render_layout
+from luminaflowui.argb.schema import (
     ArgbDevice,
     ArgbHeader,
     ArgbLayer,

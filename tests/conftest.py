@@ -15,17 +15,17 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from oled_webui.core.models import HandshakeResult, Resolution
-from oled_webui.services import bulk_device
+from luminaflowui.core.models import HandshakeResult, Resolution
+from luminaflowui.services import bulk_device
 
 
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Point settings at a temp data dir and disable auto-connect."""
-    monkeypatch.setenv("OLED_AUTO_CONNECT", "false")
-    monkeypatch.setenv("OLED_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("OLED_KEEPALIVE_ENABLED", "false")
-    from oled_webui.config import get_settings
+    monkeypatch.setenv("LUMINA_AUTO_CONNECT", "false")
+    monkeypatch.setenv("LUMINA_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LUMINA_KEEPALIVE_ENABLED", "false")
+    from luminaflowui.config import get_settings
 
     get_settings.cache_clear()
     yield
@@ -82,7 +82,7 @@ def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     Returns:
         List that accumulates one dict per sent zone buffer.
     """
-    from oled_webui.infrastructure import openrgb_transport
+    from luminaflowui.infrastructure import openrgb_transport
 
     sent: list[dict[str, Any]] = []
 
@@ -101,11 +101,11 @@ def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     ) -> None:
         zones = getattr(self, "_fake_zones", [])
         if not zones or zone_index >= len(zones):
-            from oled_webui.exceptions import OpenRgbError
+            from luminaflowui.exceptions import OpenRgbError
 
             raise OpenRgbError("OpenRGB is not connected")
         if len(data) != zones[zone_index].leds * 3:
-            from oled_webui.exceptions import OpenRgbError
+            from luminaflowui.exceptions import OpenRgbError
 
             raise OpenRgbError("Zone buffer size mismatch")
         sent.append({"zone_index": zone_index, "data": data})
@@ -118,7 +118,7 @@ def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     ) -> None:
         zones = getattr(self, "_fake_zones", [])
         if not zones or zone_index >= len(zones):
-            from oled_webui.exceptions import OpenRgbError
+            from luminaflowui.exceptions import OpenRgbError
 
             raise OpenRgbError("OpenRGB is not connected")
         zones[zone_index] = openrgb_transport.ZoneInfo(
@@ -150,7 +150,7 @@ def fake_openrgb(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 @pytest.fixture
 def client(fake_lcd: list[dict[str, Any]]) -> Iterator[TestClient]:
     """TestClient with a fresh app and connected display."""
-    from oled_webui.main import create_app
+    from luminaflowui.main import create_app
 
     app = create_app()
     with TestClient(app) as test_client:

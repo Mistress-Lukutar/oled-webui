@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "oled-webui"
+name = "luminaflowui"
 version = "0.5.2"
 description = "WebUI for controlling ChiZhu Tech USBDISPLAY panels (87AD:70DB)"
 readme = "README.md"
@@ -35,13 +35,13 @@ dev = [
 ]
 
 [project.scripts]
-oled-webui = "oled_webui.main:main"
+luminaflowui = "luminaflowui.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-oled_webui = ["py.typed"]
+luminaflowui = ["py.typed"]
 
 [tool.ruff]
 line-length = 88

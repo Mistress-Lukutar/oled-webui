@@ -1,6 +1,6 @@
 /**
  * Safe numeric expression evaluator, a faithful port of
- * src/oled_webui/scene/expressions.py: whitelisted arithmetic, functions
+ * src/luminaflowui/scene/expressions.py: whitelisted arithmetic, functions
  * and constants; unknown identifiers resolve from the variable scope at
  * evaluation time (t, dt, v) and raise when missing.
  */

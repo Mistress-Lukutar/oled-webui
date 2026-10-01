@@ -25,12 +25,12 @@ screen:
 @pytest.fixture
 def client(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """App client with a temp data dir and hardware autostart disabled."""
-    monkeypatch.setenv("OLED_DATA_DIR", str(tmp_path / "data"))  # type: ignore[operator]
-    monkeypatch.setenv("OLED_AUTO_CONNECT", "false")
-    from oled_webui.config import get_settings
+    monkeypatch.setenv("LUMINA_DATA_DIR", str(tmp_path / "data"))  # type: ignore[operator]
+    monkeypatch.setenv("LUMINA_AUTO_CONNECT", "false")
+    from luminaflowui.config import get_settings
 
     get_settings.cache_clear()
-    from oled_webui.main import create_app
+    from luminaflowui.main import create_app
 
     with TestClient(create_app()) as test_client:
         yield test_client

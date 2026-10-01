@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from oled_webui.services.display_power_watcher import (
+from luminaflowui.services.display_power_watcher import (
     _POWERBROADCAST_SETTING,
     DISPLAY_POWER_GUIDS,
     GUID_CONSOLE_DISPLAY_STATE,

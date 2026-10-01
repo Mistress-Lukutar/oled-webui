@@ -40,7 +40,7 @@ function addPanel(index: number): void {
   <header class="topbar">
     <div class="brand">
       <img src="/favicon.svg" alt="" class="logo" />
-      <h1>OledWebUI</h1>
+      <h1>LuminaFlowUI</h1>
     </div>
 
     <div ref="menuRoot" class="add-wrap">

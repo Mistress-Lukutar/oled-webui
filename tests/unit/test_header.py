@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import struct
 
-from oled_webui.services.bulk_device import BulkLcd
+from luminaflowui.services.bulk_device import BulkLcd
 
 
 def test_header_layout() -> None:
@@ -30,7 +30,7 @@ def test_header_layout() -> None:
 
 def test_resolve_resolution_known_profiles() -> None:
     """Known PM/SUB pairs must resolve to their documented resolutions."""
-    from oled_webui.core.constants import resolve_resolution
+    from luminaflowui.core.constants import resolve_resolution
 
     assert (resolve_resolution(63, 0).width, resolve_resolution(63, 0).height) == (
         1600,
@@ -48,7 +48,7 @@ def test_resolve_resolution_known_profiles() -> None:
 
 def test_resolve_resolution_fallback() -> None:
     """Unknown PM/SUB pairs fall back to the default 480x480."""
-    from oled_webui.core.constants import resolve_resolution
+    from luminaflowui.core.constants import resolve_resolution
 
     resolved = resolve_resolution(199, 199)
     assert (resolved.width, resolved.height) == (480, 480)

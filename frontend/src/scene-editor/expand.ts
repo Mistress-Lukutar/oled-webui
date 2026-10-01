@@ -1,6 +1,6 @@
 /**
  * Client-side component expansion, a port of the relevant parts of
- * src/oled_webui/scene/loader.py. Turns `use:` instances into concrete
+ * src/luminaflowui/scene/loader.py. Turns `use:` instances into concrete
  * widget mappings for canvas rendering and tracks which raw document
  * entry each expanded widget came from (needed to map selections back).
  */

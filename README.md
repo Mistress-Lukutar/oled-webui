@@ -1,4 +1,4 @@
-# OledWebUI
+# LuminaFlowUI
 
 Web interface for controlling ChiZhu Tech USB display panels (VID:PID `87AD:70DB`)
 from a browser. Protocol and transport are ported from the original
@@ -50,7 +50,7 @@ by the keepalive loop; actual USB power cut is out of scope.
 
 - **Backend**: Python 3.11+, FastAPI (async) + Uvicorn, PyUSB, Pillow,
   psutil, PyYAML, pydantic-settings, structlog. src-layout package
-  `oled_webui`.
+  `luminaflowui`.
 - **Frontend**: Vue 3 + Vite + TypeScript, hand-written dark theme,
   SSE for real-time updates. Build output is served by FastAPI itself.
 - **External tool**: `ffmpeg` on PATH (only needed for video playback).
@@ -75,19 +75,19 @@ cd frontend && npm install && npm run build && cd ..
 
 ### Configuration
 
-Environment variables (prefix `OLED_`, `.env` supported):
+Environment variables (prefix `LUMINA_`, `.env` supported):
 
 | Variable              | Default         | Description                              |
 |-----------------------|-----------------|------------------------------------------|
-| `OLED_HOST`           | `127.0.0.1`     | HTTP bind interface                      |
-| `OLED_PORT`           | `8090`          | HTTP port                                |
-| `OLED_DATA_DIR`       | `./data`        | Presets, scenes, uploads, fonts, last frame |
-| `OLED_KEEPALIVE_ENABLED` | `true`       | Keepalive auto-start on connect          |
-| `OLED_KEEPALIVE_INTERVAL` | `1.5`       | Keepalive resend interval, seconds       |
-| `OLED_BRIGHTNESS`     | `100`           | Initial global brightness percent        |
-| `OLED_JPEG_QUALITY`   | `95`            | Initial global JPEG quality              |
-| `OLED_BLANK_ON_DISPLAY_OFF` | `false`   | Blank panel when the Windows display powers off |
-| `OLED_AUTO_CONNECT`   | `true`          | Connect to USB device on startup         |
+| `LUMINA_HOST`           | `127.0.0.1`     | HTTP bind interface                      |
+| `LUMINA_PORT`           | `8090`          | HTTP port                                |
+| `LUMINA_DATA_DIR`       | `./data`        | Presets, scenes, uploads, fonts, last frame |
+| `LUMINA_KEEPALIVE_ENABLED` | `true`       | Keepalive auto-start on connect          |
+| `LUMINA_KEEPALIVE_INTERVAL` | `1.5`       | Keepalive resend interval, seconds       |
+| `LUMINA_BRIGHTNESS`     | `100`           | Initial global brightness percent        |
+| `LUMINA_JPEG_QUALITY`   | `95`            | Initial global JPEG quality              |
+| `LUMINA_BLANK_ON_DISPLAY_OFF` | `false`   | Blank panel when the Windows display powers off |
+| `LUMINA_AUTO_CONNECT`   | `true`          | Connect to USB device on startup         |
 
 Env vars seed the defaults on first run; values changed in the settings
 dialog are stored in `data/display_settings.json` and take precedence.
@@ -182,7 +182,7 @@ without an `argb:` section stops the lighting engine; the last active
 scene (including its ARGB state) is restored after a restart. Header
 zone sizes are pushed into OpenRGB on connect (ITE-style zones report 0
 LEDs until resized). Host/port can be overridden with
-`OLED_OPENRGB_HOST` / `OLED_OPENRGB_PORT`. Device shapes are templates
+`LUMINA_OPENRGB_HOST` / `LUMINA_OPENRGB_PORT`. Device shapes are templates
 in the definition library `data/argb/devices/*.yaml`, shared by scenes.
 
 ## Tests

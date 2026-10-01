@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from oled_webui.argb.schema import ArgbLayout, FillEffect
-from oled_webui.exceptions import SceneError
-from oled_webui.scene.loader import load_scene
-from oled_webui.scene.schema import (
+from luminaflowui.argb.schema import ArgbLayout, FillEffect
+from luminaflowui.exceptions import SceneError
+from luminaflowui.scene.loader import load_scene
+from luminaflowui.scene.schema import (
     BarWidget,
     RingWidget,
     SceneDocument,

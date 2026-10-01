@@ -13,8 +13,8 @@ from collections import deque
 import pytest
 from PIL import Image, ImageDraw, ImageOps
 
-from oled_webui.exceptions import SceneError
-from oled_webui.scene.schema import (
+from luminaflowui.exceptions import SceneError
+from luminaflowui.scene.schema import (
     AnimateSpec,
     BarStyle,
     BarWidget,
@@ -29,7 +29,7 @@ from oled_webui.scene.schema import (
     TextStyle,
     TextWidget,
 )
-from oled_webui.scene.widgets import (
+from luminaflowui.scene.widgets import (
     AnimatedValue,
     parse_color,
     render_bar,
@@ -248,7 +248,7 @@ def _opaque_bounds(image: Image.Image) -> tuple[int, int, int, int]:
 
 def test_render_image_fit_modes(tmp_path) -> None:
     """contain fits inside the rect, stretch fills it, cover overflows."""
-    from oled_webui.scene.schema import ImageWidget
+    from luminaflowui.scene.schema import ImageWidget
 
     sprite_path = _sprite(tmp_path / "sprite.png", size=(40, 20))
     rect = (10, 10, 80, 80)  # square box, wide sprite
@@ -265,7 +265,7 @@ def test_render_image_fit_modes(tmp_path) -> None:
 
 def test_render_image_covers_layer_bounds(tmp_path) -> None:
     """Sprites extending past the layer are cropped, not crashing PIL."""
-    from oled_webui.scene.schema import ImageWidget
+    from luminaflowui.scene.schema import ImageWidget
 
     sprite_path = _sprite(tmp_path / "big.png", size=(100, 100))
     layer = Image.new("RGBA", (60, 60), (0, 0, 0, 0))

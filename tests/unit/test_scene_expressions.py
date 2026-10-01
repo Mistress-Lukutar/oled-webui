@@ -12,8 +12,8 @@ import math
 
 import pytest
 
-from oled_webui.exceptions import SceneError
-from oled_webui.scene.expressions import Expression, apply_easing
+from luminaflowui.exceptions import SceneError
+from luminaflowui.scene.expressions import Expression, apply_easing
 
 
 def test_arithmetic_and_precedence() -> None:

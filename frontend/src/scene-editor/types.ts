@@ -1,5 +1,5 @@
 /**
- * TS mirror of the scene schema (src/oled_webui/scene/schema.py) plus
+ * TS mirror of the scene schema (src/luminaflowui/scene/schema.py) plus
  * safe accessors over the raw parsed YAML object. The raw object stays
  * the source of truth so unknown keys and component params survive
  * round-trips; these views only read/write the fields the schema defines.

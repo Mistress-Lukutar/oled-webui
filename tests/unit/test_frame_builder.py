@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from oled_webui.exceptions import RenderError
-from oled_webui.services.frame_builder import (
+from luminaflowui.exceptions import RenderError
+from luminaflowui.services.frame_builder import (
     FrameBuilder,
     brightness_lut,
     build_black_frame,

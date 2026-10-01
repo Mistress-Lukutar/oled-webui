@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from oled_webui.argb.schema import (
+from luminaflowui.argb.schema import (
     ArgbDevice,
     ArgbHeader,
     ArgbLayer,

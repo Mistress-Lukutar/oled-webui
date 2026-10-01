@@ -1,6 +1,6 @@
 /**
  * Client-side validation of a scene file's ``argb`` section, mirroring
- * src/oled_webui/argb/schema.py (extra="forbid" + ranges + cross
+ * src/luminaflowui/argb/schema.py (extra="forbid" + ranges + cross
  * references). The server stays authoritative on save; these checks give
  * instant feedback while typing.
  */

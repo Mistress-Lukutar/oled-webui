@@ -1,5 +1,5 @@
 @echo off
-rem Bootstrap and start OledWebUI on Windows.
+rem Bootstrap and start LuminaFlowUI on Windows.
 setlocal
 cd /d "%~dp0"
 
@@ -19,7 +19,7 @@ if not exist static\dist\index.html (
     popd
 )
 
-echo Starting OledWebUI on http://127.0.0.1:8090
+echo Starting LuminaFlowUI on http://127.0.0.1:8090
 python run.py
 goto :eof
 

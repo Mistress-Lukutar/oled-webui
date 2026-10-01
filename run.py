@@ -8,7 +8,7 @@ Version: v0.1.0
 
 from __future__ import annotations
 
-from oled_webui.main import main
+from luminaflowui.main import main
 
 if __name__ == '__main__':
     main()

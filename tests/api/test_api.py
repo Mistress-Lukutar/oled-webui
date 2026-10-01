@@ -62,7 +62,7 @@ def test_status_shape(client: TestClient) -> None:
     assert data["device"]["resolution"] == {"width": 1600, "height": 720}
     assert "settings" in data and "scene" in data
     settings = data["settings"]
-    assert settings["keepalive_enabled"] is False  # from OLED_KEEPALIVE_ENABLED
+    assert settings["keepalive_enabled"] is False  # from LUMINA_KEEPALIVE_ENABLED
     assert 0 <= settings["brightness"] <= 200
     assert 1 <= settings["quality"] <= 100
 
@@ -113,7 +113,7 @@ def test_display_settings_persist_across_restart(client: TestClient) -> None:
         json={"brightness": 40, "blank_on_display_off": True},
     )
 
-    from oled_webui.main import create_app
+    from luminaflowui.main import create_app
 
     with TestClient(create_app()) as restarted:
         settings = restarted.get("/api/device/settings").json()["data"]
