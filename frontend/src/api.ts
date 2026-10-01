@@ -154,12 +154,6 @@ export const API = {
       body: JSON.stringify(patch),
     }),
 
-  runTest: (delay: number) =>
-    api<null>('/api/frame/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delay }),
-    }),
   listFonts: () => api<{ fonts: string[] }>('/api/frame/fonts'),
   uploadFonts: (files: File[]) => {
     const data = new FormData()

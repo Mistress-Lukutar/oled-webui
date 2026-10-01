@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * Display quick settings panel: the Designer shortcut, test pattern and
- * the global output settings (formerly the display settings modal),
- * applied immediately on change. Manual power on/off is gone — blanking
- * follows the Windows display power when the setting below is enabled.
+ * Display quick settings panel: the Designer shortcut and the global
+ * output settings (formerly the display settings modal), applied
+ * immediately on change. Manual power on/off is gone — blanking follows
+ * the Windows display power when the setting below is enabled.
  */
 import { computed, reactive, ref, watch } from 'vue'
 import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
@@ -13,13 +13,6 @@ const props = defineProps<{ deviceId?: string | null }>()
 void props
 
 const { state, actions, showError } = useDisplayStore()
-const busy = ref(false)
-
-async function withBusy(action: () => Promise<boolean>): Promise<void> {
-  busy.value = true
-  await action()
-  busy.value = false
-}
 
 // Local draft of the persisted settings; every change is applied at once.
 const draft = reactive({
@@ -63,14 +56,17 @@ function openDesigner(): void {
 
 <template>
   <div class="settings">
+    <label class="check">
+      <input
+        v-model="draft.blank_on_display_off"
+        type="checkbox"
+        @change="applySettings"
+      />
+      <span>Blank when the Windows display turns off</span>
+    </label>
+
     <div class="actions">
       <button class="designer" @click="openDesigner">✏ Designer</button>
-      <button
-        :disabled="busy || !state.connected"
-        @click="withBusy(() => actions.runTest(1.0))"
-      >
-        Test pattern
-      </button>
     </div>
 
     <label class="field">
@@ -119,15 +115,6 @@ function openDesigner(): void {
         step="0.1"
         @change="applySettings"
       />
-    </label>
-
-    <label class="check">
-      <input
-        v-model="draft.blank_on_display_off"
-        type="checkbox"
-        @change="applySettings"
-      />
-      <span>Blank when the Windows display turns off</span>
     </label>
 
     <p v-if="sceneRunning" class="hint">

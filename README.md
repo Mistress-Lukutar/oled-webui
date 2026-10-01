@@ -109,7 +109,6 @@ device and *WinUSB*). On Linux, install `libusb-1.0` and add a udev rule for
 | `/api/frame/image` | POST | multipart `file` + render params |
 | `/api/frame/color` | POST | multipart `color` |
 | `/api/frame/text` | POST | JSON `TextRequest` |
-| `/api/frame/off` `/on` `/test` | POST | Power / test pattern |
 | `/api/frame/preview` | GET | Last frame as JPEG |
 | `/api/frame/fonts` | GET | Custom fonts available |
 | `/api/video` `/video/stop` | POST | Playback control |

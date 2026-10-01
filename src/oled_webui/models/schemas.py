@@ -37,12 +37,6 @@ class DisplaySettingsRequest(BaseModel):
     )
 
 
-class TestRequest(BaseModel):
-    """Test pattern request."""
-
-    delay: float = Field(default=1.0, ge=0.1, le=10, description="Seconds per color")
-
-
 class ArgbSettingsRequest(BaseModel):
     """ARGB settings update; omitted fields keep their current value."""
 

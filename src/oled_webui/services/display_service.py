@@ -45,14 +45,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# Colors cycled by the hardware test pattern.
-TEST_COLORS: tuple[tuple[int, int, int], ...] = (
-    (255, 0, 0),
-    (0, 255, 0),
-    (0, 0, 255),
-    (0, 0, 0),
-)
-
 # Frame cached while the panel is blanked: (payload, size, content record).
 _RestoreFrame = tuple[bytes, tuple[int, int], dict[str, Any] | None]
 
@@ -235,9 +227,8 @@ class DisplayService:
 
         Args:
             content: Content snapshot, or None to clear the record.
-            persist: False for transient frames (blanked panel, test
-                pattern) that must not become the restored screen after a
-                restart.
+            persist: False for transient frames (blanked panel) that must
+                not become the restored screen after a restart.
         """
         self._last_content = content
         if persist:
@@ -339,34 +330,6 @@ class DisplayService:
             await self.start_scene(
                 document, str(resume["scene_id"]), str(resume["name"])
             )
-
-    async def run_test(self, delay: float = 1.0) -> None:
-        """Cycle red, green, blue and black frames across the display.
-
-        Args:
-            delay: Seconds between color steps.
-        """
-        handshake = self.require_connection()
-        await self.stop_scene()
-        builder = self._builder()
-        for rgb in TEST_COLORS:
-            image = builder.build_color_image(rgb)
-            payload = await asyncio.to_thread(builder.encode_jpeg, image)
-            await self._send_payload(
-                payload, handshake.resolution.width, handshake.resolution.height
-            )
-            await asyncio.sleep(delay)
-        # Transient diagnostic frame: do not overwrite the persisted
-        # snapshot with the final black test frame.
-        await self._set_last_content(
-            {
-                "type": "color",
-                "params": {},
-                "payload": {"color": "000000"},
-            },
-            persist=False,
-        )
-        logger.info("test_pattern_done")
 
     # ------------------------------------------------------------------
     # Display settings

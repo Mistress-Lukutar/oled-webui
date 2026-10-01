@@ -1,6 +1,6 @@
 """
 File:   frame.py
-Brief:  Frame endpoints: test pattern, preview and the font library.
+Brief:  Frame endpoints: preview and the font library.
 Author: Mistress-Lukutar
 Date:   2026-09-30
 Version: v0.5.2
@@ -16,18 +16,11 @@ from fastapi.responses import FileResponse
 
 from oled_webui.dependencies import ConnectedDisplayDep, SettingsDep
 from oled_webui.exceptions import SceneNotFoundError, ValidationError
-from oled_webui.models.schemas import StatusResponse, TestRequest
+from oled_webui.models.schemas import StatusResponse
 
 router = APIRouter(prefix="/api/frame", tags=["frame"])
 
 ALLOWED_FONT_EXTENSIONS: frozenset[str] = frozenset({".ttf", ".otf"})
-
-
-@router.post("/test", response_model=StatusResponse)
-async def run_test(display: ConnectedDisplayDep, req: TestRequest) -> StatusResponse:
-    """Cycle the red/green/blue/black test pattern."""
-    await display.run_test(req.delay)
-    return StatusResponse()
 
 
 @router.get("/preview")

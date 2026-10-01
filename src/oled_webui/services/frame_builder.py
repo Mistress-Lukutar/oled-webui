@@ -314,18 +314,6 @@ class FrameBuilder:
             raise RenderError(f"JPEG encoding failed: {exc}") from exc
         return buffer.getvalue()
 
-    def build_color_image(self, color: tuple[int, int, int]) -> Image.Image:
-        """Create a solid color RGB image at the target size.
-
-        Args:
-            color: RGB tuple.
-
-        Returns:
-            Solid color image with brightness applied.
-        """
-        image = Image.new("RGB", (self._width, self._height), color)
-        return self.apply_brightness(image)
-
     def render_text_frame(
         self,
         text: str,

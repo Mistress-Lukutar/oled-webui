@@ -141,14 +141,6 @@ def test_rotated_text_pipeline_lands_on_panel_size() -> None:
     assert frame.size == (100, 50)
 
 
-def test_build_color_image_applies_brightness() -> None:
-    """Solid color images honor the brightness setting."""
-    result = _builder(brightness=100).build_color_image((255, 255, 255))
-    assert result.getpixel((0, 0)) == (255, 255, 255)
-    dark = _builder(brightness=50).build_color_image((255, 255, 255))
-    assert dark.getpixel((0, 0)) == (186, 186, 186)
-
-
 def test_render_text_frame_draws_pixels() -> None:
     """Text rendering produces visible non-background pixels."""
     builder = _builder()

@@ -200,10 +200,6 @@ const actions = {
     })
   },
 
-  async runTest(delay: number): Promise<boolean> {
-    return wrap(() => API.runTest(delay).then(() => undefined))
-  },
-
   async loadScenes(): Promise<void> {
     try {
       state.scenes = (await API.listScenes()).scenes

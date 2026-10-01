@@ -67,14 +67,6 @@ def test_status_shape(client: TestClient) -> None:
     assert 1 <= settings["quality"] <= 100
 
 
-def test_frame_ops_without_hardware_409(client: TestClient) -> None:
-    """Frame ops fail with 409 when the display is disconnected."""
-    client.post("/api/device/disconnect")
-    response = client.post("/api/frame/test", json={"delay": 0.5})
-    assert response.status_code == 409
-    assert response.json()["success"] is False
-
-
 def test_apply_scene_sends_frame(client: TestClient, sent_frames: list[dict]) -> None:
     """An applied scene renders through the pipeline and reaches the LCD."""
     scene_id = _apply_scene(client)
