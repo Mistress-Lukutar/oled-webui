@@ -8,20 +8,11 @@ import { computed } from 'vue'
 import LayerStack from '../common/LayerStack.vue'
 import type { LayerRow } from '../common/LayerStack.vue'
 import { useArgbStore } from '../../argb/store'
+import { EFFECT_LABELS } from '../../argb/types'
 import type { EffectType } from '../../argb/types'
 
 const store = useArgbStore()
 const { state } = store
-
-const EFFECT_LABELS: Record<EffectType, string> = {
-  fill: 'Fill',
-  gradient: 'Gradient',
-  rainbow: 'Rainbow',
-  breathing: 'Breathing',
-  comet: 'Comet',
-  scanner: 'Scanner',
-  meter: 'Meter',
-}
 
 const addOptions = Object.entries(EFFECT_LABELS).map(([value, label]) => ({ value, label }))
 

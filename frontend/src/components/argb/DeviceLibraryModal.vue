@@ -8,6 +8,8 @@
 import { ref } from 'vue'
 import DeviceThumb from './DeviceThumb.vue'
 import DeviceDesignerModal from './DeviceDesignerModal.vue'
+import AppIcon from '../AppIcon.vue'
+import AppModal from '../common/AppModal.vue'
 import { useArgbStore } from '../../argb/store'
 
 const emit = defineEmits<{ close: [] }>()
@@ -56,97 +58,69 @@ async function onImportFile(event: Event): Promise<void> {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="library-overlay" @click.self="emit('close')">
-      <div class="library-modal">
-        <div class="head">
-          <h3>Device library</h3>
-          <span class="count">{{ state.library.length }} devices</span>
-          <span class="grow" />
-          <button @click="fileInput?.click()">Import .yaml…</button>
-          <button class="primary" @click="openDesigner(null)">+ New device</button>
-          <button class="icon-btn" title="Close" @click="emit('close')">×</button>
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".yaml,.yml,text/yaml"
-            class="hidden-input"
-            @change="onImportFile"
-          />
-        </div>
+  <AppModal width="min(640px, 90vw)" :z-index="55" @close="emit('close')">
+    <template #header>
+      <div class="app-modal-head head">
+        <h3>Device library</h3>
+        <span class="count">{{ state.library.length }} devices</span>
+        <span class="grow" />
+        <button @click="fileInput?.click()">Import .yaml…</button>
+        <button class="primary" @click="openDesigner(null)">
+          <AppIcon name="plus" :size="12" />
+          New device
+        </button>
+        <button class="icon-btn" title="Close" @click="emit('close')">
+          <AppIcon name="close" :size="13" />
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".yaml,.yml,text/yaml"
+          class="hidden-input"
+          @change="onImportFile"
+        />
+      </div>
+    </template>
 
-        <div class="list">
-          <div v-for="item in state.library" :key="item.id" class="row">
-            <DeviceThumb :definition="item.definition" />
-            <div class="info">
-              <div class="name">{{ item.name }}</div>
-              <div class="meta mono">{{ item.id }}.yaml · {{ item.leds }} LEDs</div>
-              <div v-if="item.used_by.length > 0" class="meta dim">
-                used by {{ item.used_by.length }} layout device{{ item.used_by.length > 1 ? 's' : '' }}
-              </div>
-            </div>
-            <div class="actions">
-              <button class="small" @click="addToCanvas(item.id)">Add</button>
-              <button class="small" @click="openDesigner(item.id)">Edit</button>
-              <button class="small" @click="duplicate(item.id)">Copy</button>
-              <button
-                class="small danger"
-                :disabled="item.used_by.length > 0"
-                :title="item.used_by.length > 0 ? 'Remove it from the layout first' : 'Delete definition'"
-                @click="remove(item.id)"
-              >
-                Del
-              </button>
-            </div>
-          </div>
-          <div v-if="state.library.length === 0" class="empty">
-            No devices installed. Import a .yaml definition or create a new one.
+    <div class="list">
+      <div v-for="item in state.library" :key="item.id" class="row">
+        <DeviceThumb :definition="item.definition" />
+        <div class="info">
+          <div class="name">{{ item.name }}</div>
+          <div class="meta mono">{{ item.id }}.yaml · {{ item.leds }} LEDs</div>
+          <div v-if="item.used_by.length > 0" class="meta dim">
+            used by {{ item.used_by.length }} layout device{{ item.used_by.length > 1 ? 's' : '' }}
           </div>
         </div>
-
-        <div class="foot dim">
-          Definitions live in <span class="mono">data/argb/devices/&lt;id&gt;.yaml</span> — one shape
-          per LED (list order = chain index); decor draws beneath the LEDs.
+        <div class="actions">
+          <button class="small" @click="addToCanvas(item.id)">Add</button>
+          <button class="small" @click="openDesigner(item.id)">Edit</button>
+          <button class="small" @click="duplicate(item.id)">Duplicate</button>
+          <button
+            class="small danger"
+            :disabled="item.used_by.length > 0"
+            :title="item.used_by.length > 0 ? 'Remove it from the layout first' : 'Delete definition'"
+            @click="remove(item.id)"
+          >
+            Delete
+          </button>
         </div>
       </div>
-
-      <DeviceDesignerModal v-if="designerOpen" :id="designerId" @close="onDesignerClosed" />
+      <div v-if="state.library.length === 0" class="empty">
+        No devices installed. Import a .yaml definition or create a new one.
+      </div>
     </div>
-  </Teleport>
+
+    <div class="foot dim">
+      Definitions live in <span class="mono">data/argb/devices/&lt;id&gt;.yaml</span> — one shape
+      per LED (list order = chain index); decor draws beneath the LEDs.
+    </div>
+
+    <DeviceDesignerModal v-if="designerOpen" :id="designerId" @close="onDesignerClosed" />
+  </AppModal>
 </template>
 
 <style scoped>
-.library-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 55;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.library-modal {
-  width: min(640px, 90vw);
-  max-height: 82vh;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-}
-
 .head h3 {
   margin: 0;
   font-size: 14px;
@@ -159,6 +133,18 @@ async function onImportFile(event: Event): Promise<void> {
 
 .grow {
   flex: 1;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .hidden-input {

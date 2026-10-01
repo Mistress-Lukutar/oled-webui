@@ -9,6 +9,7 @@ import type { DecorShape, DeviceDefinition, LedShape } from './types'
 import { defCenter, generateDual, generateRing, generateStrip } from './deviceDef'
 import { stringifyYamlWithComments } from '../scene-editor/yamlSync'
 import { API } from '../api'
+import { errMsg } from '../composables/useErrorToast'
 import { useArgbStore } from './store'
 
 /** Which list a selected shape belongs to (LEDs or decor). */
@@ -67,7 +68,7 @@ function parseDoc(): void {
     }
   } catch (err) {
     state.doc = null
-    state.syntaxError = err instanceof Error ? err.message : String(err)
+    state.syntaxError = errMsg(err)
   }
 }
 
@@ -97,7 +98,7 @@ export function useDeviceDesigner() {
       state.yamlText = yaml
       parseDoc()
     } catch (err) {
-      argb.showError(err instanceof Error ? err.message : String(err))
+      argb.showError(errMsg(err))
       state.yamlText = BLANK_TEMPLATE
       parseDoc()
     }

@@ -8,6 +8,7 @@
 
 import type { ArgbDevice, ArgbLayout, DecorShape, DeviceDefinition, LedShape } from './types'
 import { WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from './types'
+import { CANVAS_BG } from '../canvas/theme'
 import { defBounds, defCenter, shapeCenter, shapeExtent } from './deviceDef'
 import type { WidgetBox } from '../canvas/geometry'
 
@@ -300,7 +301,7 @@ export function drawWorkspace(
 ): void {
   const { byDevice, offsets } = layoutGeometry(layout, defs)
   ctx.clearRect(0, 0, WORKSPACE_WIDTH, WORKSPACE_HEIGHT)
-  ctx.fillStyle = '#101210'
+  ctx.fillStyle = CANVAS_BG
   ctx.fillRect(0, 0, WORKSPACE_WIDTH, WORKSPACE_HEIGHT)
 
   // Subtle grid to anchor the "physical layout" feel.

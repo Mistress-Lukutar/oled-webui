@@ -2,8 +2,8 @@
 File:   providers.py
 Brief:  System metric providers (psutil) feeding scene widgets.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 from __future__ import annotations

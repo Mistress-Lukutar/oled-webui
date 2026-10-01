@@ -4,6 +4,7 @@
  * clipboard paste (Ctrl+V) or the native file browser.
  */
 import { onMounted, onUnmounted, ref, watch } from 'vue'
+import AppIcon from './AppIcon.vue'
 import { useDisplayStore } from '../composables/useDisplayStore'
 
 const props = withDefaults(
@@ -158,35 +159,18 @@ function formatSize(bytes: number): string {
           <span class="file-size">
             {{ modelValue ? formatSize(modelValue.size) : '' }}
           </span>
-          <button class="clear" title="Remove" @click.stop="clearFile">×</button>
+          <button class="clear" title="Remove" @click.stop="clearFile">
+            <AppIcon name="close" :size="11" />
+          </button>
         </div>
       </template>
       <template v-else>
-        <svg
-          v-if="icon === 'video'"
+        <AppIcon
           class="zone-icon"
           :class="{ active: dragging }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-        >
-          <rect x="3" y="5" width="18" height="14" rx="2" />
-          <path d="M10 9.5l5 2.5-5 2.5z" />
-        </svg>
-        <svg
-          v-else
-          class="zone-icon"
-          :class="{ active: dragging }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-        >
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
+          :name="icon === 'video' ? 'drop-video' : 'drop-image'"
+          :size="36"
+        />
         <span class="zone-title">{{ dragging ? 'Drop to load' : title }}</span>
         <span class="zone-hint">{{ hint }}</span>
         <span v-if="formats" class="zone-formats">{{ formats }}</span>
@@ -228,7 +212,7 @@ function formatSize(bytes: number): string {
 .dropzone.dragging {
   border-color: var(--accent);
   border-style: solid;
-  background: rgba(53, 201, 142, 0.07);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .dropzone.has-file {
@@ -246,8 +230,8 @@ function formatSize(bytes: number): string {
   width: 100%;
   max-height: 160px;
   object-fit: contain;
-  border-radius: 4px;
-  background: #000;
+  border-radius: var(--radius-sm);
+  background: var(--bg-screen);
 }
 
 .file-meta {
@@ -279,8 +263,9 @@ function formatSize(bytes: number): string {
   width: 22px;
   height: 22px;
   padding: 0;
-  line-height: 1;
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   color: var(--text-dim);
 }

@@ -16,6 +16,7 @@ import { editor } from '../../scene-editor/docStore'
 import { expandDocument } from '../../scene-editor/expand'
 import { evaluateEntries, makePlaceholderProvider } from '../../scene-editor/runtime'
 import type { EvalEntry } from '../../scene-editor/runtime'
+import { ACCENT } from '../../canvas/theme'
 import { createImageCache, createVideoCache, drawScene } from '../../scene-editor/render/draw'
 import { ensureFont } from '../../scene-editor/render/fonts'
 import { isComponentInstance } from '../../scene-editor/types'
@@ -367,10 +368,10 @@ function drawContent(
   if (ghost !== null && ghost.w >= 1 && ghost.h >= 1) {
     ctx.save()
     ctx.globalAlpha = 0.35
-    ctx.fillStyle = '#35c98e'
+    ctx.fillStyle = ACCENT
     ctx.fillRect(ghost.x, ghost.y, ghost.w, ghost.h)
     ctx.globalAlpha = 1
-    ctx.strokeStyle = '#35c98e'
+    ctx.strokeStyle = ACCENT
     ctx.lineWidth = 1
     ctx.setLineDash([4, 3])
     ctx.strokeRect(ghost.x + 0.5, ghost.y + 0.5, ghost.w, ghost.h)

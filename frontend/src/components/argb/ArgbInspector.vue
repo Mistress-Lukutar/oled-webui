@@ -7,6 +7,7 @@ import { computed } from 'vue'
 import { useArgbStore } from '../../argb/store'
 import type { ArgbDevice, ArgbHeader, ArgbLayer, EffectType, GradientEffect } from '../../argb/types'
 import { DATA_SOURCES } from '../../scene-editor/types'
+import AppIcon from '../AppIcon.vue'
 
 const store = useArgbStore()
 const { state } = store
@@ -268,14 +269,17 @@ function onZoneChange(event: Event): void {
       <div class="field">
         <span>Chain order</span>
         <div class="inline">
-          <button class="small" :disabled="chainPosition <= 1" @click="store.actions.reorderDevice(selectedDevice.id, -1)">◀</button>
+          <button class="small" :disabled="chainPosition <= 1" title="Earlier in chain" @click="store.actions.reorderDevice(selectedDevice.id, -1)">
+            <AppIcon name="chevron-left" :size="12" />
+          </button>
           <span class="mono">{{ chainPosition }} / {{ deviceHeader?.devices.length ?? 1 }}</span>
           <button
             class="small"
             :disabled="deviceHeader !== null && chainPosition >= deviceHeader.devices.length"
+            title="Later in chain"
             @click="store.actions.reorderDevice(selectedDevice.id, 1)"
           >
-            ▶
+            <AppIcon name="chevron-right" :size="12" />
           </button>
         </div>
       </div>
@@ -360,7 +364,9 @@ function onZoneChange(event: Event): void {
               type="color" :value="stop.color"
               @input="updateStop(i, { color: ($event.target as HTMLInputElement).value })"
             />
-            <button class="small" :disabled="selectedLayer.effect.stops.length <= 2" @click="removeStop(i)">×</button>
+            <button class="small icon-only" :disabled="selectedLayer.effect.stops.length <= 2" title="Remove stop" @click="removeStop(i)">
+              <AppIcon name="close" :size="11" />
+            </button>
           </div>
           <button class="small" @click="addStop">+ Stop</button>
         </div>
@@ -420,7 +426,9 @@ function onZoneChange(event: Event): void {
               :value="color"
               @input="updateBreathColor(i, $event)"
             />
-            <button class="small" :disabled="selectedLayer.effect.colors.length <= 1" @click="removeBreathColor(i)">×</button>
+            <button class="small icon-only" :disabled="selectedLayer.effect.colors.length <= 1" title="Remove color" @click="removeBreathColor(i)">
+              <AppIcon name="close" :size="11" />
+            </button>
           </div>
           <button class="small" @click="addBreathColor">+ Color</button>
         </div>
@@ -540,9 +548,10 @@ function onZoneChange(event: Event): void {
           <button class="small" @click="store.actions.maskFillAll(selectedLayer.id)">All</button>
           <button class="small" @click="store.actions.maskClear(selectedLayer.id)">None</button>
           <button class="small" @click="store.actions.maskInvert(selectedLayer.id)">Invert</button>
-          <button class="small" :class="{ on: editingMask }" @click="togglePaint">
-            {{ editingMask ? '✓ Painting' : 'Paint on canvas' }}
-          </button>
+            <button class="small" :class="{ on: editingMask }" @click="togglePaint">
+              <template v-if="editingMask"><AppIcon name="check" :size="12" /> Painting</template>
+              <template v-else>Paint on canvas</template>
+            </button>
         </div>
         <div v-for="entry in maskSummary()" :key="entry.name" class="hint">
           <span class="mono">{{ entry.name }}:</span> {{ entry.text }}
@@ -619,7 +628,7 @@ function onZoneChange(event: Event): void {
             title="Earlier in chain"
             @click="store.actions.reorderDevice(deviceId, -1)"
           >
-            ▲
+            <AppIcon name="chevron-up" :size="12" />
           </button>
           <button
             class="small"
@@ -627,7 +636,7 @@ function onZoneChange(event: Event): void {
             title="Later in chain"
             @click="store.actions.reorderDevice(deviceId, 1)"
           >
-            ▼
+            <AppIcon name="chevron-down" :size="12" />
           </button>
         </div>
       </div>
@@ -744,9 +753,8 @@ h4 {
   font-variant-numeric: tabular-nums;
 }
 
-button.small {
-  font-size: 12px;
-  padding: 3px 8px;
+button.small.icon-only {
+  padding: 3px 5px;
 }
 
 button.on {

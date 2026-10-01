@@ -36,6 +36,11 @@ export const TEXT_DIRECTIONS: Array<{ value: TextDirection; label: string }> = [
   { value: 'btt', label: 'Bottom ↑ top (mirror)' },
 ]
 
+/** Asset filename classification, shared by the inspectors and the doc store. */
+export const IMAGE_PATTERN = /\.(png|jpe?g|gif|webp|bmp)$/i
+export const FONT_PATTERN = /\.(ttf|otf|woff2?)$/i
+export const VIDEO_PATTERN = /\.(mp4|webm|mov|m4v|avi|mkv)$/i
+
 /** Plain number or an expression string evaluated per frame. */
 export type ExprValue = number | string
 

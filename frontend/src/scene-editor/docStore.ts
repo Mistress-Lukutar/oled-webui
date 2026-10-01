@@ -14,6 +14,7 @@ import {
   stringifyYamlWithComments,
 } from './yamlSync'
 import { SECTION_SPECS, sectionSpec } from './sectionSpecs'
+import { IMAGE_PATTERN, VIDEO_PATTERN } from './types'
 import type { EntryRaw, SceneDocumentRaw, SceneFileRaw } from './types'
 
 export type ViewMode = 'design' | 'yaml' | 'split'
@@ -489,7 +490,7 @@ function addWidget(type: string, center: { x: number; y: number }): void {
     // of their kind so users do not hit an empty-path preview error.
     const isVideo = type === 'video'
     if ((type === 'image' || isVideo) && (entry['path'] as string) === '') {
-      const pattern = isVideo ? /\.(mp4|webm|mov|m4v|avi|mkv)$/i : /\.(png|jpe?g|gif|webp|bmp)$/i
+      const pattern = isVideo ? VIDEO_PATTERN : IMAGE_PATTERN
       const assets = state.assets.filter((a) => pattern.test(a))
       const last = assets[assets.length - 1]
       if (last !== undefined) entry['path'] = `assets/${last}`

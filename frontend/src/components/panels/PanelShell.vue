@@ -5,6 +5,8 @@
  * Only the header starts a drag; the whole card is a drop target. Content
  * comes through the default slot.
  */
+import AppIcon from '../AppIcon.vue'
+
 const props = defineProps<{
   title: string
   subtitle?: string | null
@@ -21,7 +23,6 @@ const emit = defineEmits<{
 
 void props
 </script>
-
 <template>
   <section
     class="card panel"
@@ -36,12 +37,12 @@ void props
       @dragstart="emit('dragStart')"
       @dragend="emit('dragEnd')"
     >
-      <span class="grip" title="Drag to rearrange">⠿</span>
+      <span class="grip" title="Drag to rearrange"><AppIcon name="grip" :size="13" /></span>
       <div class="titles">
         <h2>{{ title }}</h2>
         <span v-if="subtitle" class="subtitle">{{ subtitle }}</span>
       </div>
-      <button class="icon" title="Remove panel" @click="emit('remove')">×</button>
+      <button class="icon" title="Remove panel" @click="emit('remove')"><AppIcon name="close" :size="13" /></button>
     </header>
     <div class="body">
       <slot />

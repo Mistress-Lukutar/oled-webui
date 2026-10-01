@@ -5,8 +5,8 @@
  * (scene-editor/SceneEditorModal.vue).
  */
 import { ref } from 'vue'
-import { API } from '../../api'
 import { useDisplayStore } from '../../composables/useDisplayStore'
+import { errMsg } from '../../composables/useErrorToast'
 import FileDropZone from '../FileDropZone.vue'
 import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
 
@@ -38,12 +38,10 @@ async function createScene(): Promise<void> {
   if (name === '') return
   creating.value = true
   try {
-    const detail = await API.createScene(name)
-    await actions.loadScenes()
+    editingId.value = await actions.addScene(name)
     newName.value = ''
-    editingId.value = detail.scene.id
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
   creating.value = false
 }
@@ -51,11 +49,9 @@ async function createScene(): Promise<void> {
 async function addExample(): Promise<void> {
   creating.value = true
   try {
-    const detail = await API.seedExampleScene()
-    await actions.loadScenes()
-    editingId.value = detail.scene.id
+    editingId.value = await actions.seedExampleScene()
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
   creating.value = false
 }
@@ -66,12 +62,10 @@ async function uploadSceneFile(): Promise<void> {
   const name = file.name.replace(/\.(yaml|yml)$/i, '') || 'Uploaded scene'
   uploading.value = true
   try {
-    const detail = await API.createScene(name, file)
-    await actions.loadScenes()
+    editingId.value = await actions.addScene(name, file)
     uploadFile.value = null
-    editingId.value = detail.scene.id
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
   uploading.value = false
 }

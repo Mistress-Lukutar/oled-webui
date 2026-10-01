@@ -35,7 +35,7 @@ const chainInfo = computed(() => {
 <template>
   <span
     class="dot"
-    :class="{ on: state.status.connected, run: state.status.running }"
+    :class="{ on: state.status.connected, danger: !state.status.connected, run: state.status.running }"
     :title="state.status.connected ? 'OpenRGB connected' : 'OpenRGB not connected'"
   />
   <span>{{ statusText }}</span>
@@ -49,33 +49,12 @@ const chainInfo = computed(() => {
   <span v-if="chainInfo !== null" class="mono">
     Chain {{ chainInfo.used }}<template v-if="chainInfo.capacity !== null">/{{ chainInfo.capacity }}</template> LEDs
   </span>
-  <span class="dim">Drag to move · Wheel to zoom · Del to delete</span>
+  <span class="dim">Drag to move · Wheel to zoom · Delete removes</span>
 </template>
 
 <style scoped>
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--danger);
-  flex: none;
-}
-
-.dot.on {
-  background: var(--accent);
-}
-
 .dot.run {
   box-shadow: 0 0 6px var(--accent);
-}
-
-.statusbar-extras .small {
-  font-size: 11px;
-  padding: 2px 8px;
-}
-
-.mono {
-  font-variant-numeric: tabular-nums;
 }
 
 .dim {

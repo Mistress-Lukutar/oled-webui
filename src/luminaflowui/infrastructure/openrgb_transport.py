@@ -2,7 +2,7 @@
 File:   openrgb_transport.py
 Brief:  Synchronous OpenRGB SDK client wrapper for ARGB channel output.
 Author: Mistress-Lukutar
-Date:   2026-09-30
+Date:   2026-10-01
 Version: v0.5.3
 """
 

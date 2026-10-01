@@ -1,38 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import DashboardGrid from './components/panels/DashboardGrid.vue'
+import AppIcon from './components/AppIcon.vue'
+import DropdownMenu from './components/common/DropdownMenu.vue'
+import { useArgbStore } from './argb/store'
 import { useDisplayStore } from './composables/useDisplayStore'
 import { usePanelsStore } from './composables/usePanelsStore'
 
 const { state } = useDisplayStore()
+const argb = useArgbStore()
 const panels = usePanelsStore()
 
-const menuOpen = ref(false)
-const menuRoot = ref<HTMLElement | null>(null)
-
 const available = computed(() => panels.availablePanels.value)
-
-function onDocumentClick(event: MouseEvent): void {
-  if (menuRoot.value && !menuRoot.value.contains(event.target as Node)) {
-    menuOpen.value = false
-  }
-}
 
 onMounted(() => {
   void panels.init()
   void useDisplayStore().actions.init()
-  document.addEventListener('click', onDocumentClick)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
 })
 
 function addPanel(index: number): void {
   const entry = available.value[index]
   if (entry === undefined) return
   panels.addPanel(entry)
-  menuOpen.value = false
 }
 </script>
 
@@ -43,30 +32,31 @@ function addPanel(index: number): void {
       <h1>LuminaFlowUI</h1>
     </div>
 
-    <div ref="menuRoot" class="add-wrap">
-      <button
-        class="primary"
-        :disabled="available.length === 0"
-        :title="available.length === 0 ? 'All available panels are placed' : 'Add a panel'"
-        @click.stop="menuOpen = !menuOpen"
-      >
-        + Panel
-      </button>
-      <div v-if="menuOpen" class="menu card">
+    <DropdownMenu>
+      <template #trigger="{ toggle }">
         <button
-          v-for="(entry, index) in available"
-          :key="`${entry.type}-${entry.device ?? 'global'}`"
-          class="menu-item"
-          @click="addPanel(index)"
+          class="primary"
+          :disabled="available.length === 0"
+          :title="available.length === 0 ? 'All available panels are placed' : 'Add a panel'"
+          @click="toggle"
         >
-          {{ entry.title }}
-          <span v-if="entry.deviceName" class="device">{{ entry.deviceName }}</span>
+          <AppIcon name="plus" :size="12" />
+          Panel
         </button>
-        <span v-if="available.length === 0" class="menu-empty">
-          Every available panel is already placed
-        </span>
-      </div>
-    </div>
+      </template>
+      <button
+        v-for="(entry, index) in available"
+        :key="`${entry.type}-${entry.device ?? 'global'}`"
+        class="menu-item"
+        @click="addPanel(index)"
+      >
+        {{ entry.title }}
+        <span v-if="entry.deviceName" class="device">{{ entry.deviceName }}</span>
+      </button>
+      <span v-if="available.length === 0" class="menu-empty">
+        Every available panel is already placed
+      </span>
+    </DropdownMenu>
 
     <button class="reset" title="Restore the default layout" @click="panels.resetLayout()">
       Reset layout
@@ -78,6 +68,7 @@ function addPanel(index: number): void {
   <DashboardGrid />
 
   <div v-if="state.error" class="error-toast">{{ state.error }}</div>
+  <div v-if="argb.state.error" class="error-toast">{{ argb.state.error }}</div>
 </template>
 
 <style scoped>
@@ -113,17 +104,10 @@ function addPanel(index: number): void {
   position: relative;
 }
 
-.menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 220px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 50;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+.dropdown > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .menu-item {
@@ -166,5 +150,10 @@ function addPanel(index: number): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Two stores can report at once; stack their toasts. */
+.error-toast + .error-toast {
+  bottom: 74px;
 }
 </style>

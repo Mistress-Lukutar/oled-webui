@@ -10,6 +10,7 @@
  * the signed shift in displayed positions (negative = up).
  */
 import { ref } from 'vue'
+import AppIcon from '../AppIcon.vue'
 
 export interface LayerRow {
   id: string
@@ -161,14 +162,7 @@ function onGripUp(): void {
           @pointerup="onGripUp"
           @pointercancel="onGripUp"
         >
-          <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-            <circle cx="9" cy="6" r="1.7" fill="currentColor" />
-            <circle cx="15" cy="6" r="1.7" fill="currentColor" />
-            <circle cx="9" cy="12" r="1.7" fill="currentColor" />
-            <circle cx="15" cy="12" r="1.7" fill="currentColor" />
-            <circle cx="9" cy="18" r="1.7" fill="currentColor" />
-            <circle cx="15" cy="18" r="1.7" fill="currentColor" />
-          </svg>
+          <AppIcon name="grip" :size="12" />
         </span>
         <button
           v-if="row.toggleable !== false"
@@ -180,20 +174,7 @@ function onGripUp(): void {
           :disabled="row.toggleDisabled"
           @click.stop="emit('toggle', row.id)"
         >
-          <svg v-if="row.enabled" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path
-              d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"
-              fill="none" stroke="currentColor" stroke-width="1.8"
-            />
-            <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path
-              d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"
-              fill="none" stroke="currentColor" stroke-width="1.8"
-            />
-            <line x1="4" y1="3" x2="20" y2="21" stroke="currentColor" stroke-width="1.8" />
-          </svg>
+          <AppIcon :name="row.enabled ? 'eye' : 'eye-off'" :size="13" />
         </button>
         <span v-if="row.chip" class="chip" :data-kind="row.chipKind ?? row.chip">{{ row.chip }}</span>
         <span class="label" :title="row.label">{{ row.label }}</span>
@@ -204,14 +185,7 @@ function onGripUp(): void {
           :title="row.locked ? 'Unlock (canvas interaction blocked)' : 'Lock: visible but mouse-transparent and protected'"
           @click.stop="emit('toggleLock', row.id)"
         >
-          <svg v-if="row.locked" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
-            <path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
-            <path d="M8 11V8a4 4 0 0 1 7.5-2" fill="none" stroke="currentColor" stroke-width="1.8" />
-          </svg>
+          <AppIcon :name="row.locked ? 'lock' : 'unlock'" :size="13" />
         </button>
         <button
           class="icon danger"
@@ -219,12 +193,7 @@ function onGripUp(): void {
           :disabled="row.locked || row.deleteDisabled === true"
           @click.stop="emit('delete', row.id)"
         >
-          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path
-              d="M4 7h16M10 11v6M14 11v6M6.5 7l1 13h9l1-13M9.5 7V4h5v3"
-              fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-            />
-          </svg>
+          <AppIcon name="trash" :size="13" />
         </button>
       </li>
     </ul>
@@ -278,7 +247,7 @@ function onGripUp(): void {
   align-items: center;
   gap: 4px;
   padding: 4px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   min-width: 0;
 }
@@ -289,7 +258,7 @@ function onGripUp(): void {
 
 .row.selected {
   background: var(--accent-dim);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .row.drop-above {
@@ -361,15 +330,15 @@ function onGripUp(): void {
   flex: none;
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   color: var(--text-dim);
   text-transform: uppercase;
 }
 
 .row.selected .chip {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: rgba(255, 255, 255, 0.85);
+  border-color: color-mix(in srgb, var(--text-on-accent) 40%, transparent);
+  color: color-mix(in srgb, var(--text-on-accent) 85%, transparent);
 }
 
 .label {

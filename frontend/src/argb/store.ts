@@ -13,6 +13,9 @@
 import { reactive } from 'vue'
 import { API } from '../api'
 import { editor } from '../scene-editor/docStore'
+import { createErrorChannel, errMsg } from '../composables/useErrorToast'
+import { coverageToRuns, runsToCoverage } from './mask'
+import type { MaskRuns } from './mask'
 import {
   cloneLayout,
   defaultLayout,
@@ -149,22 +152,11 @@ function poolFor(kind: Selection['kind']): Array<{ id: string }> {
   return []
 }
 
-function showError(message: string): void {
+const errors = createErrorChannel((message) => {
   state.error = message
-  window.setTimeout(() => {
-    if (state.error === message) state.error = null
-  }, 5000)
-}
-
-async function wrap(action: () => Promise<void>): Promise<boolean> {
-  try {
-    await action()
-    return true
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
-    return false
-  }
-}
+})
+const showError = errors.showError
+const wrap = errors.wrap
 
 /**
  * Every draft edit goes through here: the mutation is applied to the
@@ -221,7 +213,7 @@ const actions = {
     try {
       state.settings = await API.setArgbSettings(patch)
     } catch (err) {
-      showError(err instanceof Error ? err.message : String(err))
+      showError(errMsg(err))
       void actions.refreshSettings()
     }
   },
@@ -391,27 +383,11 @@ const actions = {
   duplicateDevices(ids: string[]): void {
     const sources = state.layout.devices.filter((item) => ids.includes(item.id))
     if (sources.length === 0) return
-    const copies: ArgbDevice[] = sources.map((source, i) => ({
-      ...cloneLayout({ ...state.layout, devices: [source] }).devices[0],
-      id: `d_${crypto.randomUUID().slice(0, 8)}`,
-      x: source.x + 40 + i * 12,
-      y: source.y + 40 + i * 12,
-      name: `${source.name} copy`,
-    }))
-    mutate((layout) => {
-      for (const copy of copies) {
-        layout.devices.push(copy)
-        const header = layout.headers.find(
-          (item) => item.id === copy.header_id,
-        )
-        const fallback = layout.headers[0]
-        const target = header ?? fallback
-        if (target !== undefined) {
-          copy.header_id = target.id
-          target.devices.push(copy.id)
-        }
-      }
-    })
+    const copies = cloneDevicesForPaste(
+      cloneLayout({ ...state.layout, devices: sources }).devices,
+      40,
+    ).map((copy, i) => ({ ...copy, name: `${sources[i]?.name ?? copy.name} copy` }))
+    insertDeviceCopies(copies)
     actions.setDeviceSelection(copies.map((copy) => copy.id))
   },
 
@@ -444,24 +420,11 @@ const actions = {
   /** Paste clipboard devices with fresh ids, offset and selected. */
   pasteDevices(): void {
     if (deviceClipboard.length === 0) return
-    const copies: ArgbDevice[] = deviceClipboard.map((source, i) => ({
-      ...source,
-      id: `d_${crypto.randomUUID().slice(0, 8)}`,
-      x: source.x + 24 + i * 12,
-      y: source.y + 24 + i * 12,
-    }))
-    mutate((layout) => {
-      for (const copy of copies) {
-        layout.devices.push(copy)
-        const header =
-          layout.headers.find((item) => item.id === copy.header_id) ??
-          layout.headers[0]
-        if (header !== undefined) {
-          copy.header_id = header.id
-          header.devices.push(copy.id)
-        }
-      }
-    })
+    const copies = cloneDevicesForPaste(
+      cloneLayout({ ...state.layout, devices: deviceClipboard }).devices,
+      24,
+    )
+    insertDeviceCopies(copies)
     actions.setDeviceSelection(copies.map((copy) => copy.id))
   },
 
@@ -727,25 +690,11 @@ const actions = {
     mutate((layout) => {
       const layer = layout.layers.find((item) => item.id === layerId)
       if (layer === undefined) return
-      const runs: Record<string, [number, number][]> = {}
+      const runs: Record<string, MaskRuns> = {}
       for (const device of layout.devices) {
         const total = deviceLeds(device)
-        const covered = new Array<boolean>(total).fill(false)
-        for (const [start, end] of layer.mask.runs[device.id] ?? []) {
-          for (let i = start; i <= Math.min(end, total - 1); i += 1) {
-            covered[i] = true
-          }
-        }
-        const inverted: [number, number][] = []
-        let runStart: number | null = null
-        for (let i = 0; i < total; i += 1) {
-          if (!covered[i] && runStart === null) runStart = i
-          if (covered[i] && runStart !== null) {
-            inverted.push([runStart, i - 1])
-            runStart = null
-          }
-        }
-        if (runStart !== null) inverted.push([runStart, total - 1])
+        const covered = runsToCoverage(layer.mask.runs[device.id] ?? [], total)
+        const inverted = coverageToRuns(covered.map((on) => !on))
         if (inverted.length > 0) runs[device.id] = inverted
       }
       layer.mask.all = false
@@ -765,23 +714,9 @@ const actions = {
       const device = layout.devices.find((item) => item.id === deviceId)
       if (layer === undefined || device === undefined) return
       const total = deviceLeds(device)
-      const covered = new Array<boolean>(total).fill(false)
-      for (const [start, end] of layer.mask.runs[deviceId] ?? []) {
-        for (let i = start; i <= Math.min(end, total - 1); i += 1) {
-          covered[i] = true
-        }
-      }
+      const covered = runsToCoverage(layer.mask.runs[deviceId] ?? [], total)
       covered[index] = include
-      const runs: [number, number][] = []
-      let runStart: number | null = null
-      for (let i = 0; i < total; i += 1) {
-        if (covered[i] && runStart === null) runStart = i
-        if (!covered[i] && runStart !== null) {
-          runs.push([runStart, i - 1])
-          runStart = null
-        }
-      }
-      if (runStart !== null) runs.push([runStart, total - 1])
+      const runs = coverageToRuns(covered)
       layer.mask.all = false
       if (runs.length > 0) layer.mask.runs[deviceId] = runs
       else delete layer.mask.runs[deviceId]
@@ -790,6 +725,32 @@ const actions = {
 }
 
 const WORKSPACE_CENTER = { x: 400, y: 250 }
+
+/** Paste-ready device copies: fresh ids and a per-copy cascade offset. */
+function cloneDevicesForPaste(sources: ArgbDevice[], offset: number): ArgbDevice[] {
+  return sources.map((source, i) => ({
+    ...source,
+    id: `d_${crypto.randomUUID().slice(0, 8)}`,
+    x: source.x + offset + i * 12,
+    y: source.y + offset + i * 12,
+  }))
+}
+
+/** Insert copies into the layout, re-anchoring each to a valid header. */
+function insertDeviceCopies(copies: ArgbDevice[]): void {
+  mutate((layout) => {
+    for (const copy of copies) {
+      layout.devices.push(copy)
+      const header =
+        layout.headers.find((item) => item.id === copy.header_id) ??
+        layout.headers[0]
+      if (header !== undefined) {
+        copy.header_id = header.id
+        header.devices.push(copy.id)
+      }
+    }
+  })
+}
 
 /** Chain LED usage for a header: used count and capacity (may be null). */
 function headerUsage(header: ArgbHeader): { used: number; capacity: number | null } {
@@ -806,12 +767,7 @@ function maskCoverage(layer: ArgbLayer | undefined, deviceId: string): boolean[]
   if (layer === undefined || layer.mask.all) return null
   const device = state.layout.devices.find((item) => item.id === deviceId)
   if (device === undefined) return null
-  const total = deviceLeds(device)
-  const covered = new Array<boolean>(total).fill(false)
-  for (const [start, end] of layer.mask.runs[deviceId] ?? []) {
-    for (let i = start; i <= Math.min(end, total - 1); i += 1) covered[i] = true
-  }
-  return covered
+  return runsToCoverage(layer.mask.runs[deviceId] ?? [], deviceLeds(device))
 }
 
 export function useArgbStore() {

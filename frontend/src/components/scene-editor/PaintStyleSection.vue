@@ -16,6 +16,7 @@ import {
   commonStrokeOn,
   commonStyleValue,
 } from '../../scene-editor/mixed'
+import { num, numOrDrop, strOrDrop } from '../../scene-editor/fieldUtils'
 import type { PaintSlotConfig, StrokeAlign } from '../../scene-editor/types'
 
 const props = defineProps<{
@@ -27,25 +28,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ set: [key: string, value: unknown] }>()
-
-function num(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-/** Write a numeric field, dropping the key at the schema default. */
-function numOrDrop(key: string, raw: string, def: number): void {
-  const value = Number(raw)
-  if (!Number.isFinite(value) || value === def) {
-    emit('set', key, undefined)
-    return
-  }
-  emit('set', key, Math.trunc(value))
-}
-
-/** Write an enum field, dropping the key at the schema default. */
-function strOrDrop(key: string, value: string, def: string): void {
-  emit('set', key, value === def ? undefined : value)
-}
 
 const fillState = computed(() => commonFillOn(props.styles))
 const strokeState = computed(() => commonStrokeOn(props.styles))
@@ -78,7 +60,7 @@ function setStroke(on: boolean): void {
 }
 
 function setStrokeAlign(value: StrokeAlign): void {
-  strOrDrop('stroke_align', value, 'inside')
+  strOrDrop((key, val) => emit('set', key, val), 'stroke_align', value, 'inside')
 }
 
 /** Square corners drop `radius`; rounded ones start from a sane default. */
@@ -147,7 +129,7 @@ function setCornerRounded(rounded: boolean): void {
         :value="strokeWidth.mixed ? '' : num(strokeWidth.value)"
         :placeholder="strokeWidth.mixed ? 'mixed' : ''"
         title="Stroke width"
-        @input="numOrDrop('stroke_width', ($event.target as HTMLInputElement).value, 0)"
+        @input="numOrDrop((key, val) => emit('set', key, val), 'stroke_width', ($event.target as HTMLInputElement).value, 0, true)"
       />
       <span class="paint-unit">px</span>
     </div>
@@ -226,125 +208,9 @@ function setCornerRounded(rounded: boolean): void {
         :value="radius.mixed ? '' : num(radius.value)"
         :placeholder="radius.mixed ? 'mixed' : ''"
         title="Corner radius"
-        @input="numOrDrop('radius', ($event.target as HTMLInputElement).value, 0)"
+        @input="numOrDrop((key, val) => emit('set', key, val), 'radius', ($event.target as HTMLInputElement).value, 0, true)"
       />
       <span class="paint-unit">px</span>
     </div>
   </div>
 </template>
-
-<style scoped>
-.paint-grid {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.paint-cell {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.paint-cell .paint-label {
-  width: auto;
-}
-
-.paint-cell input[type='color'] {
-  flex: none;
-  width: 30px;
-  height: 24px;
-  padding: 1px;
-}
-
-.paint-toggle {
-  flex: none;
-  width: auto;
-}
-
-.paint-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.paint-row input[type='color'] {
-  flex: none;
-  width: 30px;
-  height: 24px;
-  padding: 1px;
-}
-
-.paint-label {
-  flex: none;
-  width: 52px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.paint-unit {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.paint-num {
-  width: 48px;
-  padding: 3px 6px;
-  font-size: 12px;
-}
-
-.paint-select {
-  flex: 1;
-  width: auto;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-.seg-group {
-  display: flex;
-  flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.seg-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 24px;
-  padding: 0;
-  background: var(--bg-input);
-  border: none;
-  border-right: 1px solid var(--border);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.seg-btn:last-child {
-  border-right: none;
-}
-
-.seg-btn:hover {
-  color: var(--text);
-}
-
-.seg-btn.active {
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-dim);
-}
-
-/* Multi-selection state: the field holds differing values. */
-.mixed {
-  border: 1px dashed var(--warning) !important;
-}
-
-input.mixed::placeholder {
-  color: var(--warning);
-  font-style: italic;
-}
-</style>

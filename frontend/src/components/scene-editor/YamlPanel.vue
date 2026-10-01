@@ -66,21 +66,21 @@ function onInput(event: Event): void {
 
 .error-strip {
   border-top: 1px solid var(--danger);
-  background: #2a1717;
+  background: var(--danger-bg);
   max-height: 130px;
   overflow-y: auto;
   padding: 6px 10px;
 }
 
 .error-line {
-  color: #f0b0b0;
+  color: var(--danger-text);
   font-size: 12px;
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
   line-height: 1.5;
 }
 
 .error-line.syntax {
-  color: #ffb0b0;
+  color: var(--danger);
   font-weight: 600;
 }
 </style>

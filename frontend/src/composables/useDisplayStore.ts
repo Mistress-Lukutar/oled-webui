@@ -5,6 +5,7 @@
 import { computed, reactive, readonly } from 'vue'
 import { API } from '../api'
 import { useArgbStore } from '../argb/store'
+import { createErrorChannel } from './useErrorToast'
 import { usePanelsStore } from './usePanelsStore'
 import type {
   DisplaySettings,
@@ -69,12 +70,10 @@ function applyStatus(status: StatusData): void {
   state.lastContent = status.last_content
 }
 
-function showError(message: string): void {
+const errors = createErrorChannel((message) => {
   state.error = message
-  window.setTimeout(() => {
-    if (state.error === message) state.error = null
-  }, 5000)
-}
+})
+const showError = errors.showError
 
 async function refreshStatus(): Promise<void> {
   try {
@@ -162,15 +161,7 @@ function startSse(): void {
 // Actions
 // ---------------------------------------------------------------------
 
-async function wrap(action: () => Promise<void>): Promise<boolean> {
-  try {
-    await action()
-    return true
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
-    return false
-  }
-}
+const wrap = errors.wrap
 
 const actions = {
   async init(): Promise<void> {
@@ -246,6 +237,24 @@ const actions = {
     } catch {
       state.fonts = []
     }
+  },
+
+  /**
+   * Create a scene (optionally seeded from a .yaml file) and refresh
+   * the list. Returns the new scene id; throws — callers own the busy
+   * flag and error toast.
+   */
+  async addScene(name: string, file?: File): Promise<string> {
+    const detail = await API.createScene(name, file)
+    await actions.loadScenes()
+    return detail.scene.id
+  },
+
+  /** Create the bundled example scene and return its id (see addScene). */
+  async seedExampleScene(): Promise<string> {
+    const detail = await API.seedExampleScene()
+    await actions.loadScenes()
+    return detail.scene.id
   },
 }
 

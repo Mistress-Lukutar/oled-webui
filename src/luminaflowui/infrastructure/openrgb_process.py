@@ -2,8 +2,8 @@
 File:   openrgb_process.py
 Brief:  Spawn, supervise and stop a local OpenRGB SDK server process.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 from __future__ import annotations

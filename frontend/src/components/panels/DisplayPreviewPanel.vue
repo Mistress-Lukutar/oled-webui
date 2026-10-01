@@ -51,7 +51,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  background: var(--bg-screen);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: hidden;
@@ -67,7 +67,7 @@ watch(
 }
 
 .placeholder {
-  color: #555;
+  color: var(--text-dim);
   font-size: 14px;
 }
 </style>

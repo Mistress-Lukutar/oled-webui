@@ -212,6 +212,7 @@ function deleteSelection(): void {
   const { kind, id } = state.selection
   if (kind === 'layer' && id !== null) store.actions.deleteLayer(id)
   if (kind === 'device' && id !== null) store.actions.deleteDevice(id)
+  if (kind === 'header' && id !== null) store.actions.deleteHeader(id)
 }
 
 function nudge(dx: number, dy: number): void {

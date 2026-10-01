@@ -32,9 +32,9 @@ watchEffect(() => {
   display: block;
   width: 96px;
   height: 64px;
-  background: #101210;
+  background: var(--bg-screen);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   flex: none;
 }
 </style>

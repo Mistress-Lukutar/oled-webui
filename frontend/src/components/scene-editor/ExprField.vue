@@ -163,7 +163,7 @@ label {
 
 .fx {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-dim);
   font-size: 10px;
@@ -204,15 +204,5 @@ label {
 
 .fx-value {
   color: var(--text-dim);
-}
-
-/* Multi-selection state: the field holds differing values. */
-input.mixed {
-  border: 1px dashed var(--warning);
-}
-
-input.mixed::placeholder {
-  color: var(--warning);
-  font-style: italic;
 }
 </style>

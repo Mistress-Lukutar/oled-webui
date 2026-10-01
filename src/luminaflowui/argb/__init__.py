@@ -2,8 +2,8 @@
 File:   __init__.py
 Brief:  ARGB subsystem: layouts, effect engine and OpenRGB output.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 from luminaflowui.argb.engine import render_layout

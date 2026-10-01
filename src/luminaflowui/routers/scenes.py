@@ -2,8 +2,8 @@
 File:   scenes.py
 Brief:  Scene CRUD, asset upload, preview render and playback endpoints.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 import mimetypes

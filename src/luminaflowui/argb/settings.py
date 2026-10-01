@@ -3,7 +3,7 @@ File:   settings.py
 Brief:  Persistent ARGB settings (display-power behaviour).
 Author: Mistress-Lukutar
 Date:   2026-10-01
-Version: v0.5.2
+Version: v0.5.3
 """
 
 from __future__ import annotations

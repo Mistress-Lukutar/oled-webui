@@ -5,14 +5,16 @@
  * immediately on change. Manual power on/off is gone — blanking follows
  * the Windows display power when the setting below is enabled.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import SceneEditorModal from '../scene-editor/SceneEditorModal.vue'
+import AppIcon from '../AppIcon.vue'
 import { useDisplayStore } from '../../composables/useDisplayStore'
+import { useSceneEditorLauncher } from '../../composables/useSceneEditorLauncher'
 
 const props = defineProps<{ deviceId?: string | null }>()
 void props
 
-const { state, actions, showError } = useDisplayStore()
+const { state, actions } = useDisplayStore()
 
 // Local draft of the persisted settings; every change is applied at once.
 const draft = reactive({
@@ -38,20 +40,7 @@ function applySettings(): void {
 
 const sceneRunning = computed(() => state.scene.running)
 
-const editorOpen = ref(false)
-const editSceneId = ref<string | null>(null)
-
-function openDesigner(): void {
-  const sceneId = state.scene.scene_id
-  if (sceneId === null) {
-    showError(
-      'No active scene — apply or create one in the Scenes panel first; the screen layout lives in a scene file',
-    )
-    return
-  }
-  editSceneId.value = sceneId
-  editorOpen.value = true
-}
+const { editorOpen, editSceneId, openDesigner } = useSceneEditorLauncher('screen')
 </script>
 
 <template>
@@ -66,7 +55,10 @@ function openDesigner(): void {
     </label>
 
     <div class="actions">
-      <button class="designer" @click="openDesigner">✏ Designer</button>
+      <button class="designer" @click="openDesigner">
+        <AppIcon name="pencil" :size="12" />
+        Designer
+      </button>
     </div>
 
     <label class="field">
@@ -151,6 +143,10 @@ function openDesigner(): void {
 .designer {
   border-color: var(--accent-dim);
   color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .field span.label,

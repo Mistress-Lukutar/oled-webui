@@ -6,23 +6,28 @@
  * asset management.
  */
 import { computed, ref } from 'vue'
-import { API } from '../../api'
 import { useDisplayStore } from '../../composables/useDisplayStore'
+import { errMsg } from '../../composables/useErrorToast'
 import { editor } from '../../scene-editor/docStore'
+import { num, numOrDrop, strOrDrop } from '../../scene-editor/fieldUtils'
 import {
   DATA_SOURCES,
   EASINGS,
+  IMAGE_PATTERN,
   PAINT_SLOTS,
   TEXT_DIRECTIONS,
+  VIDEO_PATTERN,
   isComponentInstance,
 } from '../../scene-editor/types'
 import type { EntryRaw, PaintSlotConfig } from '../../scene-editor/types'
 import { viewCenter } from '../../scene-editor/viewState'
+import AppIcon from '../AppIcon.vue'
 import ExprField from './ExprField.vue'
+import FontPickerField from './FontPickerField.vue'
 import MultiEditPanel from './MultiEditPanel.vue'
 import PaintStyleSection from './PaintStyleSection.vue'
 
-const { state: appState, actions: appActions, showError } = useDisplayStore()
+const { state: appState, showError } = useDisplayStore()
 const { state } = editor
 
 const assetInput = ref<HTMLInputElement | null>(null)
@@ -138,15 +143,8 @@ const bgAssetChoice = ref('')
 // Assets
 // ---------------------------------------------------------------------
 
-const imageAssets = computed(() =>
-  state.assets.filter((a) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(a)),
-)
-const fontAssets = computed(() =>
-  state.assets.filter((a) => /\.(ttf|otf|woff2?)$/i.test(a)),
-)
-const videoAssets = computed(() =>
-  state.assets.filter((a) => /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(a)),
-)
+const imageAssets = computed(() => state.assets.filter((a) => IMAGE_PATTERN.test(a)))
+const videoAssets = computed(() => state.assets.filter((a) => VIDEO_PATTERN.test(a)))
 
 async function addAssets(files: FileList | null): Promise<void> {
   if (files === null || files.length === 0) return
@@ -154,7 +152,7 @@ async function addAssets(files: FileList | null): Promise<void> {
   try {
     await editor.uploadAssets([...files])
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   } finally {
     uploading.value = false
     if (assetInput.value !== null) assetInput.value.value = ''
@@ -165,55 +163,8 @@ async function remove(name: string): Promise<void> {
   try {
     await editor.removeAsset(name)
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
-}
-
-// ---------------------------------------------------------------------
-// Text typography: font picker over the shared library + scene assets
-// ---------------------------------------------------------------------
-
-const fontInput = ref<HTMLInputElement | null>(null)
-const uploadingFonts = ref(false)
-
-const familyValue = computed<string>(() => String(style.value['family'] ?? ''))
-
-const isCustomFamily = computed<boolean>(() => {
-  const value = familyValue.value
-  if (value === '') return false
-  return (
-    !appState.fonts.some((font) => `fonts/${font}` === value) &&
-    !fontAssets.value.some((asset) => `assets/${asset}` === value)
-  )
-})
-
-async function addLibraryFonts(files: FileList | null): Promise<void> {
-  if (files === null || files.length === 0) return
-  uploadingFonts.value = true
-  try {
-    await API.uploadFonts([...files])
-    await appActions.loadFonts()
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
-  } finally {
-    uploadingFonts.value = false
-    if (fontInput.value !== null) fontInput.value.value = ''
-  }
-}
-
-/** Write a numeric style field, dropping the key at the schema default. */
-function numOrDrop(key: string, raw: string, def: number, int = false): void {
-  const value = Number(raw)
-  if (!Number.isFinite(value) || value === def) {
-    setStyle(key, undefined)
-    return
-  }
-  setStyle(key, int ? Math.trunc(value) : value)
-}
-
-/** Write a string style field, dropping the key at the schema default. */
-function strOrDrop(key: string, value: string, def: string): void {
-  setStyle(key, value === def ? undefined : value)
 }
 
 /** Paint slot layout of the selected widget type, if it has a style. */
@@ -245,10 +196,6 @@ function insertVideoAsset(name: string): void {
   }
 }
 
-function num(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
 function layerPos(layer: Record<string, unknown>, part: 0 | 1): number {
   const pos = layer['pos']
   return Array.isArray(pos) ? num(pos[part]) : 0
@@ -258,7 +205,7 @@ const dataSourceList = [...DATA_SOURCES]
 </script>
 
 <template>
-  <div class="inspector">
+  <div class="inspector scene-inspector">
     <div class="panel-title">Inspector</div>
 
     <!-- Multi selection -->
@@ -310,7 +257,8 @@ const dataSourceList = [...DATA_SOURCES]
       <div class="section">
         <div class="section-title">{{ widgetType }} widget</div>
         <div v-if="entry['locked'] === true" class="hint lock-hint">
-          🔒 Locked: mouse-transparent on the canvas, protected from deletion.
+          <AppIcon name="lock" :size="11" />
+          <span>Locked: mouse-transparent on the canvas, protected from deletion.</span>
         </div>
         <div class="grid4">
           <div class="field"><label>X</label>
@@ -340,7 +288,9 @@ const dataSourceList = [...DATA_SOURCES]
               :value="String(entry['visible'])"
               @input="setField('visible', ($event.target as HTMLTextAreaElement).value)"
             ></textarea>
-            <button class="mini-btn" title="Remove expression" @click="setField('visible', undefined)">×</button>
+            <button class="mini-btn" title="Remove expression" @click="setField('visible', undefined)">
+              <AppIcon name="close" :size="10" />
+            </button>
           </div>
           <label v-else class="check-row">
             <input
@@ -516,57 +466,23 @@ const dataSourceList = [...DATA_SOURCES]
           @set="setStyle"
         />
         <template v-if="widgetType === 'text'">
-          <div class="field">
-            <label>font</label>
-            <select
-              :value="familyValue"
-              @change="setStyle('family', ($event.target as HTMLSelectElement).value || undefined)"
-            >
-              <option value="">Default (built-in)</option>
-              <option v-if="isCustomFamily" :value="familyValue">
-                {{ familyValue }} (custom path)
-              </option>
-              <optgroup v-if="appState.fonts.length > 0" label="Font library">
-                <option v-for="font in appState.fonts" :key="`lib-${font}`" :value="`fonts/${font}`">
-                  {{ font }}
-                </option>
-              </optgroup>
-              <optgroup v-if="fontAssets.length > 0" label="Scene assets">
-                <option v-for="asset in fontAssets" :key="`scene-${asset}`" :value="`assets/${asset}`">
-                  {{ asset }}
-                </option>
-              </optgroup>
-            </select>
-          </div>
-          <input
-            ref="fontInput"
-            type="file"
-            multiple
-            accept=".ttf,.otf"
-            class="visually-hidden"
-            @change="addLibraryFonts(($event.target as HTMLInputElement).files)"
-          />
-          <div class="field">
-            <button class="mini-btn" :disabled="uploadingFonts" @click="fontInput?.click()">
-              {{ uploadingFonts ? 'Uploading…' : 'Upload font to library…' }}
-            </button>
-          </div>
+          <FontPickerField :family="String(style['family'] ?? '')" @set="setStyle" />
           <div class="grid2">
             <div class="field"><label>size (4..200)</label>
-              <input type="number" min="4" max="200" :value="num(style['size'], 24)" @input="numOrDrop('size', ($event.target as HTMLInputElement).value, 24, true)" />
+              <input type="number" min="4" max="200" :value="num(style['size'], 24)" @input="numOrDrop(setStyle, 'size', ($event.target as HTMLInputElement).value, 24, true)" />
             </div>
             <div class="field"><label>line height ×</label>
-              <input type="number" min="0.1" max="4" step="0.05" :value="num(style['leading'], 1.2)" @input="numOrDrop('leading', ($event.target as HTMLInputElement).value, 1.2)" />
+              <input type="number" min="0.1" max="4" step="0.05" :value="num(style['leading'], 1.2)" @input="numOrDrop(setStyle, 'leading', ($event.target as HTMLInputElement).value, 1.2)" />
             </div>
           </div>
           <div class="grid2">
             <div class="field"><label>tracking (px)</label>
-              <input type="number" min="-32" max="128" :value="num(style['tracking'], 0)" @input="numOrDrop('tracking', ($event.target as HTMLInputElement).value, 0, true)" />
+              <input type="number" min="-32" max="128" :value="num(style['tracking'], 0)" @input="numOrDrop(setStyle, 'tracking', ($event.target as HTMLInputElement).value, 0, true)" />
             </div>
             <div class="field"><label>direction</label>
               <select
                 :value="(style['direction'] as string | undefined) ?? 'ltr'"
-                @change="strOrDrop('direction', ($event.target as HTMLSelectElement).value, 'ltr')"
+                @change="strOrDrop(setStyle, 'direction', ($event.target as HTMLSelectElement).value, 'ltr')"
               >
                 <option v-for="d in TEXT_DIRECTIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
               </select>
@@ -671,7 +587,7 @@ const dataSourceList = [...DATA_SOURCES]
             <input type="number" min="0" step="0.1" :value="num(state.doc?.keepalive_interval, 2)" @input="setDoc('keepalive_interval', Number(($event.target as HTMLInputElement).value))" />
           </div>
         </div>
-        <div class="hint">Brightness and JPEG quality are global display settings (⚙ Settings).</div>
+        <div class="hint">Brightness and JPEG quality are global display settings.</div>
       </div>
 
       <div class="section">
@@ -684,7 +600,9 @@ const dataSourceList = [...DATA_SOURCES]
         >
           <div class="bg-head">
             <span class="label">{{ layer['path'] }}</span>
-            <button class="mini-btn" title="Remove layer" @click="removeBackground(index)">×</button>
+            <button class="mini-btn" title="Remove layer" @click="removeBackground(index)">
+              <AppIcon name="close" :size="10" />
+            </button>
           </div>
           <div class="grid2">
             <div class="field"><label>scale</label>
@@ -730,22 +648,24 @@ const dataSourceList = [...DATA_SOURCES]
         <span v-for="asset in state.assets" :key="asset" class="badge asset">
           {{ asset }}
           <button
-            v-if="/\.(png|jpe?g|gif|webp|bmp)$/i.test(asset)"
+            v-if="IMAGE_PATTERN.test(asset)"
             class="asset-insert"
             title="Insert as image widget"
             @click="insertImageAsset(asset)"
           >
-            +
+            <AppIcon name="plus" :size="10" />
           </button>
           <button
-            v-else-if="/\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(asset)"
+            v-else-if="VIDEO_PATTERN.test(asset)"
             class="asset-insert"
             title="Insert as video widget"
             @click="insertVideoAsset(asset)"
           >
-            +
+            <AppIcon name="plus" :size="10" />
           </button>
-          <button class="asset-remove" title="Remove asset" @click="remove(asset)">×</button>
+          <button class="asset-remove" title="Remove asset" @click="remove(asset)">
+            <AppIcon name="close" :size="10" />
+          </button>
         </span>
         <span v-if="state.assets.length === 0" class="none">No assets uploaded</span>
       </div>
@@ -758,7 +678,7 @@ const dataSourceList = [...DATA_SOURCES]
         @change="addAssets(($event.target as HTMLInputElement).files)"
       />
       <button :disabled="uploading" @click="assetInput?.click()">
-        {{ uploading ? 'Uploading…' : 'Upload images / fonts / videos' }}
+        {{ uploading ? 'Uploading…' : 'Upload assets…' }}
       </button>
     </div>
 
@@ -793,175 +713,17 @@ const dataSourceList = [...DATA_SOURCES]
   flex: none;
 }
 
-.section {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 8px;
-}
-
-.hint {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-bottom: 8px;
-  line-height: 1.4;
-}
-
 .lock-hint {
   color: var(--warning);
-}
-
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .grid4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0 6px;
-}
-
-.field {
-  margin-bottom: 8px;
-}
-
-.field label {
-  font-size: 11px;
-}
-
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-
-.check-row input {
-  width: auto;
-}
-
-.btn-row {
-  display: flex;
-  gap: 6px;
-}
-
-.btn-row button {
-  flex: 1;
-}
-
-.mini-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-/* Fill / stroke section, graphic-editor style */
-.paint-grid {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.paint-cell {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.paint-cell input[type='color'] {
-  flex: none;
-  width: 30px;
-  height: 24px;
-  padding: 1px;
-}
-
-.paint-cell .paint-label {
-  width: auto;
-}
-
-.paint-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.paint-row input[type='color'] {
-  flex: none;
-  width: 30px;
-  height: 24px;
-  padding: 1px;
-}
-
-.paint-label {
-  flex: none;
-  width: 52px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.paint-unit {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.paint-num {
-  width: 48px;
-  padding: 3px 6px;
-  font-size: 12px;
-}
-
-.paint-select {
-  flex: 1;
-  width: auto;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-.seg-group {
-  display: flex;
-  flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.seg-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 24px;
-  padding: 0;
-  background: var(--bg-input);
-  border: none;
-  border-right: 1px solid var(--border);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.seg-btn:last-child {
-  border-right: none;
-}
-
-.seg-btn:hover {
-  color: var(--text);
-}
-
-.seg-btn.active {
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-dim);
 }
 
 .fx-inline {
@@ -978,13 +740,9 @@ const dataSourceList = [...DATA_SOURCES]
   resize: none;
 }
 
-.grow {
-  flex: 1;
-}
-
 .bg-layer {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 8px;
   margin-bottom: 8px;
 }
@@ -1022,7 +780,8 @@ const dataSourceList = [...DATA_SOURCES]
   border: none;
   color: var(--accent);
   padding: 0 2px;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
 }
 
@@ -1035,7 +794,8 @@ const dataSourceList = [...DATA_SOURCES]
   border: none;
   color: var(--text-dim);
   padding: 0 2px;
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
 }
 
@@ -1046,13 +806,5 @@ const dataSourceList = [...DATA_SOURCES]
 .none {
   color: var(--text-dim);
   font-size: 12px;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
 }
 </style>

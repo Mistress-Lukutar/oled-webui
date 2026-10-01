@@ -11,6 +11,10 @@ import type { DecorShape, LedShape } from '../../argb/types'
 import { defBounds, ledHue, shapeCenter, shapeExtent } from '../../argb/deviceDef'
 import { useDeviceDesigner } from '../../argb/designerStore'
 import type { ShapeRef } from '../../argb/designerStore'
+import AppIcon from '../AppIcon.vue'
+import AppModal from '../common/AppModal.vue'
+import { isTypingTarget } from '../../canvas/shortcuts'
+import { CANVAS_BG, DESIGNER_SELECTION } from '../../canvas/theme'
 
 const props = defineProps<{ id?: string | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -99,7 +103,7 @@ function draw(): void {
   const ctx = el.getContext('2d')
   if (ctx === null) return
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-  ctx.fillStyle = '#101210'
+  ctx.fillStyle = CANVAS_BG
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
   const view = viewTransform(doc)
@@ -143,7 +147,7 @@ function draw(): void {
   if (selShape !== undefined && selShape !== null) {
     const c = shapeCenter(selShape)
     const ext = shapeExtent(selShape) + 4
-    ctx.strokeStyle = '#4aa3ff'
+    ctx.strokeStyle = DESIGNER_SELECTION
     ctx.lineWidth = 1.5 / view.scale
     ctx.setLineDash([4 / view.scale, 3 / view.scale])
     ctx.strokeRect(c.x - ext, c.y - ext, ext * 2, ext * 2)
@@ -245,9 +249,8 @@ function requestClose(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  const typing = event.target instanceof HTMLElement && event.target.tagName === 'TEXTAREA'
+  if (isTypingTarget(event.target)) return
   if (event.key === 'Escape') {
-    if (typing) return
     if (state.selected !== null) {
       designer.select(null)
       return
@@ -255,7 +258,7 @@ function onKeydown(event: KeyboardEvent): void {
     requestClose()
     return
   }
-  if ((event.key === 'Delete' || event.key === 'Backspace') && !typing) {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
     designer.deleteSelected()
   }
@@ -272,93 +275,83 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="designer-overlay" @click.self="requestClose()">
-      <div class="designer-modal">
-        <div class="toolbar">
-          <span class="title">Device designer</span>
-          <span class="mono">{{ state.defId === null ? 'new' : state.defId }}</span>
-          <span class="spacer" />
-          <span class="counter" :class="{ bad: ledCount === 0 }">
-            {{ ledCount }} LEDs · {{ decorCount }} decor
-          </span>
-          <button :disabled="state.doc === null" @click="onSave()">Save</button>
-          <button class="primary" :disabled="state.doc === null" @click="onSaveClose">Save &amp; close</button>
-          <button class="danger" @click="requestClose()">Close</button>
+  <AppModal
+    width="min(920px, 92vw)"
+    height="min(640px, 88vh)"
+    :z-index="60"
+    confirm-close="Discard unsaved changes?"
+    @close="emit('close')"
+  >
+    <template #header>
+      <div class="app-modal-head toolbar">
+        <span class="title">Device designer</span>
+        <span class="mono">{{ state.defId === null ? 'new' : state.defId }}</span>
+        <span class="spacer" />
+        <span class="counter" :class="{ bad: ledCount === 0 }">
+          {{ ledCount }} LEDs · {{ decorCount }} decor
+        </span>
+        <button :disabled="state.doc === null" @click="onSave()">Save</button>
+        <button class="primary" :disabled="state.doc === null" @click="onSaveClose">Save &amp; close</button>
+        <button class="danger" @click="requestClose()">Close</button>
+      </div>
+    </template>
+
+    <div class="body">
+      <div class="left-pane">
+        <div class="shape-bar">
+          <span class="group">LED:</span>
+          <button class="small" :disabled="state.doc === null" @click="designer.addShape('leds')">
+            <AppIcon name="plus" :size="11" />
+            LED
+          </button>
+          <span class="group">Decor:</span>
+          <button class="small" :disabled="state.doc === null" @click="designer.addShape('decor')">
+            <AppIcon name="plus" :size="11" />
+            Rect
+          </button>
+          <span class="grow" />
+          <select v-model="genKind" class="small">
+            <option value="strip">Strip</option>
+            <option value="ring">Ring</option>
+            <option value="dual">Dual</option>
+          </select>
+          <input v-model="genCount" type="number" min="1" max="512" class="small num" title="LED count" />
+          <input v-if="genKind === 'dual'" v-model="genSide" type="number" min="0" max="256" class="small num" title="Side LEDs" />
+          <button class="small" :disabled="state.doc === null" @click="onGenerate">Generate</button>
+          <button class="small danger" :disabled="state.selected === null" title="Delete selection" @click="designer.deleteSelected()">
+            Delete
+          </button>
         </div>
-
-        <div class="body">
-          <div class="left-pane">
-            <div class="shape-bar">
-              <span class="group">LED:</span>
-              <button class="small" :disabled="state.doc === null" @click="designer.addShape('leds')">+ LED</button>
-              <span class="group">Decor:</span>
-              <button class="small" :disabled="state.doc === null" @click="designer.addShape('decor')">+ Rect</button>
-              <span class="grow" />
-              <select v-model="genKind" class="small">
-                <option value="strip">Strip</option>
-                <option value="ring">Ring</option>
-                <option value="dual">Dual</option>
-              </select>
-              <input v-model="genCount" type="number" min="1" max="512" class="small num" title="LED count" />
-              <input v-if="genKind === 'dual'" v-model="genSide" type="number" min="0" max="256" class="small num" title="Side LEDs" />
-              <button class="small" :disabled="state.doc === null" @click="onGenerate">Generate</button>
-              <button class="small danger" :disabled="state.selected === null" @click="designer.deleteSelected()">Del</button>
-            </div>
-            <canvas
-              ref="canvas"
-              class="design-canvas"
-              :width="CANVAS_W"
-              :height="CANVAS_H"
-              @pointerdown="onPointerDown"
-              @pointermove="onPointerMove"
-              @pointerup="onPointerUp"
-              @pointercancel="onPointerUp"
-            />
-            <div class="hint">
-              Drag shapes to move them · Del deletes the selection · LED colors show chain order
-            </div>
-          </div>
-
-          <div class="right-pane">
-            <textarea
-              class="yaml"
-              spellcheck="false"
-              :value="state.yamlText"
-              @input="designer.setYamlText(($event.target as HTMLTextAreaElement).value)"
-            />
-            <div v-if="state.syntaxError !== null" class="error-strip">{{ state.syntaxError }}</div>
-            <div v-else class="hint">YAML is the source of truth — edit shapes, paints and size here.</div>
-          </div>
+        <canvas
+          ref="canvas"
+          class="design-canvas"
+          :width="CANVAS_W"
+          :height="CANVAS_H"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+        />
+        <div class="hint">
+          Drag shapes to move them · Delete removes the selection · LED colors show chain order
         </div>
       </div>
+
+      <div class="right-pane">
+        <textarea
+          class="yaml"
+          spellcheck="false"
+          :value="state.yamlText"
+          @input="designer.setYamlText(($event.target as HTMLTextAreaElement).value)"
+        />
+        <div v-if="state.syntaxError !== null" class="error-strip">{{ state.syntaxError }}</div>
+        <div v-else class="hint">YAML is the source of truth — edit shapes, paints and size here.</div>
+      </div>
     </div>
-  </Teleport>
+  </AppModal>
 </template>
 
 <style scoped>
-.designer-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.designer-modal {
-  width: min(920px, 92vw);
-  height: min(640px, 88vh);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-}
-
 .toolbar {
   display: flex;
   align-items: center;

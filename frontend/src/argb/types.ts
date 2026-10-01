@@ -12,6 +12,17 @@ export type EffectType =
   | 'scanner'
   | 'meter'
 
+/** Human-readable effect names, shared by the dashboard chip and the layers panel. */
+export const EFFECT_LABELS: Record<EffectType, string> = {
+  fill: 'Fill',
+  gradient: 'Gradient',
+  rainbow: 'Rainbow',
+  breathing: 'Breathing',
+  comet: 'Comet',
+  scanner: 'Scanner',
+  meter: 'Meter',
+}
+
 export interface StopSpec {
   pos: number
   color: string

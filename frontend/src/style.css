@@ -14,7 +14,17 @@
   --accent-dim: #237a58;
   --danger: #e05555;
   --warning: #e0b155;
+  /* Error surface: dark red panel + soft red text (toasts, error strips). */
+  --danger-bg: #3a1f1f;
+  --danger-text: #f0b0b0;
   --radius: 8px;
+  --radius-sm: 4px;
+  --radius-lg: 10px;
+  --text-on-accent: #fff;
+  /* Screen behind panel previews and canvases (OLED pixels are black). */
+  --bg-screen: #000;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
 
 * {
@@ -66,7 +76,7 @@ button:disabled {
 button.primary {
   background: var(--accent-dim);
   border-color: var(--accent-dim);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 button.primary:hover:not(:disabled) {
@@ -209,8 +219,8 @@ label {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background: #3a1f1f;
-  color: #f0b0b0;
+  background: var(--danger-bg);
+  color: var(--danger-text);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
   padding: 10px 16px;
@@ -218,4 +228,231 @@ label {
   max-width: 380px;
   z-index: 100;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* Small shared utilities. */
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.grow {
+  flex: 1;
+}
+
+button.small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* Status dot: gray when idle, accent when active. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--border);
+  flex: none;
+}
+
+.dot.on {
+  background: var(--accent);
+}
+
+.dot.warn {
+  background: var(--warning);
+}
+
+.dot.danger {
+  background: var(--danger);
+}
+
+/* --------------------------------------------------------------------
+   Scene editor inspector form kit. Shared by InspectorPanel,
+   MultiEditPanel, PaintStyleSection, ExprField and FontPickerField;
+   every panel that renders these classes sits inside a
+   `.scene-inspector` root.
+   -------------------------------------------------------------------- */
+.scene-inspector .section {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.scene-inspector .section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.scene-inspector .hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.scene-inspector .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8px;
+}
+
+.scene-inspector .field {
+  margin-bottom: 8px;
+}
+
+.scene-inspector .field label {
+  font-size: 11px;
+}
+
+.scene-inspector .check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.scene-inspector .check-row input {
+  width: auto;
+}
+
+.scene-inspector .btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.scene-inspector .btn-row button {
+  flex: 1;
+}
+
+.scene-inspector .paint-grid {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.scene-inspector .paint-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.scene-inspector .paint-cell .paint-label {
+  width: auto;
+}
+
+.scene-inspector .paint-cell input[type='color'],
+.scene-inspector .paint-row input[type='color'] {
+  flex: none;
+  width: 30px;
+  height: 24px;
+  padding: 1px;
+}
+
+.scene-inspector .paint-toggle {
+  flex: none;
+  width: auto;
+}
+
+.scene-inspector .paint-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.scene-inspector .paint-label {
+  flex: none;
+  width: 52px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.scene-inspector .paint-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.scene-inspector .paint-num {
+  width: 48px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.scene-inspector .paint-select {
+  flex: 1;
+  width: auto;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.scene-inspector .seg-group {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.scene-inspector .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-input);
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.scene-inspector .seg-btn:last-child {
+  border-right: none;
+}
+
+.scene-inspector .seg-btn:hover {
+  color: var(--text);
+}
+
+.scene-inspector .seg-btn.active {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+
+/* Multi-selection state: the field holds differing values. */
+.scene-inspector select.mixed,
+.scene-inspector input.mixed {
+  border: 1px dashed var(--warning) !important;
+}
+
+.scene-inspector input.mixed::placeholder {
+  color: var(--warning);
+  font-style: italic;
+}
+
+.scene-inspector .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }

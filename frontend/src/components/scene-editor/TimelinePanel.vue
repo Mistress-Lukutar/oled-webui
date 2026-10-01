@@ -12,6 +12,7 @@ import { Expression } from '../../scene-editor/exprEval'
 import { expandDocument } from '../../scene-editor/expand'
 import { entryLabel, isComponentInstance } from '../../scene-editor/types'
 import type { EntryRaw, SceneDocumentRaw } from '../../scene-editor/types'
+import AppIcon from '../AppIcon.vue'
 
 const { state } = editor
 
@@ -257,7 +258,7 @@ function loopInput(event: Event): void {
   <div class="timeline" :class="{ collapsed }">
     <div class="transport">
       <button class="play" :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
-        {{ playing ? '⏸' : '▶' }}
+        <AppIcon :name="playing ? 'pause' : 'play'" :size="13" />
       </button>
       <span class="time">{{ timeLabel(state.time) }}</span>
       <span class="sep">/</span>
@@ -272,8 +273,9 @@ function loopInput(event: Event): void {
       />
       <span class="hint">s loop · scrub or press play to preview expressions</span>
       <span class="spacer"></span>
-      <button class="mini-btn" @click="collapsed = !collapsed">
-        {{ collapsed ? '▲ Timeline' : '▼' }}
+      <button class="mini-btn" :title="collapsed ? 'Expand timeline' : 'Collapse timeline'" @click="collapsed = !collapsed">
+        <AppIcon :name="collapsed ? 'chevron-up' : 'chevron-down'" :size="12" />
+        {{ collapsed ? 'Timeline' : '' }}
       </button>
     </div>
 
@@ -355,7 +357,9 @@ function loopInput(event: Event): void {
 .play {
   width: 30px;
   padding: 4px 0;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .time {
@@ -385,11 +389,6 @@ function loopInput(event: Event): void {
   flex: 1;
 }
 
-.mini-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
 .body {
   display: flex;
   min-height: 0;
@@ -417,7 +416,7 @@ function loopInput(event: Event): void {
   padding: 0 8px;
   font-size: 11px;
   cursor: pointer;
-  border-bottom: 1px solid rgba(51, 51, 51, 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   overflow: hidden;
 }
 
@@ -427,7 +426,7 @@ function loopInput(event: Event): void {
 
 .label-row.selected {
   background: var(--accent-dim);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .label {
@@ -465,7 +464,7 @@ function loopInput(event: Event): void {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid rgba(51, 51, 51, 0.6);
+  border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   padding-left: 3px;
   font-size: 9px;
   color: var(--text-dim);
@@ -479,11 +478,11 @@ function loopInput(event: Event): void {
 .curve-row {
   position: relative;
   height: 26px;
-  border-bottom: 1px solid rgba(51, 51, 51, 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 .curve-row.selected {
-  background: rgba(53, 201, 142, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .curve {

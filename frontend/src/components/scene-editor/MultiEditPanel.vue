@@ -8,10 +8,9 @@
  * "mixed" placeholder, indeterminate toggle or a "— mixed —" select
  * option — and any edit replaces the value on all members.
  */
-import { computed, ref } from 'vue'
-import { API } from '../../api'
-import { useDisplayStore } from '../../composables/useDisplayStore'
+import { computed } from 'vue'
 import { editor } from '../../scene-editor/docStore'
+import { num, numOrDrop, strOrDrop } from '../../scene-editor/fieldUtils'
 import {
   PAINT_SLOTS,
   TEXT_DIRECTIONS,
@@ -24,9 +23,9 @@ import {
   commonStyleValue,
 } from '../../scene-editor/mixed'
 import ExprField from './ExprField.vue'
+import FontPickerField from './FontPickerField.vue'
 import PaintStyleSection from './PaintStyleSection.vue'
 
-const { state: appState, actions: appActions, showError } = useDisplayStore()
 const { state } = editor
 
 // ---------------------------------------------------------------------
@@ -107,21 +106,12 @@ function applyStyleToAll(key: string, value: unknown): void {
 
 /** Write a numeric style field on every entry, dropping it at the default. */
 function numOrDropAll(key: string, raw: string, def: number, int = false): void {
-  const value = Number(raw)
-  if (!Number.isFinite(value) || value === def) {
-    applyStyleToAll(key, undefined)
-    return
-  }
-  applyStyleToAll(key, int ? Math.trunc(value) : value)
+  numOrDrop(applyStyleToAll, key, raw, def, int)
 }
 
 /** Write a string style field on every entry, dropping it at the default. */
 function strOrDropAll(key: string, value: string, def: string): void {
-  applyStyleToAll(key, value === def ? undefined : value)
-}
-
-function num(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  strOrDrop(applyStyleToAll, key, value, def)
 }
 
 // ---------------------------------------------------------------------
@@ -147,19 +137,6 @@ const leading = computed(() => commonStyleValue(styles.value, 'leading', 1.2))
 const tracking = computed(() => commonStyleValue(styles.value, 'tracking', 0))
 const direction = computed(() => commonStyleValue(styles.value, 'direction', 'ltr'))
 
-const fontAssets = computed(() =>
-  state.assets.filter((a) => /\.(ttf|otf|woff2?)$/i.test(a)),
-)
-
-const isCustomFamily = computed<boolean>(() => {
-  const value = String(family.value.value)
-  if (value === '' || family.value.mixed) return false
-  return (
-    !appState.fonts.some((font) => `fonts/${font}` === value) &&
-    !fontAssets.value.some((asset) => `assets/${asset}` === value)
-  )
-})
-
 // ---------------------------------------------------------------------
 // Bar / ring specifics
 // ---------------------------------------------------------------------
@@ -169,27 +146,10 @@ const orientation = computed(() => commonStyleValue(styles.value, 'orientation',
 const startAngle = computed(() => commonStyleValue(styles.value, 'start_angle', -90))
 const sweep = computed(() => commonStyleValue(styles.value, 'sweep', 360))
 const scaleMax = computed(() => commonStyleValue(styles.value, 'scale_max', undefined))
-
-const fontInput = ref<HTMLInputElement | null>(null)
-const uploadingFonts = ref(false)
-
-async function addLibraryFonts(files: FileList | null): Promise<void> {
-  if (files === null || files.length === 0) return
-  uploadingFonts.value = true
-  try {
-    await API.uploadFonts([...files])
-    await appActions.loadFonts()
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
-  } finally {
-    uploadingFonts.value = false
-    if (fontInput.value !== null) fontInput.value.value = ''
-  }
-}
 </script>
 
 <template>
-  <div>
+  <div class="scene-inspector">
     <div class="section">
       <div class="section-title">{{ state.selection.length }} widgets selected</div>
       <div class="hint">
@@ -263,43 +223,11 @@ async function addLibraryFonts(files: FileList | null): Promise<void> {
       </div>
 
       <template v-if="!hasInstance && sameType && widgetTypes[0] === 'text'">
-        <div class="field">
-          <label>font</label>
-          <select
-            :class="{ mixed: family.mixed }"
-            :value="family.mixed ? '__mixed__' : String(family.value)"
-            @change="applyStyleToAll('family', ($event.target as HTMLSelectElement).value || undefined)"
-          >
-            <option v-if="family.mixed" value="__mixed__" disabled>— mixed —</option>
-            <option value="">Default (built-in)</option>
-            <option v-if="isCustomFamily" :value="String(family.value)">
-              {{ family.value }} (custom path)
-            </option>
-            <optgroup v-if="appState.fonts.length > 0" label="Font library">
-              <option v-for="font in appState.fonts" :key="`lib-${font}`" :value="`fonts/${font}`">
-                {{ font }}
-              </option>
-            </optgroup>
-            <optgroup v-if="fontAssets.length > 0" label="Scene assets">
-              <option v-for="asset in fontAssets" :key="`scene-${asset}`" :value="`assets/${asset}`">
-                {{ asset }}
-              </option>
-            </optgroup>
-          </select>
-        </div>
-        <input
-          ref="fontInput"
-          type="file"
-          multiple
-          accept=".ttf,.otf"
-          class="visually-hidden"
-          @change="addLibraryFonts(($event.target as HTMLInputElement).files)"
+        <FontPickerField
+          :family="String(family.value)"
+          :mixed="family.mixed"
+          @set="applyStyleToAll"
         />
-        <div class="field">
-          <button class="mini-btn" :disabled="uploadingFonts" @click="fontInput?.click()">
-            {{ uploadingFonts ? 'Uploading…' : 'Upload font to library…' }}
-          </button>
-        </div>
         <div class="grid2">
           <div class="field"><label>size (4..200)</label>
             <input
@@ -405,119 +333,11 @@ async function addLibraryFonts(files: FileList | null): Promise<void> {
 </template>
 
 <style scoped>
-.section {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
-}
-
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 8px;
-}
-
-.hint {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-bottom: 8px;
-  line-height: 1.4;
-}
-
 .mixed-word {
   color: var(--warning);
   border: 1px dashed var(--warning);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 4px;
   font-style: italic;
-}
-
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 8px;
-}
-
-.field {
-  margin-bottom: 8px;
-}
-
-.field label {
-  font-size: 11px;
-}
-
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-
-.check-row input {
-  width: auto;
-}
-
-.btn-row {
-  display: flex;
-  gap: 6px;
-}
-
-.btn-row button {
-  flex: 1;
-}
-
-.mini-btn {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-.paint-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.paint-row input[type='color'] {
-  flex: none;
-  width: 30px;
-  height: 24px;
-  padding: 1px;
-}
-
-.paint-label {
-  flex: none;
-  width: 52px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.paint-select {
-  flex: 1;
-  width: auto;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-/* Multi-selection state: the field holds differing values. */
-select.mixed,
-input.mixed {
-  border: 1px dashed var(--warning) !important;
-}
-
-input.mixed::placeholder {
-  color: var(--warning);
-  font-style: italic;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
 }
 </style>

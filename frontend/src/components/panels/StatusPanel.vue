@@ -74,8 +74,7 @@ function rowName(row: Row): string {
 <template>
   <div class="status-grid">
     <div v-for="row in [displayRow, argbRow]" :key="row.id" class="row">
-      <span class="dot" :class="{ up: row.connected }" />
-      <div class="texts">
+      <span class="dot" :class="{ on: row.connected, danger: !row.connected }" />      <div class="texts">
         <span class="name">{{ rowName(row) }}</span>
         <span class="detail">{{ row.detail }}</span>
       </div>
@@ -89,7 +88,7 @@ function rowName(row: Row): string {
     </div>
 
     <div class="row scene">
-      <span class="dot" :class="{ up: displayState.scene.running }" />
+      <span class="dot" :class="{ on: displayState.scene.running, danger: !displayState.scene.running }" />
       <div class="texts">
         <span class="name">
           {{ displayState.scene.running ? `Scene: ${displayState.scene.name}` : 'Scene idle' }}
@@ -125,18 +124,6 @@ function rowName(row: Row): string {
   padding-top: 8px;
 }
 
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--danger);
-  flex: none;
-}
-
-.dot.up {
-  background: var(--accent);
-}
-
 .texts {
   flex: 1;
   display: flex;
@@ -160,9 +147,7 @@ function rowName(row: Row): string {
   white-space: nowrap;
 }
 
-button.small {
-  font-size: 12px;
-  padding: 3px 10px;
+.row > button.small {
   flex: none;
 }
 </style>

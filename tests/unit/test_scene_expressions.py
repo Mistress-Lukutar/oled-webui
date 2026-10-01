@@ -2,8 +2,8 @@
 File:   test_scene_expressions.py
 Brief:  Unit tests for the safe expression evaluator and easing curves.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 from __future__ import annotations

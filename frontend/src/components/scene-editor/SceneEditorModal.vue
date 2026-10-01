@@ -7,6 +7,7 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { API } from '../../api'
+import { errMsg } from '../../composables/useErrorToast'
 import { isTypingTarget } from '../../canvas/shortcuts'
 import { useArgbStore } from '../../argb/store'
 import { useDisplayStore } from '../../composables/useDisplayStore'
@@ -14,6 +15,8 @@ import { editor } from '../../scene-editor/docStore'
 import { SECTION_SPECS, sectionSpec } from '../../scene-editor/sectionSpecs'
 import { SECTION_VIEWS } from '../../scene-editor/sectionViews'
 import { viewCenter } from '../../scene-editor/viewState'
+import AppIcon from '../AppIcon.vue'
+import AppModal from '../common/AppModal.vue'
 import EditorCanvas from './EditorCanvas.vue'
 import TimelinePanel from './TimelinePanel.vue'
 import YamlPanel from './YamlPanel.vue'
@@ -67,21 +70,23 @@ function onResolutionChange(event: Event): void {
   editor.setResolutionOverride(RESOLUTIONS[key] ?? null)
 }
 
-const ADD_BUTTONS = [
-  { type: 'text', label: 'T', title: 'Add text widget (T)' },
-  { type: 'bar', label: '▮', title: 'Add bar widget (B)' },
-  { type: 'ring', label: '◯', title: 'Add ring widget (R)' },
-  { type: 'graph', label: '∿', title: 'Add graph widget (G)' },
-  { type: 'image', label: '▣', title: 'Add image widget (I)' },
-  { type: 'shape', label: '▭', title: 'Add shape widget (S)' },
-  { type: 'video', label: '▶', title: 'Add video widget (V)' },
-] as const
+import type { IconName } from '../icons'
 
-const DRAW_TOOLS = [
-  { kind: 'rect', label: '▭', title: 'Draw rectangle (drag on canvas)' },
-  { kind: 'ellipse', label: '◯', title: 'Draw ellipse (drag on canvas)' },
-  { kind: 'line', label: '╱', title: 'Draw diagonal line (drag on canvas)' },
-] as const
+const ADD_BUTTONS: Array<{ type: string; icon: IconName; title: string }> = [
+  { type: 'text', icon: 'text', title: 'Add text widget (T)' },
+  { type: 'bar', icon: 'bar', title: 'Add bar widget (B)' },
+  { type: 'ring', icon: 'ring', title: 'Add ring widget (R)' },
+  { type: 'graph', icon: 'graph', title: 'Add graph widget (G)' },
+  { type: 'image', icon: 'image', title: 'Add image widget (I)' },
+  { type: 'shape', icon: 'rect', title: 'Add shape widget (S)' },
+  { type: 'video', icon: 'video', title: 'Add video widget (V)' },
+]
+
+const DRAW_TOOLS: Array<{ kind: 'rect' | 'ellipse' | 'line'; icon: IconName; title: string }> = [
+  { kind: 'rect', icon: 'rect', title: 'Draw rectangle (drag on canvas)' },
+  { kind: 'ellipse', icon: 'ellipse', title: 'Draw ellipse (drag on canvas)' },
+  { kind: 'line', icon: 'line', title: 'Draw diagonal line (drag on canvas)' },
+]
 
 // Armed shape-drawing tool; Esc or a second click disarms it.
 const drawTool = ref<'rect' | 'ellipse' | 'line' | null>(null)
@@ -94,7 +99,7 @@ const helpVisible = ref(false)
 
 const SHORTCUTS: Array<[string, string]> = [
   ['T / B / R / G / I / S / V', 'Screen: add text / bar / ring / graph / image / shape / video widget'],
-  ['▭ ◯ ╱ tool + drag', 'Screen: draw a shape on the canvas (Shift = square, Esc = off)'],
+  ['Shape tool + drag', 'Screen: draw a shape on the canvas (Shift = square, Esc = off)'],
   ['Ctrl+C / X / V / D', 'Screen: widgets · ARGB: devices'],
   ['Arrows', 'Nudge selection 1 px (Shift = 10 px)'],
   ['Del', 'Delete selection'],
@@ -150,7 +155,7 @@ onMounted(async () => {
     argbStore.actions.bindSceneSection()
     loading.value = false
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
     emit('close')
   }
 })
@@ -183,7 +188,7 @@ async function save(): Promise<void> {
     await editor.save()
     emit('saved')
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
   saving.value = false
 }
@@ -198,7 +203,7 @@ async function checkFrame(): Promise<void> {
     revokePreview()
     previewUrl.value = URL.createObjectURL(blob)
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
   checking.value = false
 }
@@ -209,7 +214,7 @@ async function apply(): Promise<void> {
     await actions.applyScene(props.sceneId)
     emit('saved')
   } catch (err) {
-    showError(err instanceof Error ? err.message : String(err))
+    showError(errMsg(err))
   }
 }
 
@@ -220,6 +225,10 @@ function onKeydown(event: KeyboardEvent): void {
   if (mod && event.code === 'KeyS') {
     event.preventDefault()
     if (!saving.value && state.syntaxError === null) void save()
+    return
+  }
+  if (!isScreenActive.value) {
+    onArgbKeydown(event)
     return
   }
   if (mod && event.code === 'KeyZ') {
@@ -243,11 +252,7 @@ function onKeydown(event: KeyboardEvent): void {
     (mod && event.code === 'KeyV') ||
     (mod && event.code === 'KeyD')
 
-  if (isScreenActive.value) {
-    onScreenKeydown(event, mod)
-  } else {
-    onArgbKeydown(event, mod)
-  }
+  onScreenKeydown(event, mod)
   if (clipboardShortcut) event.preventDefault()
 }
 
@@ -335,53 +340,14 @@ function onScreenKeydown(event: KeyboardEvent, mod: boolean): void {
   }
 }
 
-function onArgbKeydown(event: KeyboardEvent, mod: boolean): void {
+/**
+ * ARGB section: editing shortcuts (clipboard, delete, nudge, undo/redo)
+ * are owned by ArgbCanvas with the store's own undo stack; the modal
+ * keeps only Escape escalation and the help toggle.
+ */
+function onArgbKeydown(event: KeyboardEvent): void {
+  if (isTypingTarget(event.target)) return
   const argb = argbStore
-  if (mod && event.code === 'KeyC') {
-    if (argb.state.deviceSelection.length === 0) return
-    argb.actions.copyDevices([...argb.state.deviceSelection])
-    return
-  }
-  if (mod && event.code === 'KeyX') {
-    if (argb.state.deviceSelection.length === 0) return
-    argb.actions.cutDevices([...argb.state.deviceSelection])
-    return
-  }
-  if (mod && event.code === 'KeyV') {
-    argb.actions.pasteDevices()
-    return
-  }
-  if (mod && event.code === 'KeyD') {
-    if (argb.state.deviceSelection.length === 0) return
-    argb.actions.duplicateDevices([...argb.state.deviceSelection])
-    return
-  }
-  if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (argb.state.deviceSelection.length > 0) {
-      event.preventDefault()
-      argb.actions.deleteDevices([...argb.state.deviceSelection])
-    } else if (
-      argb.state.selection.kind !== null &&
-      argb.state.selection.kind !== 'device' &&
-      argb.state.selection.id !== null
-    ) {
-      event.preventDefault()
-      if (argb.state.selection.kind === 'layer') {
-        argb.actions.deleteLayer(argb.state.selection.id)
-      } else if (argb.state.selection.kind === 'header') {
-        argb.actions.deleteHeader(argb.state.selection.id)
-      }
-    }
-    return
-  }
-  if (event.key.startsWith('Arrow') && argb.state.deviceSelection.length > 0) {
-    event.preventDefault()
-    const step = event.shiftKey ? 10 : 1
-    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
-    const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
-    argbStore.actions.moveDevicesBy([...argbStore.state.deviceSelection], dx, dy)
-    return
-  }
   if (event.key === 'Escape') {
     if (argb.state.maskLayerId !== null) {
       argb.actions.stopMaskPaint()
@@ -398,7 +364,7 @@ function onArgbKeydown(event: KeyboardEvent, mod: boolean): void {
     requestClose()
     return
   }
-  if (!mod && event.key === '?') {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === '?') {
     helpVisible.value = !helpVisible.value
   }
 }
@@ -408,255 +374,239 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="editor-overlay">
-      <div class="editor-modal">
-        <div class="toolbar">
-          <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes"></span>
-          <input
-            class="scene-name"
-            type="text"
-            maxlength="100"
-            placeholder="Scene name"
-            :value="state.name"
-            @input="editor.setName(($event.target as HTMLInputElement).value)"
-          />
+  <AppModal
+    inset="2vh 2vw"
+    :z-index="50"
+    :backdrop-close="false"
+    :escape="false"
+    @close="requestClose"
+  >
+    <div class="toolbar">
+      <span class="dirty-dot" :class="{ on: state.dirty }" title="Unsaved changes"></span>
+      <input
+        class="scene-name"
+        type="text"
+        maxlength="100"
+        placeholder="Scene name"
+        :value="state.name"
+        @input="editor.setName(($event.target as HTMLInputElement).value)"
+      />
 
-          <div class="seg">
-            <button
-              v-for="spec in SECTION_SPECS"
-              :key="spec.key"
-              class="seg-btn section-btn"
-              :class="{ on: state.activeSection === spec.key }"
-              :title="`${spec.label} section`"
-              @click="selectSection(spec.key)"
-            >
-              {{ spec.label }}
-              <span v-if="state.file?.[spec.key] === undefined" class="absent" title="Section not in this scene">·</span>
-            </button>
-          </div>
-
-          <div class="seg">
-            <button
-              v-for="mode in VIEW_MODES"
-              :key="mode.id"
-              class="seg-btn"
-              :class="{ on: state.viewMode === mode.id }"
-              :title="mode.title"
-              @click="editor.setViewMode(mode.id)"
-            >
-              {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
-            </button>
-          </div>
-
-          <template v-if="isScreenActive && sectionPresent">
-            <div class="seg add-seg">
-              <button
-                v-for="btn in ADD_BUTTONS"
-                :key="btn.type"
-                class="seg-btn add-btn"
-                :title="btn.title"
-                @click="addWidget(btn.type)"
-              >
-                {{ btn.label }}
-              </button>
-              <span class="seg-divider"></span>
-              <button
-                v-for="tool in DRAW_TOOLS"
-                :key="tool.kind"
-                class="seg-btn add-btn"
-                :class="{ on: drawTool === tool.kind }"
-                :title="tool.title"
-                @click="toggleDrawTool(tool.kind)"
-              >
-                {{ tool.label }}
-              </button>
-            </div>
-          </template>
-          <component
-            :is="activeView.toolbar"
-            v-else-if="activeView.toolbar !== null && sectionPresent"
-          />
-
-          <span class="spacer"></span>
-          <button
-            :disabled="!editor.canUndo()"
-            class="icon-btn"
-            title="Undo (Ctrl+Z)"
-            @click="editor.undo()"
-          >
-            ⟲
-          </button>
-          <button
-            :disabled="!editor.canRedo()"
-            class="icon-btn"
-            title="Redo (Ctrl+Shift+Z)"
-            @click="editor.redo()"
-          >
-            ⟳
-          </button>
-          <button
-            v-if="isScreenActive"
-            :disabled="checking || loading"
-            title="Render the screen section as JPEG (Pillow)"
-            @click="checkFrame"
-          >
-            {{ checking ? 'Rendering…' : 'Check frame' }}
-          </button>
-          <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
-            ?
-          </button>
-          <button
-            class="primary"
-            :disabled="saving || loading || state.syntaxError !== null"
-            @click="save"
-          >
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
-          <button
-            class="primary"
-            :disabled="loading"
-            title="Save if needed, then start this scene on every device it describes"
-            @click="apply"
-          >
-            Apply
-          </button>
-          <button class="danger" @click="requestClose">Close</button>
-        </div>
-
-        <div v-if="loading" class="loading">Loading scene…</div>
-
-        <div v-else class="body">
-          <aside class="left" :style="{ width: activeView.leftWidth }">
-            <template v-if="sectionPresent">
-              <component :is="component" v-for="component in activeView.left" :key="state.activeSection" />
-            </template>
-          </aside>
-
-          <div class="center">
-            <div class="center-area" :class="{ split: state.viewMode === 'split' }">
-              <div
-                v-if="state.viewMode === 'design' || state.viewMode === 'split'"
-                class="viewport-wrap"
-              >
-                <div v-if="!sectionPresent" class="empty-section">
-                  <p>
-                    This scene has no
-                    <b>{{ activeSpec?.label ?? state.activeSection }}</b> section —
-                    applying it stops that device.
-                  </p>
-                  <button class="primary" @click="addSection(state.activeSection)">
-                    + Add {{ activeSpec?.label ?? state.activeSection }} section
-                  </button>
-                </div>
-                <template v-else>
-                  <EditorCanvas v-if="isScreenActive" :draw-shape="drawTool" />
-                  <component :is="activeView.canvas" v-else />
-                </template>
-                <div
-                  v-if="previewUrl !== null"
-                  class="frame-preview"
-                  title="Server-rendered frame (exact Pillow render)"
-                >
-                  <div class="preview-head">
-                    <span>Server frame</span>
-                    <button class="preview-close" @click="revokePreview">×</button>
-                  </div>
-                  <img :src="previewUrl" alt="Rendered scene frame" />
-                </div>
-              </div>
-              <div
-                v-if="state.viewMode === 'yaml' || state.viewMode === 'split'"
-                class="yaml-wrap"
-              >
-                <YamlPanel />
-              </div>
-            </div>
-            <div class="statusbar">
-              <template v-if="activeView.status !== null">
-                <component :is="activeView.status" />
-              </template>
-              <template v-else>
-                <select
-                  class="res-select"
-                  :value="resolutionKey"
-                  title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
-                  @change="onResolutionChange"
-                >
-                  <option value="auto">
-                    Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
-                  </option>
-                  <option value="480x480">480×480</option>
-                  <option value="1600x720">1600×720</option>
-                  <option value="1920x462">1920×462</option>
-                </select>
-                <span>{{ widgetCount() }} widgets</span>
-              </template>
-              <span
-                v-if="state.errors.length > 0 || state.syntaxError !== null"
-                class="status-errors"
-              >
-                {{ state.errors.length + (state.syntaxError !== null ? 1 : 0) }} issues
-              </span>
-              <span v-if="!appState.connected && isScreenActive" class="status-dim">
-                panel not connected
-              </span>
-            </div>
-          </div>
-
-          <aside class="right" :style="{ width: activeView.rightWidth }">
-            <template v-if="sectionPresent">
-              <component :is="component" v-for="component in activeView.right" :key="state.activeSection" />
-            </template>
-          </aside>
-        </div>
-
-        <TimelinePanel v-if="isScreenActive && sectionPresent" />
+      <div class="seg">
+        <button
+          v-for="spec in SECTION_SPECS"
+          :key="spec.key"
+          class="seg-btn section-btn"
+          :class="{ on: state.activeSection === spec.key }"
+          :title="`${spec.label} section`"
+          @click="selectSection(spec.key)"
+        >
+          {{ spec.label }}
+          <span v-if="state.file?.[spec.key] === undefined" class="absent" title="Section not in this scene">·</span>
+        </button>
       </div>
 
-      <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
-        <div class="help-card">
-          <div class="help-head">
-            <span>Keyboard &amp; mouse</span>
-            <button class="preview-close" @click="helpVisible = false">×</button>
-          </div>
-          <table class="help-table">
-            <tbody>
-              <tr v-for="[keys, action] in SHORTCUTS" :key="keys">
-                <td class="keys">{{ keys }}</td>
-                <td>{{ action }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <div class="seg">
+        <button
+          v-for="mode in VIEW_MODES"
+          :key="mode.id"
+          class="seg-btn"
+          :class="{ on: state.viewMode === mode.id }"
+          :title="mode.title"
+          @click="editor.setViewMode(mode.id)"
+        >
+          {{ mode.id === 'design' ? 'Design' : mode.id === 'split' ? 'Split' : 'YAML' }}
+        </button>
       </div>
+
+      <template v-if="isScreenActive && sectionPresent">
+        <div class="seg add-seg">
+          <button
+            v-for="btn in ADD_BUTTONS"
+            :key="btn.type"
+            class="seg-btn add-btn"
+            :title="btn.title"
+            @click="addWidget(btn.type)"
+          >
+            <AppIcon :name="btn.icon" :size="14" />
+          </button>
+          <span class="seg-divider"></span>
+          <button
+            v-for="tool in DRAW_TOOLS"
+            :key="tool.kind"
+            class="seg-btn add-btn"
+            :class="{ on: drawTool === tool.kind }"
+            :title="tool.title"
+            @click="toggleDrawTool(tool.kind)"
+          >
+            <AppIcon :name="tool.icon" :size="14" />
+          </button>
+        </div>
+      </template>
+      <component
+        :is="activeView.toolbar"
+        v-else-if="activeView.toolbar !== null && sectionPresent"
+      />
+
+      <span class="spacer"></span>
+      <button
+        :disabled="!editor.canUndo()"
+        class="icon-btn"
+        title="Undo (Ctrl+Z)"
+        @click="editor.undo()"
+      >
+        <AppIcon name="undo" :size="13" />
+      </button>
+      <button
+        :disabled="!editor.canRedo()"
+        class="icon-btn"
+        title="Redo (Ctrl+Shift+Z)"
+        @click="editor.redo()"
+      >
+        <AppIcon name="redo" :size="13" />
+      </button>
+      <button
+        v-if="isScreenActive"
+        :disabled="checking || loading"
+        title="Render the screen section as JPEG (Pillow)"
+        @click="checkFrame"
+      >
+        {{ checking ? 'Rendering…' : 'Check frame' }}
+      </button>
+      <button class="icon-btn" title="Keyboard shortcuts (?)" @click="helpVisible = !helpVisible">
+        ?
+      </button>
+      <button
+        class="primary"
+        :disabled="saving || loading || state.syntaxError !== null"
+        @click="save"
+      >
+        {{ saving ? 'Saving…' : 'Save' }}
+      </button>
+      <button
+        class="primary"
+        :disabled="loading"
+        title="Save if needed, then start this scene on every device it describes"
+        @click="apply"
+      >
+        Apply
+      </button>
+      <button class="danger" @click="requestClose">Close</button>
     </div>
-  </Teleport>
+
+    <div v-if="loading" class="loading">Loading scene…</div>
+
+    <div v-else class="body">
+      <aside class="left" :style="{ width: activeView.leftWidth }">
+        <template v-if="sectionPresent">
+          <component :is="component" v-for="component in activeView.left" :key="state.activeSection" />
+        </template>
+      </aside>
+
+      <div class="center">
+        <div class="center-area" :class="{ split: state.viewMode === 'split' }">
+          <div
+            v-if="state.viewMode === 'design' || state.viewMode === 'split'"
+            class="viewport-wrap"
+          >
+            <div v-if="!sectionPresent" class="empty-section">
+              <p>
+                This scene has no
+                <b>{{ activeSpec?.label ?? state.activeSection }}</b> section —
+                applying it stops that device.
+              </p>
+              <button class="primary" @click="addSection(state.activeSection)">
+                + Add {{ activeSpec?.label ?? state.activeSection }} section
+              </button>
+            </div>
+            <template v-else>
+              <EditorCanvas v-if="isScreenActive" :draw-shape="drawTool" />
+              <component :is="activeView.canvas" v-else />
+            </template>
+            <div
+              v-if="previewUrl !== null"
+              class="frame-preview"
+              title="Server-rendered frame (exact Pillow render)"
+            >
+              <div class="preview-head">
+                <span>Server frame</span>
+                <button class="preview-close" title="Close" @click="revokePreview">
+                  <AppIcon name="close" :size="12" />
+                </button>
+              </div>
+              <img :src="previewUrl" alt="Rendered scene frame" />
+            </div>
+          </div>
+          <div
+            v-if="state.viewMode === 'yaml' || state.viewMode === 'split'"
+            class="yaml-wrap"
+          >
+            <YamlPanel />
+          </div>
+        </div>
+        <div class="statusbar">
+          <template v-if="activeView.status !== null">
+            <component :is="activeView.status" />
+          </template>
+          <template v-else>
+            <select
+              class="res-select"
+              :value="resolutionKey"
+              title="Canvas size (panel profile); scenes always render at the connected panel's resolution"
+              @change="onResolutionChange"
+            >
+              <option value="auto">
+                Auto ({{ appState.resolution.width }}×{{ appState.resolution.height }})
+              </option>
+              <option value="480x480">480×480</option>
+              <option value="1600x720">1600×720</option>
+              <option value="1920x462">1920×462</option>
+            </select>
+            <span>{{ widgetCount() }} widgets</span>
+          </template>
+          <span
+            v-if="state.errors.length > 0 || state.syntaxError !== null"
+            class="status-errors"
+          >
+            {{ state.errors.length + (state.syntaxError !== null ? 1 : 0) }} issues
+          </span>
+          <span v-if="!appState.connected && isScreenActive" class="status-dim">
+            panel not connected
+          </span>
+        </div>
+      </div>
+
+      <aside class="right" :style="{ width: activeView.rightWidth }">
+        <template v-if="sectionPresent">
+          <component :is="component" v-for="component in activeView.right" :key="state.activeSection" />
+        </template>
+      </aside>
+    </div>
+
+    <TimelinePanel v-if="isScreenActive && sectionPresent" />
+
+  <div v-if="helpVisible" class="help-overlay" @click.self="helpVisible = false">
+    <div class="help-card">
+      <div class="help-head">
+        <span>Keyboard &amp; mouse</span>
+        <button class="preview-close" title="Close" @click="helpVisible = false">
+          <AppIcon name="close" :size="12" />
+        </button>
+      </div>
+      <table class="help-table">
+        <tbody>
+          <tr v-for="[keys, action] in SHORTCUTS" :key="keys">
+            <td class="keys">{{ keys }}</td>
+            <td>{{ action }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </AppModal>
 </template>
 
 <style scoped>
-.editor-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.editor-modal {
-  position: absolute;
-  inset: 2vh 2vw;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-}
-
 .toolbar {
   display: flex;
   align-items: center;
@@ -706,7 +656,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .seg-btn.on {
   background: var(--accent-dim);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .section-btn .absent {
@@ -837,7 +787,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: none;
   border: none;
   padding: 0 4px;
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-dim);
 }
 
@@ -868,7 +819,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   width: auto;
   padding: 2px 6px;
   font-size: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .icon-btn {
@@ -891,7 +842,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
 
@@ -913,7 +864,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .help-table td {
   padding: 5px 12px;
-  border-bottom: 1px solid rgba(51, 51, 51, 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 .help-table .keys {

@@ -2,8 +2,8 @@
 File:   sse_manager.py
 Brief:  Server-sent events broadcaster for connected browsers.
 Author: Mistress-Lukutar
-Date:   2026-09-30
-Version: v0.5.2
+Date:   2026-10-01
+Version: v0.5.3
 """
 
 from __future__ import annotations
