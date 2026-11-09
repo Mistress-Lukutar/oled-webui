@@ -98,8 +98,10 @@ export type ArgbEffect =
   | MeterEffect
 
 // ---------------------------------------------------------------------------
-// Device definitions (argb/devices.py): one LED shape per LED, list order is
-// the LED index; decor is non-LED artwork drawn underneath the LEDs.
+// Device definitions (argb/devices.py): one entry per LED (list order is the
+// LED index); an entry is a single shape or a `group` of several shapes for
+// hardware that wires multiple physical LEDs to one channel. Decor is
+// non-LED artwork drawn underneath the LEDs.
 // ---------------------------------------------------------------------------
 
 /** Rect corner radius: one number or per-corner [tl, tr, br, bl] (CSS order). */
@@ -128,7 +130,15 @@ export interface LedPolygonShape {
   stroke_width?: number
 }
 
-export type LedShape = LedRectShape | LedCircleShape | LedPolygonShape
+export type SingleLedShape = LedRectShape | LedCircleShape | LedPolygonShape
+
+/** One logical LED painted as several shapes with the same effect color. */
+export interface LedGroupShape {
+  type: 'group'
+  shapes: SingleLedShape[]
+}
+
+export type LedShape = SingleLedShape | LedGroupShape
 
 export interface DecorPaint {
   fill: boolean

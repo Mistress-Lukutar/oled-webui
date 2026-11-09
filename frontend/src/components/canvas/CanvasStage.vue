@@ -151,7 +151,6 @@ defineExpose({ fit, zoom, panX, panY })
   font-size: 11px;
   color: var(--text-dim);
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px 8px;
   pointer-events: none;

@@ -166,7 +166,6 @@ async function onImportFile(event: Event): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 6px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-panel);
 }
@@ -208,7 +207,6 @@ async function onImportFile(event: Event): Promise<void> {
 
 .foot {
   padding: 8px 12px;
-  border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-dim);
 }

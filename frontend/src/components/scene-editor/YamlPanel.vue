@@ -49,7 +49,6 @@ function onInput(event: Event): void {
   padding: 3px 10px;
   font-size: 10px;
   color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
 }
 
 .yaml-text {
@@ -65,7 +64,6 @@ function onInput(event: Event): void {
 }
 
 .error-strip {
-  border-top: 1px solid var(--danger);
   background: var(--danger-bg);
   max-height: 130px;
   overflow-y: auto;

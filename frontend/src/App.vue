@@ -77,7 +77,6 @@ function addPanel(index: number): void {
   align-items: center;
   gap: 16px;
   padding: 14px 0;
-  border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
   flex-wrap: wrap;
 }

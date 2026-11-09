@@ -335,7 +335,6 @@ const scaleMax = computed(() => commonStyleValue(styles.value, 'scale_max', unde
 <style scoped>
 .mixed-word {
   color: var(--warning);
-  border: 1px dashed var(--warning);
   border-radius: var(--radius-sm);
   padding: 0 4px;
   font-style: italic;

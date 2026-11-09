@@ -6,10 +6,16 @@
  * color of the matching LED index.
  */
 
-import type { ArgbDevice, ArgbLayout, DecorShape, DeviceDefinition, LedShape } from './types'
+import type {
+  ArgbDevice,
+  ArgbLayout,
+  DecorShape,
+  DeviceDefinition,
+  SingleLedShape,
+} from './types'
 import { WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from './types'
 import { CANVAS_BG } from '../canvas/theme'
-import { defBounds, defCenter, shapeCenter, shapeExtent } from './deviceDef'
+import { defBounds, defCenter, ledSubshapes, shapeCenter, shapeExtent } from './deviceDef'
 import type { WidgetBox } from '../canvas/geometry'
 
 export interface Cell {
@@ -175,7 +181,7 @@ function cssColor(hex: string | undefined): string {
 // ---------------------------------------------------------------------------
 
 /** Per-corner radii [tl, tr, br, bl] of a rect shape. */
-function cornerRadii(shape: LedShape | DecorShape): [number, number, number, number] {
+function cornerRadii(shape: SingleLedShape | DecorShape): [number, number, number, number] {
   const r = shape.type === 'rect' ? shape.radius : undefined
   if (typeof r === 'number') return [r, r, r, r]
   return r ?? [0, 0, 0, 0]
@@ -183,7 +189,7 @@ function cornerRadii(shape: LedShape | DecorShape): [number, number, number, num
 
 function traceShape(
   ctx: CanvasRenderingContext2D,
-  shape: LedShape | DecorShape,
+  shape: SingleLedShape | DecorShape,
   inset = 0,
 ): void {
   ctx.beginPath()
@@ -238,7 +244,7 @@ function paintDecorShape(ctx: CanvasRenderingContext2D, shape: DecorShape): void
 
 function paintLedShape(
   ctx: CanvasRenderingContext2D,
-  shape: LedShape,
+  shape: SingleLedShape,
   fill: string,
 ): void {
   traceShape(ctx, shape)
@@ -253,8 +259,9 @@ function paintLedShape(
 
 /**
  * Draw one device under the current transform context: decor first, then
- * one shape per LED. `colorFor(index)` returns the LED fill or null for
- * the dim "unlit" state; `dim(index)` extra-fades masked-out pixels.
+ * one entry per LED (a group paints every member shape with the LED
+ * color). `colorFor(index)` returns the LED fill or null for the dim
+ * "unlit" state; `dim(index)` extra-fades masked-out pixels.
  */
 function drawDeviceShapes(
   ctx: CanvasRenderingContext2D,
@@ -273,15 +280,12 @@ function drawDeviceShapes(
   ctx.scale(s, s)
   ctx.translate(-center.x, -center.y)
   for (const shape of def.decor) paintDecorShape(ctx, shape)
-  def.leds.forEach((shape, index) => {
+  def.leds.forEach((led, index) => {
     const color = colorFor(index)
-    if (dim(index)) {
-      ctx.globalAlpha = 0.22
-      paintLedShape(ctx, shape, color ?? '#2b2b2b')
-      ctx.globalAlpha = 1
-      return
-    }
-    paintLedShape(ctx, shape, color ?? '#2b2b2b')
+    const fill = color ?? '#2b2b2b'
+    if (dim(index)) ctx.globalAlpha = 0.22
+    for (const shape of ledSubshapes(led)) paintLedShape(ctx, shape, fill)
+    ctx.globalAlpha = 1
   })
   ctx.restore()
 }

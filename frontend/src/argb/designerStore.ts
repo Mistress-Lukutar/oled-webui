@@ -29,8 +29,9 @@ export interface DesignerState {
 }
 
 const BLANK_TEMPLATE = `\
-# Device definition: one shape per LED in ` + '`leds`' + ` (list order = LED
-# index); fills come from the effect engine. ` + '`decor`' + ` is artwork only.
+# Device definition: one entry per LED in ` + '`leds`' + ` (list order = LED
+# index); an entry is a shape or a ` + '`group`' + ` of shapes for parallel-wired
+# physical LEDs. Fills come from the effect engine. ` + '`decor`' + ` is artwork.
 id: my-device
 name: My Device
 size: [120, 120]
@@ -126,6 +127,8 @@ export function useDeviceDesigner() {
       shape.rect = [shape.rect[0] + dx, shape.rect[1] + dy, shape.rect[2], shape.rect[3]]
     } else if (shape.type === 'circle') {
       shape.center = [shape.center[0] + dx, shape.center[1] + dy]
+    } else if (shape.type === 'group') {
+      for (const sub of shape.shapes) shiftShape(sub, dx, dy)
     } else {
       shape.points = shape.points.map(([px, py]) => [px + dx, py + dy])
     }

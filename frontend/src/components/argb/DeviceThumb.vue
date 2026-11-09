@@ -33,7 +33,6 @@ watchEffect(() => {
   width: 96px;
   height: 64px;
   background: var(--bg-screen);
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   flex: none;
 }

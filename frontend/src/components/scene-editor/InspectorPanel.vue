@@ -741,7 +741,6 @@ const dataSourceList = [...DATA_SOURCES]
 }
 
 .bg-layer {
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px;
   margin-bottom: 8px;

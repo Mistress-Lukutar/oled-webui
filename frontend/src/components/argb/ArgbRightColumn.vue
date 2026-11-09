@@ -41,7 +41,6 @@ import ArgbInspector from './ArgbInspector.vue'
   flex: 1 1 45%;
   min-height: 160px;
   margin-top: 10px;
-  border-top: 1px solid var(--border);
   padding-top: 8px;
 }
 </style>

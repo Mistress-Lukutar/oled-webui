@@ -612,7 +612,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
   flex: none;
   flex-wrap: wrap;
@@ -637,8 +636,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .seg {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   overflow: hidden;
   flex: none;
 }
@@ -651,7 +648,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .seg-btn + .seg-btn {
-  border-left: 1px solid var(--border);
+  border-left: none;
 }
 
 .seg-btn.on {
@@ -707,11 +704,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .left {
-  border-right: 1px solid var(--border);
+  border-right: none;
 }
 
 .right {
-  border-left: 1px solid var(--border);
+  border-left: none;
   padding: 10px;
   overflow-y: auto;
 }
@@ -731,7 +728,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .center-area.split .viewport-wrap {
-  border-right: 1px solid var(--border);
+  border-right: none;
 }
 
 .viewport-wrap {
@@ -767,7 +764,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   bottom: 12px;
   width: 220px;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
@@ -780,7 +776,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   padding: 4px 8px;
   font-size: 11px;
   color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
 }
 
 .preview-close {
@@ -807,7 +802,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   gap: 16px;
   align-items: center;
   padding: 4px 12px;
-  border-top: 1px solid var(--border);
   background: var(--bg-panel);
   font-size: 11px;
   color: var(--text-dim);
@@ -841,7 +835,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   max-height: 80%;
   overflow-y: auto;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
@@ -851,7 +844,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
   font-size: 13px;
   font-weight: 600;
 }
@@ -864,7 +856,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .help-table td {
   padding: 5px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 .help-table .keys {

@@ -97,7 +97,6 @@ h4 {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
-  border-top: 1px solid var(--border);
   padding-top: 10px;
 }
 
@@ -106,7 +105,6 @@ h4 {
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 13px;
 }
@@ -125,7 +123,6 @@ h4 {
 .fx-row .chip {
   font-size: 10px;
   padding: 1px 6px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-dim);
 }

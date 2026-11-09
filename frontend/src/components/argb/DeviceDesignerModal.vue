@@ -7,8 +7,8 @@
  * order stays readable.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
-import type { DecorShape, LedShape } from '../../argb/types'
-import { defBounds, ledHue, shapeCenter, shapeExtent } from '../../argb/deviceDef'
+import type { DecorShape, LedShape, SingleLedShape } from '../../argb/types'
+import { defBounds, ledHue, ledSubshapes, shapeCenter, shapeExtent } from '../../argb/deviceDef'
 import { useDeviceDesigner } from '../../argb/designerStore'
 import type { ShapeRef } from '../../argb/designerStore'
 import AppIcon from '../AppIcon.vue'
@@ -81,7 +81,7 @@ function paintDecorShape(
   ctx.globalAlpha = 1
 }
 
-function traceShape(ctx: CanvasRenderingContext2D, shape: LedShape | DecorShape): void {
+function traceShape(ctx: CanvasRenderingContext2D, shape: SingleLedShape | DecorShape): void {
   ctx.beginPath()
   if (shape.type === 'rect') {
     ctx.roundRect(shape.rect[0], shape.rect[1], shape.rect[2], shape.rect[3], shape.radius ?? 0)
@@ -130,13 +130,15 @@ function draw(): void {
 
   for (const shape of doc.decor) paintDecorShape(ctx, shape)
   doc.leds.forEach((led, i) => {
-    traceShape(ctx, led)
     ctx.fillStyle = ledHue(i, doc.leds.length)
-    ctx.fill()
-    if (led.stroke_color && (led.stroke_width ?? 0) > 0) {
-      ctx.strokeStyle = led.stroke_color
-      ctx.lineWidth = led.stroke_width ?? 1
-      ctx.stroke()
+    for (const shape of ledSubshapes(led)) {
+      traceShape(ctx, shape)
+      ctx.fill()
+      if (shape.stroke_color && (shape.stroke_width ?? 0) > 0) {
+        ctx.strokeStyle = shape.stroke_color
+        ctx.lineWidth = shape.stroke_width ?? 1
+        ctx.stroke()
+      }
     }
   })
 
@@ -357,7 +359,6 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
 }
 
@@ -411,7 +412,6 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
   flex: 1;
   min-height: 0;
   width: 100%;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   touch-action: none;
 }
@@ -423,7 +423,6 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  border-left: 1px solid var(--border);
   min-height: 0;
 }
 
@@ -440,7 +439,6 @@ const decorCount = computed(() => state.doc?.decor.length ?? 0)
 
 .error-strip {
   padding: 6px 10px;
-  border: 1px solid var(--danger);
   border-radius: var(--radius);
   color: var(--danger);
   font-size: 12px;

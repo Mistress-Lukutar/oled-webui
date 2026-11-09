@@ -181,7 +181,6 @@ label span.label {
   font-size: 12px;
   color: var(--text-dim);
   margin: 0;
-  border-top: 1px solid var(--border);
   padding-top: 8px;
 }
 </style>

@@ -205,7 +205,6 @@ async function apply(id: string): Promise<void> {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .item:last-child {

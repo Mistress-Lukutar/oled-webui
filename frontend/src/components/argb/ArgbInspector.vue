@@ -693,7 +693,6 @@ h4 {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
-  border-top: 1px solid var(--border);
   padding-top: 8px;
 }
 

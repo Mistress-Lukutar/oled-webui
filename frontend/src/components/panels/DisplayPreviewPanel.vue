@@ -53,7 +53,6 @@ watch(
   justify-content: center;
   background: var(--bg-screen);
   border-radius: var(--radius);
-  border: 1px solid var(--border);
   overflow: hidden;
 }
 

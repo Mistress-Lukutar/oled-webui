@@ -291,7 +291,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 6px 10px;
   background: var(--bg-panel);
-  border: 1px solid var(--accent-dim);
   border-radius: var(--radius);
   font-size: 12px;
   color: var(--text-dim);

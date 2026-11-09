@@ -120,7 +120,6 @@ function rowName(row: Row): string {
 }
 
 .row.scene {
-  border-top: 1px solid var(--border);
   padding-top: 8px;
 }
 

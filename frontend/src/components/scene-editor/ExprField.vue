@@ -162,7 +162,6 @@ label {
 }
 
 .fx {
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-dim);
@@ -186,10 +185,6 @@ label {
   padding: 5px 8px;
   resize: none;
   min-height: 0;
-}
-
-.fx-input.bad {
-  border-color: var(--danger);
 }
 
 .fx-meta {

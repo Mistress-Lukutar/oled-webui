@@ -2,7 +2,8 @@
 /**
  * ARGB section toolbar: add-device dropdown over the definition library
  * plus library management. Lives in the unified scene editor toolbar
- * while the ARGB section tab is active.
+ * while the ARGB section tab is active. The library modal sits outside
+ * the dropdown so closing the menu cannot unmount it.
  */
 import { ref } from 'vue'
 import DeviceLibraryModal from './DeviceLibraryModal.vue'
@@ -43,8 +44,8 @@ function addFromLibrary(definitionId: string): void {
     <button class="add-manage" @click="libraryOpen = true">
       Manage library…
     </button>
-    <DeviceLibraryModal v-if="libraryOpen" @close="libraryOpen = false" />
   </DropdownMenu>
+  <DeviceLibraryModal v-if="libraryOpen" @close="libraryOpen = false" />
 </template>
 
 <style scoped>
@@ -100,7 +101,6 @@ function addFromLibrary(definitionId: string): void {
 }
 
 .add-manage {
-  border-top: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   color: var(--accent);

@@ -331,7 +331,6 @@ function onGripUp(): void {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
   color: var(--text-dim);
   text-transform: uppercase;
 }

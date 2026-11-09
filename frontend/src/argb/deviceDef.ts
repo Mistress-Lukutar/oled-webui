@@ -8,6 +8,7 @@ import type {
   DecorShape,
   DeviceDefinition,
   LedShape,
+  SingleLedShape,
 } from './types'
 
 export interface Bounds {
@@ -17,11 +18,50 @@ export interface Bounds {
   h: number
 }
 
-/** Center point of any shape in definition coordinates. */
+/** Member shapes of an LED: groups expand, single shapes wrap. */
+export function ledSubshapes(led: LedShape): SingleLedShape[] {
+  return led.type === 'group' ? led.shapes : [led]
+}
+
+/** Tight bounds of single LED shapes (empty list = zero box). */
+export function shapesBounds(shapes: SingleLedShape[]): Bounds {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const shape of shapes) {
+    if (shape.type === 'circle') {
+      minX = Math.min(minX, shape.center[0] - shape.radius)
+      minY = Math.min(minY, shape.center[1] - shape.radius)
+      maxX = Math.max(maxX, shape.center[0] + shape.radius)
+      maxY = Math.max(maxY, shape.center[1] + shape.radius)
+    } else if (shape.type === 'rect') {
+      minX = Math.min(minX, shape.rect[0])
+      minY = Math.min(minY, shape.rect[1])
+      maxX = Math.max(maxX, shape.rect[0] + shape.rect[2])
+      maxY = Math.max(maxY, shape.rect[1] + shape.rect[3])
+    } else {
+      for (const [px, py] of shape.points) {
+        minX = Math.min(minX, px)
+        minY = Math.min(minY, py)
+        maxX = Math.max(maxX, px)
+        maxY = Math.max(maxY, py)
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+/** Center point of any shape in definition coordinates (groups: bounds center). */
 export function shapeCenter(shape: LedShape | DecorShape): {
   x: number
   y: number
 } {
+  if (shape.type === 'group') {
+    const b = shapesBounds(shape.shapes)
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+  }
   if (shape.type === 'circle') {
     return { x: shape.center[0], y: shape.center[1] }
   }
@@ -39,6 +79,10 @@ export function shapeCenter(shape: LedShape | DecorShape): {
 
 /** Max distance from the shape center to its outline (hit radius). */
 export function shapeExtent(shape: LedShape | DecorShape): number {
+  if (shape.type === 'group') {
+    const b = shapesBounds(shape.shapes)
+    return Math.max(Math.hypot(b.w, b.h) / 2, 1)
+  }
   if (shape.type === 'circle') return shape.radius
   if (shape.type === 'rect') {
     return Math.hypot(shape.rect[2], shape.rect[3]) / 2
@@ -63,7 +107,7 @@ export function defBounds(def: DeviceDefinition): Bounds {
     maxX = Math.max(maxX, x0, x1)
     maxY = Math.max(maxY, y0, y1)
   }
-  for (const shape of [...def.leds, ...def.decor]) {
+  for (const shape of [...def.decor, ...def.leds.flatMap(ledSubshapes)]) {
     if (shape.type === 'circle') {
       grow(
         shape.center[0] - shape.radius,
@@ -335,24 +379,26 @@ export function drawDefinitionThumbnail(
   ctx.scale(scale, scale)
   for (const shape of def.decor) paintDecor(ctx, shape)
   def.leds.forEach((led, i) => {
-    ctx.beginPath()
-    if (led.type === 'rect') {
-      ctx.roundRect(led.rect[0], led.rect[1], led.rect[2], led.rect[3], led.radius ?? 0)
-    } else if (led.type === 'circle') {
-      ctx.arc(led.center[0], led.center[1], led.radius, 0, Math.PI * 2)
-    } else {
-      ctx.moveTo(led.points[0][0], led.points[0][1])
-      for (let k = 1; k < led.points.length; k += 1) {
-        ctx.lineTo(led.points[k][0], led.points[k][1])
-      }
-      ctx.closePath()
-    }
     ctx.fillStyle = ledHue(i, def.leds.length)
-    ctx.fill()
-    if (led.stroke_color && (led.stroke_width ?? 0) > 0) {
-      ctx.strokeStyle = led.stroke_color
-      ctx.lineWidth = led.stroke_width ?? 1
-      ctx.stroke()
+    for (const shape of ledSubshapes(led)) {
+      ctx.beginPath()
+      if (shape.type === 'rect') {
+        ctx.roundRect(shape.rect[0], shape.rect[1], shape.rect[2], shape.rect[3], shape.radius ?? 0)
+      } else if (shape.type === 'circle') {
+        ctx.arc(shape.center[0], shape.center[1], shape.radius, 0, Math.PI * 2)
+      } else {
+        ctx.moveTo(shape.points[0][0], shape.points[0][1])
+        for (let k = 1; k < shape.points.length; k += 1) {
+          ctx.lineTo(shape.points[k][0], shape.points[k][1])
+        }
+        ctx.closePath()
+      }
+      ctx.fill()
+      if (shape.stroke_color && (shape.stroke_width ?? 0) > 0) {
+        ctx.strokeStyle = shape.stroke_color
+        ctx.lineWidth = shape.stroke_width ?? 1
+        ctx.stroke()
+      }
     }
   })
   ctx.restore()

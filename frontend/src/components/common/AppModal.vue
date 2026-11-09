@@ -98,7 +98,6 @@ const cardStyle = computed(() =>
 
 .app-modal {
   background: var(--bg);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
@@ -114,7 +113,6 @@ const cardStyle = computed(() =>
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
   flex: none;
   flex-wrap: wrap;

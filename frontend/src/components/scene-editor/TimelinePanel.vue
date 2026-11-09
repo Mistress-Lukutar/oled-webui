@@ -336,7 +336,6 @@ function loopInput(event: Event): void {
 <style scoped>
 .timeline {
   flex: none;
-  border-top: 1px solid var(--border);
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
@@ -393,19 +392,16 @@ function loopInput(event: Event): void {
   display: flex;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border);
 }
 
 .labels {
   width: 220px;
   flex: none;
   overflow: hidden;
-  border-right: 1px solid var(--border);
 }
 
 .ruler-spacer {
   height: 18px;
-  border-bottom: 1px solid var(--border);
 }
 
 .label-row {
@@ -416,7 +412,6 @@ function loopInput(event: Event): void {
   padding: 0 8px;
   font-size: 11px;
   cursor: pointer;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   overflow: hidden;
 }
 
@@ -457,14 +452,12 @@ function loopInput(event: Event): void {
 .ruler {
   position: relative;
   height: 18px;
-  border-bottom: 1px solid var(--border);
 }
 
 .tick {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   padding-left: 3px;
   font-size: 9px;
   color: var(--text-dim);
@@ -478,7 +471,6 @@ function loopInput(event: Event): void {
 .curve-row {
   position: relative;
   height: 26px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 .curve-row.selected {
