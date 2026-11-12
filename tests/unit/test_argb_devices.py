@@ -3,7 +3,7 @@ File:   test_argb_devices.py
 Brief:  Tests for the ARGB device definition library and layout checks.
 Author: Mistress-Lukutar
 Date:   2026-10-01
-Version: v0.5.3
+Version: v0.5.5
 """
 
 from __future__ import annotations
@@ -103,6 +103,57 @@ def test_bad_decor_color_rejected() -> None:
             "id: mini\nleds:\n  - type: rect\n    rect: [0, 0, 1, 1]\n"
             "decor:\n  - type: circle\n    center: [5, 5]\n    radius: 3\n"
             "    fill_color: red\n"
+        )
+
+
+# ---------------------------------------------------------------------------
+# LED groups (one logical LED drawn as several shapes)
+# ---------------------------------------------------------------------------
+
+
+def test_led_group_parses_and_counts() -> None:
+    """A group is one LED: list position is the index, not member count."""
+    definition = parse_definition(
+        "id: mini\nleds:\n"
+        "  - type: group\n    shapes:\n"
+        "      - type: rect\n        rect: [0, 0, 8, 8]\n"
+        "      - type: rect\n        rect: [0, 30, 8, 8]\n"
+        "  - type: circle\n    center: [20, 5]\n    radius: 3\n"
+    )
+    assert definition.led_count == 2
+
+
+def test_led_group_bounds_cover_all_members() -> None:
+    """The bounding box spans every member shape of every group."""
+    definition = parse_definition(
+        "id: mini\nleds:\n"
+        "  - type: group\n    shapes:\n"
+        "      - type: rect\n        rect: [0, 0, 8, 8]\n"
+        "      - type: rect\n        rect: [0, 30, 8, 8]\n"
+    )
+    assert definition.bounds() == (0.0, 0.0, 8.0, 38.0)
+
+
+def test_led_group_needs_two_shapes() -> None:
+    """A single-shape group is rejected; use a plain shape instead."""
+    with pytest.raises(ArgbError, match="Invalid device definition"):
+        parse_definition(
+            "id: mini\nleds:\n"
+            "  - type: group\n    shapes:\n"
+            "      - type: rect\n        rect: [0, 0, 8, 8]\n"
+        )
+
+
+def test_nested_led_group_rejected() -> None:
+    """Groups cannot nest; member shapes are single shapes only."""
+    with pytest.raises(ArgbError, match="Invalid device definition"):
+        parse_definition(
+            "id: mini\nleds:\n"
+            "  - type: group\n    shapes:\n"
+            "      - type: rect\n        rect: [0, 0, 8, 8]\n"
+            "      - type: group\n        shapes:\n"
+            "          - type: rect\n            rect: [0, 30, 8, 8]\n"
+            "          - type: rect\n            rect: [0, 40, 8, 8]\n"
         )
 
 

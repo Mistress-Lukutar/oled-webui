@@ -3,7 +3,7 @@ File:   devices.py
 Brief:  ARGB device definitions: YAML shape library, validation, seeds.
 Author: Mistress-Lukutar
 Date:   2026-10-01
-Version: v0.5.3
+Version: v0.5.5
 """
 
 from __future__ import annotations
@@ -79,9 +79,11 @@ class _Strict(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Shape models. A definition lists exactly one LED shape per LED (list order
-# is the LED index); the fill of an LED shape is the effect color, so LED
-# shapes only carry an optional outline. Decor shapes paint themselves.
+# Shape models. A definition lists exactly one entry per LED (list order is
+# the LED index); an entry is a single shape or a ``group`` of several shapes
+# for hardware that wires multiple physical LEDs to one channel. The fill of
+# an LED shape is the effect color, so LED shapes only carry an optional
+# outline. Decor shapes paint themselves.
 # ---------------------------------------------------------------------------
 
 
@@ -134,8 +136,31 @@ class LedPolygon(_LedStroke):
     )
 
 
-LedShape = Annotated[
+SingleLedShape = Annotated[
     LedRect | LedCircle | LedPolygon,
+    Field(discriminator="type"),
+]
+
+
+class LedGroup(_Strict):
+    """One logical LED drawn as several shapes.
+
+    Real hardware sometimes wires two or more physical LEDs to a single
+    channel; the group paints every member shape with the one effect color
+    of the LED index the group occupies in ``leds``.
+    """
+
+    type: Literal["group"]
+    shapes: list[SingleLedShape] = Field(
+        ...,
+        min_length=2,
+        max_length=16,
+        description="Member shapes, all painted with the same LED color",
+    )
+
+
+LedShape = Annotated[
+    LedGroup | LedRect | LedCircle | LedPolygon,
     Field(discriminator="type"),
 ]
 
@@ -227,9 +252,11 @@ DecorShape = Annotated[
 class ArgbDeviceDefinition(_Strict):
     """A drawable device template: LED shapes plus decorative graphics.
 
-    The ``leds`` list holds exactly one shape per LED; the list position is
-    the LED index used by effects, masks and the header chain order. LED
-    fills come from the effect engine, decor is purely visual.
+    The ``leds`` list holds exactly one entry per LED; the list position is
+    the LED index used by effects, masks and the header chain order. An
+    entry is a single shape or a ``group`` of several shapes (physical LEDs
+    sharing one channel). LED fills come from the effect engine, decor is
+    purely visual.
     """
 
     id: str = Field(
@@ -258,6 +285,14 @@ class ArgbDeviceDefinition(_Strict):
         """Number of LEDs this device definition provides."""
         return len(self.leds)
 
+    def _single_led_shapes(self) -> Iterable[LedRect | LedCircle | LedPolygon]:
+        """Flatten ``leds`` into single shapes, expanding groups in place."""
+        for led in self.leds:
+            if isinstance(led, LedGroup):
+                yield from led.shapes
+            else:
+                yield led
+
     def bounds(self) -> tuple[float, float, float, float]:
         """Tight bounding box [x, y, w, h] of all LED and decor shapes."""
         min_x = min_y = float("inf")
@@ -268,7 +303,7 @@ class ArgbDeviceDefinition(_Strict):
             min_x, min_y = min(min_x, x0, x1), min(min_y, y0, y1)
             max_x, max_y = max(max_x, x0, x1), max(max_y, y0, y1)
 
-        for shape in (*self.leds, *self.decor):
+        for shape in (*self._single_led_shapes(), *self.decor):
             match shape:
                 case LedRect(rect=[x, y, w, h]) | DecorRect(rect=[x, y, w, h]):
                     grow(x, y, x + w, y + h)

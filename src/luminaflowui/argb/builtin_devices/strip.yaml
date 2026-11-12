@@ -1,8 +1,9 @@
 # Built-in ARGB device definition.
-# `leds` holds one shape per LED; the list position is the LED index used
-# by effects, masks and the header chain order. LED fills come from the
-# effect engine (shape outline is optional); `decor` is non-LED artwork
-# (case, housing, blades) drawn underneath the LEDs.
+# `leds` holds one entry per LED (list order = LED index); an entry is a
+# single shape or a `group` of several shapes for hardware that wires
+# multiple physical LEDs to one channel. LED fills come from the effect
+# engine (shape outline is optional); `decor` is non-LED artwork (case,
+# housing, blades) drawn underneath the LEDs.
 id: strip
 name: LED Strip
 size: [403, 35]
